@@ -7,7 +7,6 @@ import { OverviewChart } from "@/components/charts/overview-chart"
 import { LocationStatsCard } from "@/components/charts/location-stats-card"
 import { LocationSelector } from "@/components/ui/location-selector"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   DollarSign, 
   ShoppingCart, 
@@ -127,57 +126,45 @@ export default function DashboardPage() {
             />
           </div>
         )}
+        {/* Activity Timeline */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Activity Timeline
+          </h3>
+          {loading ? (
+            <Skeleton className="h-[400px]" />
+          ) : (
+            <OverviewChart data={chartData} />
+          )}
+        </div>
 
-        {/* Tabs for different views */}
-        <Tabs defaultValue="locations" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="locations" className="flex items-center gap-2">
-              <MapPin className="h-4 w-4" />
-              Location Breakdown
-            </TabsTrigger>
-            <TabsTrigger value="activity" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Activity Timeline
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="locations" className="space-y-4">
-            {/* Location Stats Grid */}
-            {!selectedLocation && (
-              <div>
-                <h3 className="text-lg font-semibold mb-4">Performance by Location</h3>
-                {loading ? (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
-                      <Skeleton key={i} className="h-[200px]" />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {locationStats.map((location) => (
-                      <LocationStatsCard
-                        key={location.locationId}
-                        stats={location}
-                        onClick={() => setSelectedLocation(location.locationId)}
-                      />
-                    ))}
-                  </div>
-                )}
+        {/* Location Breakdown - Only show when no location is selected */}
+        {!selectedLocation && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold flex items-center gap-2">
+              <MapPin className="h-5 w-5" />
+              Performance by Location
+            </h3>
+            {loading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Skeleton key={i} className="h-[200px]" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {locationStats.map((location) => (
+                  <LocationStatsCard
+                    key={location.locationId}
+                    stats={location}
+                    onClick={() => setSelectedLocation(location.locationId)}
+                  />
+                ))}
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="activity" className="space-y-4">
-            {/* Activity Chart */}
-            <div className="lg:col-span-2">
-              {loading ? (
-                <Skeleton className="h-[400px]" />
-              ) : (
-                <OverviewChart data={chartData} />
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   )

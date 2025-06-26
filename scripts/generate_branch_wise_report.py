@@ -270,54 +270,11 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
     html = f"""
         <div class="location-section">
             <h2 class="location-header">{location_name} ({location_code})</h2>
-            
-            <!-- Location Summary -->
-            <h3 class="table-title">Location Overview</h3>
-            <table class="summary-table">
-                <tr>
-                    <th>Metric</th>
-                    <th>Value</th>
-                    <th>Details</th>
-                </tr>
-                <tr>
-                    <td>Purchases</td>
-                    <td>{data['purchases']['total']}</td>
-                    <td>${data['purchases']['total_revenue']:.2f} total revenue</td>
-                </tr>
-                <tr>
-                    <td>Cart Abandonments</td>
-                    <td>{data['cart_abandonment']['total']}</td>
-                    <td>${data['cart_abandonment']['total_value']:.2f} at risk</td>
-                </tr>
-                <tr>
-                    <td>Failed Searches</td>
-                    <td>{data['search_no_results']['unique_terms']}</td>
-                    <td>{data['search_no_results']['total_searches']} total searches</td>
-                </tr>
-                <tr>
-                    <td>Repeat Visits (No Purchase)</td>
-                    <td>{data['repeat_visits']['total']}</td>
-                    <td>{data['repeat_visits']['avg_pages']:.1f} avg pages viewed</td>
-                </tr>
-            </table>
     """
     
-    # Add purchase details if any
+    # Task Type: Purchases
     if data['purchases']['total'] > 0:
-        html += f"""
-            <div class="task-section">
-                <h3 class="table-title">Purchase Follow-up Tasks</h3>
-                <table class="task-table">
-                    <tr>
-                        <th style="width: 20px;"></th>
-                        <th>Customer</th>
-                        <th>Company</th>
-                        <th>Order Value</th>
-                        <th>Transaction ID</th>
-                        <th>Status</th>
-                    </tr>
-        """
-        
+        html += '<h3 class="table-title">Purchase Follow-up Tasks</h3>'
         for idx, sample in enumerate(data['purchases']['samples']):
             customer = sample[4] or 'Unknown'
             company = sample[6] or '-'
@@ -328,37 +285,30 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
             items_json = sample[3]
             completed = sample[13]
             notes = sample[14]
-            hostname = sample[15] or 'example.com'  # Default hostname
             task_id = f"purchase_{trans_id}"
-            
-            status_class = "status-complete" if completed else "status-pending"
-            status_text = "Complete" if completed else "Pending"
-            
+
             html += f"""
-                    <tr class="expandable-row" onclick="toggleDetails('purchase-{location_code}-{idx}')">
-                        <td><span id="icon-purchase-{location_code}-{idx}" class="expand-icon">▶</span></td>
-                        <td>{customer}</td>
-                        <td>{company}</td>
-                        <td>${revenue:.2f}</td>
-                        <td>{trans_id}</td>
-                        <td><button class="status-btn {status_class}" onclick="event.stopPropagation(); alert('Status update would be handled by dashboard');">{status_text}</button></td>
-                    </tr>
-                    <tr>
-                        <td colspan="6" style="padding: 0;">
-                            <div id="purchase-{location_code}-{idx}" class="expanded-content">
-                                <strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}<br>
-                                <strong>Products:</strong><br>
-                                <table class="product-table" style="margin: 10px 0;">
-                                    <tr>
-                                        <th>Product</th>
-                                        <th>Brand</th>
-                                        <th>Category</th>
-                                        <th>Qty</th>
-                                        <th>Price</th>
-                                        <th>Total</th>
-                                    </tr>
+            <div class="card mb-3">
+              <div class="card-header expandable-row" onclick="toggleDetails('{task_id}')">
+                <span id="icon-{task_id}" class="expand-icon">▶</span> {customer} - {company} - ${revenue:.2f} - ID: {trans_id}
+              </div>
+              <div id="{task_id}" class="card-body expanded-content">
+                <p><strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}</p>
+                <div class="table-responsive">
+                  <table class="table table-bordered table-sm">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Product</th>
+                        <th>Brand</th>
+                        <th>Category</th>
+                        <th>Qty</th>
+                        <th>Price</th>
+                        <th>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
             """
-            
+
             items = parse_items_json(items_json)
             if items:
                 for item in items:
@@ -368,101 +318,79 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
                     item_id = item.get('item_id', '')
                     item_brand = item.get('item_brand', '-')
                     item_category = item.get('item_category', '-')
-                    
                     html += f"""
-                                    <tr>
-                                        <td>{item_name}<br><small>SKU: {item_id}</small></td>
-                                        <td>{item_brand}</td>
-                                        <td>{item_category}</td>
-                                        <td style="text-align: center;">{quantity}</td>
-                                        <td style="text-align: right;">${price:.2f}</td>
-                                        <td style="text-align: right;">${quantity * price:.2f}</td>
-                                    </tr>
+                      <tr>
+                        <td>{item_name}<br><small>SKU: {item_id}</small></td>
+                        <td>{item_brand}</td>
+                        <td>{item_category}</td>
+                        <td class="text-center">{quantity}</td>
+                        <td class="text-end">${price:.2f}</td>
+                        <td class="text-end">${quantity * price:.2f}</td>
+                      </tr>
                     """
             
-            html += f"""
-                                </table>
-                                <br><strong>Task Status:</strong><br>
-                                <div class="product-details">
-                                    <strong>Completed:</strong> {'Yes' if completed else 'No'}
-                                </div>
-                                <div class="notes-section">
-                                    <strong>Notes:</strong>
-                                    <textarea id="notes-{task_id}">{notes or ''}</textarea>
-                                    <button class="notes-btn" onclick="event.stopPropagation(); alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-            """
-        
-        html += """
-                </table>
+            html += """
+                    </tbody>
+                  </table>
+                </div>
+                <div class="row g-3 mt-3">
+                  <div class="col-md-6">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
+                      <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
+                    <input type="date" class="form-control" id="followUpDate-{task_id}">
+                  </div>
+                </div>
+                <div class="mt-3">
+                  <label for="notes-{task_id}" class="form-label">Notes</label>
+                  <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
+                  <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for task {trans_id}');">Save Notes</button>
+                </div>
+              </div>
             </div>
-        """
+            """
     
-    # Add cart abandonment details if any
+    # Task Type: Cart Abandonment
     if data['cart_abandonment']['total'] > 0:
-        html += f"""
-            <div class="task-section">
-                <h3 class="table-title">Cart Abandonment Recovery Tasks</h3>
-                <table class="task-table">
-                    <tr>
-                        <th style="width: 20px;"></th>
-                        <th>Customer</th>
-                        <th>Company</th>
-                        <th>Cart Value</th>
-                        <th>Items</th>
-                        <th>Status</th>
-                    </tr>
-        """
-        
+        html += '<h3 class="table-title">Cart Abandonment Recovery</h3>'
         for idx, sample in enumerate(data['cart_abandonment']['samples']):
             customer = sample[1] or 'Unknown'
             email = sample[2] or ''
             company = sample[3] or '-'
-            office_phone = sample[4] or ''
-            cell_phone = sample[5] or ''
-            items_count = sample[6] or 0
+            phone = sample[4] or sample[5] or ''
             cart_value = float(sample[7]) if sample[7] else 0
-            all_items_json = sample[9] or ''
+            session_id = sample[0]
             completed = sample[10]
             notes = sample[11]
-            hostname = sample[12] or 'example.com'
-            session_id = sample[0]
+            all_items_json = sample[9] or ''
             task_id = f"cart_{session_id}"
-            
-            phone = office_phone or cell_phone or ''
-            
-            status_class = "status-complete" if completed else "status-pending"
-            status_text = "Complete" if completed else "Pending"
 
             html += f"""
-                    <tr class="expandable-row" onclick="toggleDetails('cart-{location_code}-{idx}')">
-                        <td><span id="icon-cart-{location_code}-{idx}" class="expand-icon">▶</span></td>
-                        <td>{customer}</td>
-                        <td>{company}</td>
-                        <td>${cart_value:.2f}</td>
-                        <td>{items_count}</td>
-                        <td><button class="status-btn {status_class}" onclick="event.stopPropagation(); alert('Status update would be handled by dashboard');">{status_text}</button></td>
-                    </tr>
-                    <tr>
-                        <td colspan="6" style="padding: 0;">
-                            <div id="cart-{location_code}-{idx}" class="expanded-content">
-                                <strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}<br>
-                                <strong>Products in Cart:</strong><br>
-                                <table class="product-table" style="margin: 10px 0;">
-                                    <tr>
-                                        <th>Product</th>
-                                        <th>Brand</th>
-                                        <th>Category</th>
-                                        <th>Qty</th>
-                                        <th>Price</th>
-                                        <th>Total</th>
-                                    </tr>
+            <div class="card mb-3">
+                <div class="card-header expandable-row" onclick="toggleDetails('{task_id}')">
+                    <span id="icon-{task_id}" class="expand-icon">▶</span> {customer} - {company} - ${cart_value:.2f} - Session: {session_id[:8]}...
+                </div>
+                <div id="{task_id}" class="card-body expanded-content">
+                    <p><strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}</p>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Brand</th>
+                                    <th>Category</th>
+                                    <th>Qty</th>
+                                    <th>Price</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
             """
-            
-            # Parse all items JSON
+
             cart_items = []
             if all_items_json:
                 json_parts = all_items_json.split('||SEPARATOR||')
@@ -471,538 +399,134 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
                         items = parse_items_json(json_part)
                         cart_items.extend(items)
             
-            # Remove duplicates based on item_id
             unique_items = {}
             for item in cart_items:
                 item_id = item.get('item_id', '')
                 if item_id:
-                    if item_id in unique_items:
-                        # Add quantities if duplicate
-                        unique_items[item_id]['quantity'] = str(int(unique_items[item_id]['quantity']) + int(item.get('quantity', 1)))
-                    else:
-                        unique_items[item_id] = item
+                    unique_items[item_id] = item
             
-            # Display items in table
             for item in unique_items.values():
                 item_name = item.get('item_name', 'Unknown Product')
+                quantity = int(item.get('quantity', 1))
+                price = float(item.get('price', 0))
                 item_id = item.get('item_id', '')
                 item_brand = item.get('item_brand', '-')
                 item_category = item.get('item_category', '-')
-                quantity = int(item.get('quantity', 1))
-                price = float(item.get('price', 0))
-                
                 html += f"""
-                                    <tr>
-                                        <td>{item_name}<br><small>SKU: {item_id}</small></td>
-                                        <td>{item_brand}</td>
-                                        <td>{item_category}</td>
-                                        <td style="text-align: center;">{quantity}</td>
-                                        <td style="text-align: right;">${price:.2f}</td>
-                                        <td style="text-align: right;">${quantity * price:.2f}</td>
-                                    </tr>
+                      <tr>
+                        <td>{item_name}<br><small>SKU: {item_id}</small></td>
+                        <td>{item_brand}</td>
+                        <td>{item_category}</td>
+                        <td class="text-center">{quantity}</td>
+                        <td class="text-end">${price:.2f}</td>
+                        <td class="text-end">${quantity * price:.2f}</td>
+                      </tr>
                 """
             
             html += f"""
-                                </table>
-                                <br><strong>Task Status:</strong><br>
-                                <div class="product-details">
-                                    <strong>Completed:</strong> {'Yes' if completed else 'No'}
-                                </div>
-                                <div class="notes-section">
-                                    <strong>Notes:</strong>
-                                    <textarea id="notes-{task_id}">{notes or ''}</textarea>
-                                    <button class="notes-btn" onclick="event.stopPropagation(); alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                                </div>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="row g-3 mt-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
+                                <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
                             </div>
-                        </td>
-                    </tr>
-            """
-        
-        html += """
-                </table>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
+                            <input type="date" class="form-control" id="followUpDate-{task_id}">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label for="notes-{task_id}" class="form-label">Notes</label>
+                        <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
+                        <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for session {session_id}');">Save Notes</button>
+                    </div>
+                </div>
             </div>
-        """
-    
-    # Add failed searches if any
-    if data['search_no_results']['total_searches'] > 0:
-        html += f"""
-            <div class="task-section">
-                <h3 class="table-title">Failed Search Recovery Tasks</h3>
-                <table class="task-table">
-                    <tr>
-                        <th style="width: 20px;"></th>
-                        <th>Search Term</th>
-                        <th>Count</th>
-                        <th>Sessions</th>
-                        <th>Status</th>
-                    </tr>
-        """
-        
-        for idx, sample in enumerate(data['search_no_results']['samples'][:5]):
-            term = sample[0] or '-'
-            count = sample[1] or 0
-            sessions = sample[2] or 0
-            completed = sample[3]
-            notes = sample[4]
-            # Sanitize term for use in HTML id
-            safe_term = "".join(c if c.isalnum() else '_' for c in term)
-            task_id = f"search_{location_code}_{safe_term}"
-            
-            status_class = "status-complete" if completed else "status-pending"
-            status_text = "Complete" if completed else "Pending"
-            
-            html += f"""
-                    <tr class="expandable-row" onclick="toggleDetails('search-{location_code}-{idx}')">
-                        <td><span id="icon-search-{location_code}-{idx}" class="expand-icon">▶</span></td>
-                        <td>{term}</td>
-                        <td>{count}</td>
-                        <td>{sessions}</td>
-                        <td><button class="status-btn {status_class}" onclick="event.stopPropagation(); alert('Status update would be handled by dashboard');">{status_text}</button></td>
-                    </tr>
-                    <tr>
-                        <td colspan="5" style="padding: 0;">
-                            <div id="search-{location_code}-{idx}" class="expanded-content">
-                                <div class="notes-section">
-                                    <strong>Notes:</strong>
-                                    <textarea id="notes-{task_id}">{notes or ''}</textarea>
-                                    <button class="notes-btn" onclick="event.stopPropagation(); alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
             """
-        
-        html += """
-                </table>
-            </div>
-        """
 
-    # Add repeat visits if any
-    if data['repeat_visits']['total'] > 0:
-        html += f"""
-            <div class="task-section">
-                <h3 class="table-title">Repeat Visit Conversion Tasks</h3>
-                <table class="task-table">
-                    <tr>
-                        <th style="width: 20px;"></th>
-                        <th>Customer</th>
-                        <th>Company</th>
-                        <th>Pages Viewed</th>
-                        <th>Last Visit</th>
-                        <th>Status</th>
-                    </tr>
-        """
-        
-        for idx, sample in enumerate(data['repeat_visits']['samples']):
-            customer = sample[1] or 'Unknown'
-            company = sample[3] or '-'
-            pages_viewed = sample[4] or 0
-            last_visit_raw = sample[5]
-            last_visit = datetime.fromtimestamp(int(last_visit_raw) / 1000000).strftime('%Y-%m-%d') if last_visit_raw else 'N/A'
-            email = sample[2] or ''
-            pages_visited = sample[6] or ''
-            completed = sample[7]
-            notes = sample[8]
-            session_id = sample[0]
-            user_id = customer  # This is simplified, in real case you'd get the actual user_id
-            task_id = f"REPEAT_{session_id}_{user_id}"
-            
-            status_class = "status-complete" if completed else "status-pending"
-            status_text = "Complete" if completed else "Pending"
-
-            html += f"""
-                    <tr class="expandable-row" onclick="toggleDetails('visit-{location_code}-{idx}')">
-                        <td><span id="icon-visit-{location_code}-{idx}" class="expand-icon">▶</span></td>
-                        <td>{customer}</td>
-                        <td>{company}</td>
-                        <td>{pages_viewed}</td>
-                        <td>{last_visit}</td>
-                        <td><button class="status-btn {status_class}" onclick="event.stopPropagation(); alert('Status update would be handled by dashboard');">{status_text}</button></td>
-                    </tr>
-                    <tr>
-                        <td colspan="6" style="padding: 0;">
-                            <div id="visit-{location_code}-{idx}" class="expanded-content">
-                                <strong>Contact:</strong> {email or 'N/A'}<br>
-                                <strong>Pages Visited:</strong><br>
-                                <div class="product-details">{pages_visited or 'N/A'}</div>
-                                <br><strong>Task Status:</strong><br>
-                                <div class="product-details">
-                                    <strong>Completed:</strong> {'Yes' if completed else 'No'}
-                                </div>
-                                <div class="notes-section">
-                                    <strong>Notes:</strong>
-                                    <textarea id="notes-{task_id}">{notes or ''}</textarea>
-                                    <button class="notes-btn" onclick="event.stopPropagation(); alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-            """
-        
-        html += """
-                </table>
-            </div>
-        """
-    
-    html += """
-        </div>
-    """
-    
+    html += "</div>" # End location-section
     return html
 
 def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     """Generate HTML email report organized by branch/location"""
     
-    # Get all locations
     locations = get_all_locations(conn)
-    
-    # Format date
     report_date = datetime.now().strftime("%B %d, %Y")
     
-    # Start HTML
     html = f"""
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            color: #000;
-            background-color: #fff;
-            margin: 0;
-            padding: 20px;
-            line-height: 1.6;
-        }}
-        
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-        }}
-        
-        .main-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            border-bottom: 3px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }}
-        
-        .main-header h1 {{
-            font-size: 28px;
-            margin: 0;
-            border-bottom: none;
-            padding-bottom: 0;
-        }}
-
-        .report-date {{
-            font-size: 16px;
-            color: #555;
-        }}
-        
-        h1 {{
-            font-size: 28px;
-            margin-bottom: 10px;
-            border-bottom: 3px solid #000;
-            padding-bottom: 10px;
-        }}
-        
-        h2.location-header {{
-            font-size: 20px;
-            margin-top: 40px;
-            margin-bottom: 20px;
-            background-color: #f0f0f0;
-            padding: 10px;
-            border-left: 4px solid #333;
-        }}
-        
-        h3 {{
-            font-size: 16px;
-            margin-top: 20px;
-            margin-bottom: 10px;
-        }}
-        
-        h3.table-title {{
-            font-size: 18px;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            color: #2c5aa0;
-            border-bottom: 2px solid #2c5aa0;
-            padding-bottom: 5px;
-        }}
-        
-        .summary-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-            background-color: #f9f9f9;
-        }}
-        
-        .summary-table th,
-        .summary-table td {{
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: left;
-        }}
-        
-        .summary-table th {{
-            background-color: #e0e0e0;
-            font-weight: bold;
-        }}
-        
-        .task-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }}
-        
-        .task-table th,
-        .task-table td {{
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-        }}
-        
-        .task-table th {{
-            background-color: #f0f0f0;
-            font-weight: bold;
-        }}
-        
-        .location-section {{
-            margin-bottom: 50px;
-            border: 1px solid #ddd;
-            padding: 20px;
-            page-break-inside: avoid;
-        }}
-        
-        .task-section {{
-            margin-top: 20px;
-        }}
-        
-        .task-suggestion {{
-            background-color: #f0f8ff;
-            border: 1px solid #b0d4e3;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 5px;
-        }}
-        
-        .task-suggestion ul {{
-            margin: 10px 0 0 20px;
-            padding: 0;
-        }}
-        
-        .task-suggestion li {{
-            margin-bottom: 5px;
-        }}
-        
-        .expandable-row {{
-            cursor: pointer;
-            background-color: #fafafa;
-        }}
-        
-        .expandable-row:hover {{
-            background-color: #f0f0f0;
-        }}
-        
-        .expanded-content {{
-            display: none;
-            background-color: #f9f9f9;
-            border: 1px solid #e0e0e0;
-            padding: 10px;
-            margin-top: 5px;
-            font-size: 0.9em;
-        }}
-        
-        .expand-icon {{
-            font-family: monospace;
-            margin-right: 8px;
-        }}
-        
-        .product-details {{
-            margin-left: 20px;
-            font-size: 0.9em;
-            color: #444;
-        }}
-        .product-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            background-color: #fff;
-            border: 1px solid #ddd;
-        }}
-        .product-table th,
-        .product-table td {{
-            border: 1px solid #e0e0e0;
-            padding: 6px 10px;
-            text-align: left;
-            font-size: 0.9em;
-        }}
-        .product-table th {{
-            background-color: #f5f5f5;
-            font-weight: bold;
-            color: #333;
-        }}
-        .product-table td {{
-            background-color: #fff;
-        }}
-        .product-table tr:nth-child(even) td {{
-            background-color: #fafafa;
-        }}
-        .product-table a {{
-            color: #2c5aa0;
-            text-decoration: none;
-        }}
-        .product-table a:hover {{
-            text-decoration: underline;
-        }}
-        .product-table small {{
-            color: #666;
-            font-size: 0.85em;
-        }}
-        
-        .notes-section {{
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px dashed #ccc;
-        }}
-
-        .notes-section textarea {{
-            width: 95%;
-            min-height: 60px;
-            padding: 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            margin-top: 5px;
-        }}
-
-        .notes-btn {{
-            padding: 5px 15px;
-            border: 1px solid #2c5aa0;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-            background-color: #2c5aa0;
-            color: #fff;
-            margin-top: 5px;
-        }}
-
-        .notes-btn:hover {{
-            opacity: 0.9;
-        }}
-        
-        .status-btn {{
-            padding: 4px 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-        }}
-        
-        .status-pending {{
-            background-color: #fff3cd;
-            color: #856404;
-        }}
-        
-        .status-complete {{
-            background-color: #d4edda;
-            color: #155724;
-        }}
-        
-        .footer {{
-            margin-top: 50px;
-            padding-top: 20px;
-            border-top: 2px solid #000;
-            font-size: 12px;
-            color: #666;
-        }}
-        
-        .overall-summary {{
-            background-color: #e8f4f8;
-            padding: 20px;
-            margin-bottom: 30px;
-            border: 1px solid #b0d4e3;
-        }}
-        
-        .metric {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #2c5aa0;
-        }}
-        
-        @media print {{
-            .expandable-row {{
-                cursor: default;
-            }}
-            .location-section {{
-                page-break-inside: avoid;
-            }}
-            .status-btn {{
-                pointer-events: none;
-            }}
-        }}
-
-        .product-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin: 10px 0;
-            background-color: #fff;
-            border: 1px solid #ddd;
-        }}
-        
-        .product-table th,
-        .product-table td {{
-            border: 1px solid #e0e0e0;
-            padding: 6px 10px;
-            text-align: left;
-            font-size: 0.9em;
-        }}
-        
-        .product-table th {{
-            background-color: #f5f5f5;
-            font-weight: bold;
-            color: #333;
-        }}
-        
-        .product-table td {{
-            background-color: #fff;
-        }}
-        
-        .product-table tr:nth-child(even) td {{
-            background-color: #fafafa;
-        }}
-        
-        .product-table small {{
-            color: #666;
-            font-size: 0.85em;
-        }}
-    </style>
-    <script>
-        function toggleDetails(id) {{
-            var content = document.getElementById(id);
-            var icon = document.getElementById('icon-' + id);
-            if (content.style.display === 'block') {{
-                content.style.display = 'none';
-                icon.innerHTML = '▶';
-            }} else {{
-                content.style.display = 'block';
-                icon.innerHTML = '▼';
-            }}
-        }}
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Report</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      background-color: #f8f9fa;
+      padding: 20px;
+    }}
+    .expandable-row {{
+      cursor: pointer;
+    }}
+    .expanded-content {{
+      display: none;
+    }}
+    .expand-icon {{
+      font-family: monospace;
+      margin-right: 8px;
+    }}
+    .product-details {{
+      margin-left: 1rem;
+      color: #444;
+    }}
+    .location-header {{
+        font-size: 20px;
+        margin-top: 40px;
+        margin-bottom: 20px;
+        background-color: #e9ecef;
+        padding: 10px;
+        border-left: 4px solid #0d6efd;
+    }}
+    h3.table-title {{
+        font-size: 18px;
+        margin-top: 30px;
+        margin-bottom: 15px;
+        color: #0d6efd;
+        border-bottom: 2px solid #0d6efd;
+        padding-bottom: 5px;
+    }}
+  </style>
+  <script>
+    function toggleDetails(id) {{
+      const content = document.getElementById(id);
+      const icon = document.getElementById('icon-' + id);
+      if (content.style.display === 'block') {{
+        content.style.display = 'none';
+        icon.innerHTML = '▶';
+      }} else {{
+        content.style.display = 'block';
+        icon.innerHTML = '▼';
+      }}
+    }}
+  </script>
 </head>
 <body>
     <div class="container">
-        <div class="main-header">
-            <h1>Branch-wise Sales Task Report</h1>
-            <span class="report-date">{report_date}</span>
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="border-bottom pb-2">Branch-wise Sales Task Report</h1>
+                <p class="text-muted">Report Date: {report_date}</p>
+            </div>
         </div>
     """
     
-    # Add overall summary
+    # Overall summary and other logic remains the same...
     overall_stats = {
         'total_purchases': 0,
         'total_revenue': 0,
@@ -1012,9 +536,8 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
         'total_repeat_visits': 0
     }
     
-    # Generate sections for each location
+    location_sections = ""
     for location in locations:
-        # Fetch data for this location
         location_data = {
             'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
             'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code']),
@@ -1022,7 +545,6 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
             'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
         }
         
-        # Update overall stats
         overall_stats['total_purchases'] += location_data['purchases']['total']
         overall_stats['total_revenue'] += location_data['purchases']['total_revenue']
         overall_stats['total_carts'] += location_data['cart_abandonment']['total']
@@ -1030,62 +552,54 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
         overall_stats['total_searches'] += location_data['search_no_results']['total_searches']
         overall_stats['total_repeat_visits'] += location_data['repeat_visits']['total']
         
-        # Generate section for this location
-        section = generate_location_section(location, location_data)
-        if section:  # Only add if there's data
-            html += section
-    
-    # Add overall summary at the beginning (we'll insert it)
-    overall_summary = f"""
-        <div class="overall-summary">
-            <h2>Overall Summary - All Branches</h2>
-            <table class="summary-table">
-                <tr>
-                    <th>Metric</th>
-                    <th>Total</th>
-                    <th>Value</th>
-                </tr>
-                <tr>
-                    <td>Total Purchases</td>
-                    <td class="metric">{overall_stats['total_purchases']}</td>
-                    <td>${overall_stats['total_revenue']:.2f}</td>
-                </tr>
-                <tr>
-                    <td>Total Cart Abandonments</td>
-                    <td class="metric">{overall_stats['total_carts']}</td>
-                    <td>${overall_stats['total_cart_value']:.2f}</td>
-                </tr>
-                <tr>
-                    <td>Total Failed Searches</td>
-                    <td class="metric">{overall_stats['total_searches']}</td>
-                    <td>-</td>
-                </tr>
-                <tr>
-                    <td>Total Repeat Visits (No Purchase)</td>
-                    <td class="metric">{overall_stats['total_repeat_visits']}</td>
-                    <td>-</td>
-                </tr>
+        location_sections += generate_location_section(location, location_data)
+
+    overall_summary_html = f"""
+    <div class="card mb-4">
+        <div class="card-header">Overall Summary - All Branches</div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Total</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Total Purchases</td>
+                        <td>{overall_stats['total_purchases']}</td>
+                        <td>${overall_stats['total_revenue']:.2f}</td>
+                    </tr>
+                    <tr>
+                        <td>Total Cart Abandonments</td>
+                        <td>{overall_stats['total_carts']}</td>
+                        <td>${overall_stats['total_cart_value']:.2f}</td>
+                    </tr>
+                    <tr>
+                        <td>Total Failed Searches</td>
+                        <td>{overall_stats['total_searches']}</td>
+                        <td>-</td>
+                    </tr>
+                    <tr>
+                        <td>Total Repeat Visits (No Purchase)</td>
+                        <td>{overall_stats['total_repeat_visits']}</td>
+                        <td>-</td>
+                    </tr>
+                </tbody>
             </table>
         </div>
+    </div>
     """
-    
-    # Insert overall summary after the h1
-    insert_pos = html.find('</h1>') + 5
-    html = html[:insert_pos] + overall_summary + html[insert_pos:]
-    
-    # Add footer
-    html += f"""
-        <div class="footer">
-            <p><strong>Report Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
-            <p>This is an automated branch-wise report from the Impax Sales Intelligence System.</p>
-            <p><em>Click on rows with ▶ to expand and see detailed information.</em></p>
-            <p><strong>Note:</strong> Status and notes functionality are for demonstration. Actual updates should be done through the dashboard.</p>
-        </div>
+
+    html += overall_summary_html + location_sections
+
+    html += """
     </div>
 </body>
 </html>
     """
-    
     return html
 
 def main():
@@ -1094,26 +608,19 @@ def main():
     parser.add_argument("--db-path", default="db/branch_wise_location.db", help="Path to the SQLite database.")
     args = parser.parse_args()
     
-    # Connect to database
     conn = get_db_connection(args.db_path)
     
     try:
-        # Generate HTML report
         html_report = generate_branch_wise_report(conn)
         
-        # Save to file
         report_dir = "branch_reports"
         os.makedirs(report_dir, exist_ok=True)
         report_filename = os.path.join(report_dir, f"D_All_report_{datetime.now().strftime('%Y%m%d')}.html")
-
         with open(report_filename, 'w', encoding='utf-8') as f:
             f.write(html_report)
+        print(f"Consolidated report generated: {report_filename}")
         
-        print(f"Branch-wise report generated: {report_filename}")
-        
-        # Also generate individual reports for each location
         locations = get_all_locations(conn)
-        
         for location in locations:
             location_data = {
                 'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
@@ -1122,170 +629,73 @@ def main():
                 'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
             }
             
-            # Skip if no data
             if (location_data['purchases']['total'] == 0 and 
                 location_data['cart_abandonment']['total'] == 0 and 
                 location_data['search_no_results']['total_searches'] == 0 and 
                 location_data['repeat_visits']['total'] == 0):
                 continue
             
-            # Generate individual report
+            location_name = f"{location['warehouse_name']} - {location['city']} ({location['warehouse_code']})"
+            report_date = datetime.now().strftime("%B %d, %Y")
+
             individual_html = f"""
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            color: #000;
-            background-color: #fff;
-            margin: 0;
-            padding: 20px;
-            line-height: 1.6;
-        }}
-        .container {{
-            max-width: 900px;
-            margin: 0 auto;
-        }}
-        .main-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-        }}
-        .main-header h1 {{
-            font-size: 24px;
-            margin: 0;
-            border-bottom: none;
-            padding-bottom: 0;
-        }}
-        .report-date {{
-            font-size: 14px;
-            color: #555;
-        }}
-        h1 {{
-            font-size: 24px;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-        }}
-        .summary-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 30px;
-        }}
-        .summary-table th,
-        .summary-table td {{
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: left;
-        }}
-        .summary-table th {{
-            background-color: #e0e0e0;
-        }}
-        .task-table {{
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }}
-        .task-table th,
-        .task-table td {{
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-        }}
-        .task-table th {{
-            background-color: #f0f0f0;
-        }}
-        .expandable-row {{
-            cursor: pointer;
-            background-color: #fafafa;
-        }}
-        .expandable-row:hover {{
-            background-color: #f0f0f0;
-        }}
-        .expanded-content {{
-            display: none;
-            background-color: #f9f9f9;
-            border: 1px solid #e0e0e0;
-            padding: 10px;
-            margin-top: 5px;
-        }}
-        .expand-icon {{
-            font-family: monospace;
-            margin-right: 8px;
-        }}
-        .product-details {{
-            margin-left: 20px;
-            font-size: 0.9em;
-            color: #444;
-        }}
-        .notes-section {{
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px dashed #ccc;
-        }}
-        .notes-section textarea {{
-            width: 95%;
-            min-height: 60px;
-            padding: 5px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            margin-top: 5px;
-        }}
-        .notes-btn {{
-            padding: 5px 15px;
-            border: 1px solid #2c5aa0;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-            background-color: #2c5aa0;
-            color: #fff;
-            margin-top: 5px;
-        }}
-        .notes-btn:hover {{
-            opacity: 0.9;
-        }}
-        .status-btn {{
-            padding: 4px 12px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: bold;
-        }}
-        .status-pending {{
-            background-color: #fff3cd;
-            color: #856404;
-        }}
-        .status-complete {{
-            background-color: #d4edda;
-            color: #155724;
-        }}
-    </style>
-    <script>
-        function toggleDetails(id) {{
-            var content = document.getElementById(id);
-            var icon = document.getElementById('icon-' + id);
-            if (content.style.display === 'block') {{
-                content.style.display = 'none';
-                icon.innerHTML = '▶';
-            }} else {{
-                content.style.display = 'block';
-                icon.innerHTML = '▼';
-            }}
-        }}
-    </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Report - {location['warehouse_code']}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      background-color: #f8f9fa;
+      padding: 20px;
+    }}
+    .expandable-row {{
+      cursor: pointer;
+    }}
+    .expanded-content {{
+      display: none;
+    }}
+    .expand-icon {{
+      font-family: monospace;
+      margin-right: 8px;
+    }}
+    .product-details {{
+      margin-left: 1rem;
+      color: #444;
+    }}
+    h3.table-title {{
+        font-size: 18px;
+        margin-top: 30px;
+        margin-bottom: 15px;
+        color: #0d6efd;
+        border-bottom: 2px solid #0d6efd;
+        padding-bottom: 5px;
+    }}
+  </style>
+  <script>
+    function toggleDetails(id) {{
+      const content = document.getElementById(id);
+      const icon = document.getElementById('icon-' + id);
+      if (content.style.display === 'block') {{
+        content.style.display = 'none';
+        icon.innerHTML = '▶';
+      }} else {{
+        content.style.display = 'block';
+        icon.innerHTML = '▼';
+      }}
+    }}
+  </script>
 </head>
 <body>
     <div class="container">
-        <div class="main-header">
-            <h1>{location['warehouse_name']} - {location['city']} ({location['warehouse_code']})</h1>
-            <span class="report-date">{datetime.now().strftime("%B %d, %Y")}</span>
+        <div class="row mb-4">
+            <div class="col">
+                <h1 class="border-bottom pb-2">{location_name}</h1>
+                <p class="text-muted">Report Date: {report_date}</p>
+            </div>
         </div>
         {generate_location_section(location, location_data)}
     </div>
@@ -1293,14 +703,11 @@ def main():
 </html>
             """
             
-            # Save individual report
             individual_filename = os.path.join(report_dir, f"{location['warehouse_code']}_report_{datetime.now().strftime('%Y%m%d')}.html")
-
             with open(individual_filename, 'w', encoding='utf-8') as f:
                 f.write(individual_html)
-            
             print(f"Generated report for {location['warehouse_code']}: {individual_filename}")
-        
+            
     finally:
         conn.close()
 

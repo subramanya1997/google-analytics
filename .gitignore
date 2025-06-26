@@ -24,6 +24,10 @@ backups/
 data/*.jsonl
 data/*.xlsx
 data/*.csv
+data/*.json
+data/*.html
+data/*.txt
+data/*.md
 
 # Node.js / Next.js
 node_modules/

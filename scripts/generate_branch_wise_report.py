@@ -153,7 +153,8 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
     SELECT 
         COUNT(DISTINCT param_no_search_results_term) as unique_terms,
         COUNT(*) as total_searches,
-        COUNT(DISTINCT param_ga_session_id) as affected_sessions
+        COUNT(DISTINCT param_ga_session_id) as affected_sessions,
+        COUNT(DISTINCT user_prop_webuserid) as unique_users
     FROM no_search_results
     WHERE param_no_search_results_term IS NOT NULL
     AND user_prop_default_branch_id = ?
@@ -161,29 +162,55 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
     
     result = conn.execute(query, (location_id,)).fetchone()
     
-    # Get top failed search terms
+    # Get failed searches grouped by term with user details
     sample_query = """
+    WITH search_term_stats AS (
+        SELECT 
+            param_no_search_results_term as search_term,
+            COUNT(*) as total_searches,
+            COUNT(DISTINCT param_ga_session_id) as unique_sessions,
+            COUNT(DISTINCT user_prop_webuserid) as unique_users
+        FROM no_search_results
+        WHERE param_no_search_results_term IS NOT NULL
+        AND user_prop_default_branch_id = ?
+        GROUP BY param_no_search_results_term
+    )
     SELECT 
-        nsr.param_no_search_results_term as search_term,
-        COUNT(*) as search_count,
-        COUNT(DISTINCT nsr.param_ga_session_id) as unique_sessions,
-        tt.completed,
-        tt.notes
-    FROM no_search_results nsr
+        sts.search_term,
+        sts.total_searches,
+        sts.unique_sessions,
+        sts.unique_users,
+        GROUP_CONCAT(
+            CASE 
+                WHEN u.name IS NOT NULL THEN 
+                    u.name || '|' || COALESCE(u.email, '') || '|' || 
+                    COALESCE(u.customer_name, '') || '|' || 
+                    COALESCE(u.office_phone, u.cell_phone, '') || '|' ||
+                    nsr.event_timestamp || '|' ||
+                    nsr.param_ga_session_id || '|' ||
+                    CAST(nsr.user_prop_webuserid AS TEXT)
+                ELSE NULL
+            END, ';;'
+        ) as user_details,
+        MAX(tt.completed) as completed,
+        MAX(tt.notes) as notes
+    FROM search_term_stats sts
+    JOIN no_search_results nsr ON nsr.param_no_search_results_term = sts.search_term
+    LEFT JOIN users u ON CAST(nsr.user_prop_webuserid AS INTEGER) = u.user_id
     LEFT JOIN task_tracking tt ON tt.task_id = ('SEARCH_' || nsr.param_no_search_results_term) AND tt.task_type = 'search'
-    WHERE nsr.param_no_search_results_term IS NOT NULL
-    AND nsr.user_prop_default_branch_id = ?
-    GROUP BY nsr.param_no_search_results_term, tt.completed, tt.notes
-    ORDER BY search_count DESC
-    LIMIT 10
+    WHERE nsr.user_prop_default_branch_id = ?
+    GROUP BY sts.search_term, sts.total_searches, sts.unique_sessions, sts.unique_users
+    ORDER BY sts.total_searches DESC
+    LIMIT 15
     """
     
-    samples = conn.execute(sample_query, (location_id,)).fetchall()
+    samples = conn.execute(sample_query, (location_id, location_id)).fetchall()
     
     return {
         'unique_terms': result[0] or 0,
         'total_searches': result[1] or 0,
         'affected_sessions': result[2] or 0,
+        'unique_users': result[3] or 0,
         'samples': samples
     }
 
@@ -546,15 +573,18 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
             <h4 class="mt-4 mb-3">Failed Search Recovery Tasks</h4>
         """
         
-        for idx, sample in enumerate(data['search_no_results']['samples'][:10]):  # Increased to 10 for better visibility
+        for idx, sample in enumerate(data['search_no_results']['samples']):
             term = sample[0] or '-'
-            count = sample[1] or 0
-            sessions = sample[2] or 0
-            completed = sample[3]
-            notes = sample[4]
+            total_searches = sample[1] or 0
+            unique_sessions = sample[2] or 0
+            unique_users = sample[3] or 0
+            user_details_str = sample[4] or ''
+            completed = sample[5]
+            notes = sample[6]
+            
             # Sanitize term for use in HTML id
             safe_term = "".join(c if c.isalnum() else '_' for c in term)
-            task_id = f"search_{location_code}_{safe_term}"
+            task_id = f"search_{safe_term}"
             
             status_badge = "success" if completed else "warning"
             status_text = "Completed" if completed else "Pending"
@@ -563,41 +593,79 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
             <div class="card mb-3">
                 <div class="card-header expandable-row" onclick="toggleDetails('search-{location_code}-{idx}')">
                     <span id="icon-search-{location_code}-{idx}" class="expand-icon">▶</span>
-                    Search Term: "{term}" - {count} searches from {sessions} sessions
+                    Search Term: "{term}" - {total_searches} searches from {unique_sessions} sessions ({unique_users} unique users)
                     <span class="badge bg-{status_badge} float-end">{status_text}</span>
                 </div>
                 <div id="search-{location_code}-{idx}" class="card-body expanded-content">
+                    <div class="mb-3">
+                        <h6>Search Summary</h6>
+                        <p>
+                            <strong>Search Term:</strong> "{term}"<br>
+                            <strong>Total Searches:</strong> {total_searches}<br>
+                            <strong>Unique Sessions:</strong> {unique_sessions}<br>
+                            <strong>Unique Users:</strong> {unique_users}
+                        </p>
+                    </div>
+                    
+                    <h6>Users Who Searched for "{term}"</h6>
                     <div class="table-responsive">
                         <table class="table table-bordered table-sm">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Search Details</th>
-                                    <th>Value</th>
+                                    <th>Customer</th>
+                                    <th>Company</th>
+                                    <th>Contact</th>
+                                    <th>Search Date</th>
                                 </tr>
                             </thead>
                             <tbody>
+            """
+            
+            # Parse user details
+            if user_details_str:
+                user_entries = user_details_str.split(';;')
+                for user_entry in user_entries:
+                    if user_entry and user_entry.strip():
+                        parts = user_entry.split('|')
+                        if len(parts) >= 7:
+                            user_name = parts[0] or 'Unknown'
+                            user_email = parts[1] or ''
+                            user_company = parts[2] or '-'
+                            user_phone = parts[3] or ''
+                            timestamp = parts[4]
+                            session_id = parts[5]
+                            user_id = parts[6]
+                            
+                            # Format timestamp
+                            search_date = ''
+                            if timestamp:
+                                try:
+                                    search_date = datetime.fromtimestamp(int(timestamp) / 1000000).strftime('%Y-%m-%d %H:%M')
+                                except:
+                                    search_date = 'N/A'
+                            
+                            html += f"""
                                 <tr>
-                                    <td>Search Term</td>
-                                    <td><strong>{term}</strong></td>
+                                    <td>{user_name}</td>
+                                    <td>{user_company}</td>
+                                    <td>{user_email}<br>{user_phone}</td>
+                                    <td>{search_date}</td>
                                 </tr>
+                            """
+            else:
+                html += """
                                 <tr>
-                                    <td>Total Search Count</td>
-                                    <td>{count}</td>
+                                    <td colspan="4" class="text-center text-muted">No user details available</td>
                                 </tr>
-                                <tr>
-                                    <td>Unique Sessions</td>
-                                    <td>{sessions}</td>
-                                </tr>
-                                <tr>
-                                    <td>Search Type</td>
-                                    <td>No Results Found</td>
-                                </tr>
-                                <tr>
-                                    <td>Suggested Action</td>
-                                    <td>Review inventory for "{term}" or similar products</td>
-                                </tr>
+                """
+            
+            html += f"""
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <strong>Suggested Action:</strong> Review inventory for "{term}" and contact the above customers about availability or suggest similar products.
                     </div>
                     
                     <div class="row g-3 mt-3">

@@ -130,7 +130,7 @@ export default function DashboardPage() {
         <div className="space-y-4">
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            Activity Timeline
+              Activity Timeline
           </h3>
           {loading ? (
             <Skeleton className="h-[400px]" />
@@ -140,31 +140,31 @@ export default function DashboardPage() {
         </div>
 
         {/* Location Breakdown - Only show when no location is selected */}
-        {!selectedLocation && (
+            {!selectedLocation && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <MapPin className="h-5 w-5" />
               Performance by Location
             </h3>
-            {loading ? (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <Skeleton key={i} className="h-[200px]" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {locationStats.map((location) => (
-                  <LocationStatsCard
-                    key={location.locationId}
-                    stats={location}
-                    onClick={() => setSelectedLocation(location.locationId)}
-                  />
-                ))}
+                {loading ? (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <Skeleton key={i} className="h-[200px]" />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {locationStats.map((location) => (
+                      <LocationStatsCard
+                        key={location.locationId}
+                        stats={location}
+                        onClick={() => setSelectedLocation(location.locationId)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
-        )}
       </div>
     </DashboardLayout>
   )

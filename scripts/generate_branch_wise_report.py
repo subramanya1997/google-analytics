@@ -4,13 +4,38 @@ Generate branch-wise email reports for sales teams with task summaries
 """
 
 import sqlite3
+from urllib.parse import urlparse
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 import os
-import argparse
+from datetime import datetime
+from urllib.parse import urlparse
+import htmlmin
+from pynliner import Pynliner
 
-def get_db_connection(db_path: str):
+DB_PATH = 'db/branch_wise_location.db'
+
+HEAD_CONTENT = """
+<style>
+    body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; background-color: #f8f9fa; color: #333; }
+    .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; }
+    .header h1 { font-size: 24px; margin: 0; }
+    .header p { font-size: 16px; margin: 0; color: #6c757d; }
+    h2 { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
+    h4 { font-size: 18px; margin-top: 20px; margin-bottom: 10px; }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { padding: 8px 12px; border: 1px solid #dee2e6; text-align: left; }
+    .table th { background-color: #f2f2f2; }
+    .text-center { text-align: center; }
+    hr { border: 0; border-top: 1px solid #dee2e6; margin: 20px 0; }
+    a { color: #007bff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+</style>
+"""
+
+def create_connection(db_path: str):
     """Get database connection"""
     return sqlite3.connect(db_path)
 
@@ -164,47 +189,20 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
     
     # Get failed searches grouped by term with user details
     sample_query = """
-    WITH search_term_stats AS (
-        SELECT 
-            param_no_search_results_term as search_term,
-            COUNT(*) as total_searches,
-            COUNT(DISTINCT param_ga_session_id) as unique_sessions,
-            COUNT(DISTINCT user_prop_webuserid) as unique_users
-        FROM no_search_results
-        WHERE param_no_search_results_term IS NOT NULL
-        AND user_prop_default_branch_id = ?
-        GROUP BY param_no_search_results_term
-    )
-    SELECT 
-        sts.search_term,
-        sts.total_searches,
-        sts.unique_sessions,
-        sts.unique_users,
-        GROUP_CONCAT(
-            CASE 
-                WHEN u.name IS NOT NULL THEN 
-                    u.name || '|' || COALESCE(u.email, '') || '|' || 
-                    COALESCE(u.customer_name, '') || '|' || 
-                    COALESCE(u.office_phone, u.cell_phone, '') || '|' ||
-                    nsr.event_timestamp || '|' ||
-                    nsr.param_ga_session_id || '|' ||
-                    CAST(nsr.user_prop_webuserid AS TEXT)
-                ELSE NULL
-            END, ';;'
-        ) as user_details,
-        MAX(tt.completed) as completed,
-        MAX(tt.notes) as notes
-    FROM search_term_stats sts
-    JOIN no_search_results nsr ON nsr.param_no_search_results_term = sts.search_term
-    LEFT JOIN users u ON CAST(nsr.user_prop_webuserid AS INTEGER) = u.user_id
-    LEFT JOIN task_tracking tt ON tt.task_id = ('SEARCH_' || nsr.param_no_search_results_term) AND tt.task_type = 'search'
-    WHERE nsr.user_prop_default_branch_id = ?
-    GROUP BY sts.search_term, sts.total_searches, sts.unique_sessions, sts.unique_users
-    ORDER BY sts.total_searches DESC
-    LIMIT 15
+    SELECT
+        s.param_no_search_results_term,
+        COUNT(s.param_no_search_results_term) as total_searches,
+        COUNT(DISTINCT s.param_ga_session_id) as unique_sessions,
+        '[' || GROUP_CONCAT(DISTINCT json_object('name', u.name, 'company', u.customer_name, 'email', u.email, 'phone', COALESCE(u.cell_phone, u.office_phone, ''))) || ']' as user_details_json
+    FROM no_search_results s
+    LEFT JOIN users u ON CAST(s.user_prop_webuserid AS INTEGER) = u.user_id
+    WHERE s.user_prop_default_branch_id = ? AND s.param_no_search_results_term IS NOT NULL
+    GROUP BY s.param_no_search_results_term
+    ORDER BY total_searches DESC
+    LIMIT 10
     """
     
-    samples = conn.execute(sample_query, (location_id, location_id)).fetchall()
+    samples = conn.execute(sample_query, (location_id,)).fetchall()
     
     return {
         'unique_terms': result[0] or 0,
@@ -246,7 +244,7 @@ def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id:
         u.customer_name as company,
         COUNT(DISTINCT pv.param_page_location) as pages_viewed,
         MAX(pv.event_timestamp) as last_visit,
-        GROUP_CONCAT(DISTINCT pv.param_page_title) as pages_visited,
+        '[' || GROUP_CONCAT(DISTINCT json_object('title', pv.param_page_title, 'url', pv.param_page_location)) || ']' as pages_visited_json,
         tt.completed,
         tt.notes
     FROM page_view pv
@@ -295,515 +293,336 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
         return ""
     
     html = f"""
-        <div class="location-section mb-5">
-            <!-- Location Summary Card -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">{location_name} ({location_code}) - Overview</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Metric</th>
-                                    <th>Count</th>
-                                    <th>Value/Details</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>Purchases</td>
-                                    <td><span class="badge bg-success">{data['purchases']['total']}</span></td>
-                                    <td>${data['purchases']['total_revenue']:.2f} total revenue</td>
-                                </tr>
-                                <tr>
-                                    <td>Cart Abandonments</td>
-                                    <td><span class="badge bg-warning">{data['cart_abandonment']['total']}</span></td>
-                                    <td>${data['cart_abandonment']['total_value']:.2f} at risk</td>
-                                </tr>
-                                <tr>
-                                    <td>Failed Searches</td>
-                                    <td><span class="badge bg-danger">{data['search_no_results']['unique_terms']}</span></td>
-                                    <td>{data['search_no_results']['total_searches']} total searches</td>
-                                </tr>
-                                <tr>
-                                    <td>Repeat Visits (No Purchase)</td>
-                                    <td><span class="badge bg-info">{data['repeat_visits']['total']}</span></td>
-                                    <td>{data['repeat_visits']['avg_pages']:.1f} avg pages viewed</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <!-- Location Summary Table -->
+            <div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>Count</th>
+                            <th>Value/Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Purchases</td>
+                            <td>{data['purchases']['total']}</td>
+                            <td>${data['purchases']['total_revenue']:.2f} total revenue</td>
+                        </tr>
+                        <tr>
+                            <td>Cart Abandonments</td>
+                            <td>{data['cart_abandonment']['total']}</td>
+                            <td>${data['cart_abandonment']['total_value']:.2f} at risk</td>
+                        </tr>
+                        <tr>
+                            <td>Failed Searches</td>
+                            <td>{data['search_no_results']['unique_terms']}</td>
+                            <td>{data['search_no_results']['total_searches']} total searches</td>
+                        </tr>
+                        <tr>
+                            <td>Repeat Visits (No Purchase)</td>
+                            <td>{data['repeat_visits']['total']}</td>
+                            <td>{data['repeat_visits']['avg_pages']:.1f} avg pages viewed</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
     """
     
     # Add purchase details if any
     if data['purchases']['total'] > 0:
         html += f"""
-            <h4 class="mt-4 mb-3">Purchase Follow-up Tasks</h4>
+            <h4>Purchase Follow-up Tasks</h4>
+            <div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Customer Details</th>
+                            <th>Products</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         """
         
-        for idx, sample in enumerate(data['purchases']['samples']):
-            customer = sample[4] or 'Unknown'
-            company = sample[6] or '-'
+        for sample in data['purchases']['samples']:
+            customer_name = sample[4] or 'Unknown'
+            company_name = sample[6] or ''
             revenue = float(sample[1]) if sample[1] else 0
             trans_id = sample[0] or '-'
             email = sample[5] or ''
             phone = sample[7] or sample[8] or ''
             items_json = sample[3]
-            completed = sample[13]
-            notes = sample[14]
-            hostname = sample[15] or 'example.com'
-            task_id = f"purchase_{trans_id}"
-            
-            status_badge = "success" if completed else "warning"
-            status_text = "Completed" if completed else "Pending"
-            
-            html += f"""
-            <div class="card mb-3">
-                <div class="card-header expandable-row" onclick="toggleDetails('purchase-{location_code}-{idx}')">
-                    <span id="icon-purchase-{location_code}-{idx}" class="expand-icon">▶</span>
-                    {customer} - {company} - ${revenue:.2f} - ID: {trans_id}
-                    <span class="badge bg-{status_badge} float-end">{status_text}</span>
-                </div>
-                <div id="purchase-{location_code}-{idx}" class="card-body expanded-content">
-                    <p><strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}</p>
-                    
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Brand</th>
-                                    <th>Category</th>
-                                    <th>Qty</th>
-                                    <th>Price</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-            """
-            
-            items = parse_items_json(items_json)
-            if items:
-                # Remove duplicates based on item_id and aggregate quantities
-                unique_items = {}
-                for item in items:
-                    item_id = item.get('item_id', '')
-                    if item_id:
-                        if item_id in unique_items:
-                            # Add quantities if duplicate
-                            unique_items[item_id]['quantity'] = str(int(unique_items[item_id]['quantity']) + int(item.get('quantity', 1)))
-                            # Keep the most complete category information
-                            if item.get('item_category') and item.get('item_category') != '(not set)':
-                                unique_items[item_id]['item_category'] = item.get('item_category')
+
+            customer_details_parts = [customer_name]
+            if company_name:
+                customer_details_parts.append(company_name)
+            customer_details_parts.append(f"ID: {trans_id}")
+            customer_details_parts.append(f"Total: ${revenue:.2f}")
+            if email:
+                customer_details_parts.append(f"Contact: <a href='mailto:{email}'>{email}</a>")
+            if phone:
+                customer_details_parts.append(phone)
+            customer_details = "<br>".join(customer_details_parts)
+
+            product_details = []
+            if items_json:
+                try:
+                    items = json.loads(items_json)
+                    for item in items:
+                        item_name = item.get('item_name', 'N/A')
+                        quantity = int(item.get('quantity', 1))
+                        item_id = item.get('item_id', '')
+                        if item_id != '':
+                            product_details.append(f"{quantity} x {item_name} ({item_id})")
                         else:
-                            unique_items[item_id] = item.copy()
-                
-                # Display unique items in table
-                for item in unique_items.values():
-                    item_name = item.get('item_name', 'Unknown Product')
-                    quantity = int(item.get('quantity', 1))
-                    price = float(item.get('price', 0))
-                    item_id = item.get('item_id', '')
-                    item_brand = item.get('item_brand', '-')
-                    item_category = item.get('item_category', '-')
-                    
-                    html += f"""
-                                <tr>
-                                    <td>{item_name}<br><small>SKU: {item_id}</small></td>
-                                    <td>{item_brand}</td>
-                                    <td>{item_category}</td>
-                                    <td class="text-center">{quantity}</td>
-                                    <td class="text-end">${price:.2f}</td>
-                                    <td class="text-end">${quantity * price:.2f}</td>
-                                </tr>
-                    """
+                            product_details.append(f"{quantity} x {item_name}")
+                except (json.JSONDecodeError, TypeError):
+                    product_details.append("Error parsing items")
             
+            products_str = "<br>".join(product_details) if product_details else "N/A"
+
             html += f"""
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
-                                <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
-                            <input type="date" class="form-control" id="followUpDate-{task_id}">
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <label for="notes-{task_id}" class="form-label">Notes</label>
-                        <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
-                        <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                    </div>
-                </div>
-            </div>
+                        <tr>
+                            <td>{customer_details}</td>
+                            <td>{products_str}</td>
+                        </tr>
             """
+            
+        html += """
+                    </tbody>
+                </table>
+            </div>
+        """
         
     # Add cart abandonment details if any
     if data['cart_abandonment']['total'] > 0:
         html += f"""
-            <h4 class="mt-4 mb-3">Cart Abandonment Recovery Tasks</h4>
+            <h4>Cart Abandonment Recovery Tasks</h4>
+            <div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Customer Details</th>
+                            <th>Products</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         """
         
-        for idx, sample in enumerate(data['cart_abandonment']['samples']):
-            customer = sample[1] or 'Unknown'
+        for sample in data['cart_abandonment']['samples']:
+            cart_id = sample[0]
+            customer_name = sample[1] or 'Unknown'
             email = sample[2] or ''
-            company = sample[3] or '-'
+            company_name = sample[3] or ''
             office_phone = sample[4] or ''
             cell_phone = sample[5] or ''
-            items_count = sample[6] or 0
             cart_value = float(sample[7]) if sample[7] else 0
-            all_items_json = sample[9] or ''
-            completed = sample[10]
-            notes = sample[11]
-            hostname = sample[12] or 'example.com'
-            session_id = sample[0]
-            task_id = f"cart_{session_id}"
-            
-            phone = office_phone or cell_phone or ''
-            
-            status_badge = "success" if completed else "warning"
-            status_text = "Completed" if completed else "Pending"
+            items_json = sample[9]  # Corrected index for all_items_json
+            phone = cell_phone or office_phone
+
+            customer_details_parts = [customer_name]
+            if company_name:
+                customer_details_parts.append(company_name)
+            customer_details_parts.append(f"Cart ID: {cart_id}")
+            customer_details_parts.append(f"Cart Value: ${cart_value:.2f}")
+            if email:
+                customer_details_parts.append(f"Contact: <a href='mailto:{email}'>{email}</a>")
+            if phone:
+                customer_details_parts.append(phone)
+            customer_details = "<br>".join(customer_details_parts)
+
+            product_details = []
+            if items_json:
+                # Handle concatenated JSON strings from GROUP_CONCAT
+                cart_items = []
+                json_parts = items_json.split('||SEPARATOR||')
+                for json_part in json_parts:
+                    if json_part and json_part.strip() and json_part != 'null':
+                        try:
+                            items = json.loads(json_part)
+                            if isinstance(items, list):
+                                cart_items.extend(items)
+                        except (json.JSONDecodeError, TypeError):
+                            continue  # Ignore parts that fail to parse
+                
+                # Aggregate quantities for unique items
+                unique_items = {}
+                for item in cart_items:
+                    item_key = (item.get('item_id'), item.get('item_name'))
+                    if item_key in unique_items:
+                        unique_items[item_key]['quantity'] = unique_items[item_key].get('quantity', 0) + int(item.get('quantity', 1))
+                    else:
+                        unique_items[item_key] = item.copy()
+                        unique_items[item_key]['quantity'] = int(item.get('quantity', 1))
+
+                for item in unique_items.values():
+                    item_name = item.get('item_name', 'N/A')
+                    quantity = item.get('quantity', 1)
+                    item_id = item.get('item_id', '')
+                    if item_id != '':
+                        product_details.append(f"{quantity} x {item_name} ({item_id})")
+                    else:
+                        product_details.append(f"{quantity} x {item_name}")
+
+            if not product_details:
+                product_details.append("N/A")
+
+            products_str = "<br>".join(product_details)
 
             html += f"""
-            <div class="card mb-3">
-                <div class="card-header expandable-row" onclick="toggleDetails('cart-{location_code}-{idx}')">
-                    <span id="icon-cart-{location_code}-{idx}" class="expand-icon">▶</span>
-                    {customer} - {company} - ${cart_value:.2f} ({items_count} items)
-                    <span class="badge bg-{status_badge} float-end">{status_text}</span>
-                </div>
-                <div id="cart-{location_code}-{idx}" class="card-body expanded-content">
-                    <p><strong>Contact:</strong> {email or 'N/A'} | {phone or 'N/A'}</p>
-                    
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Product</th>
-                                    <th>Brand</th>
-                                    <th>Category</th>
-                                    <th>Qty</th>
-                                    <th>Price</th>
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <tr>
+                            <td>{customer_details}</td>
+                            <td>{products_str}</td>
+                        </tr>
             """
             
-            # Parse all items JSON
-            cart_items = []
-            if all_items_json:
-                json_parts = all_items_json.split('||SEPARATOR||')
-                for json_part in json_parts:
-                    if json_part and json_part != 'null':
-                        items = parse_items_json(json_part)
-                        cart_items.extend(items)
-            
-            # Remove duplicates based on item_id
-            unique_items = {}
-            for item in cart_items:
-                item_id = item.get('item_id', '')
-                if item_id:
-                    if item_id in unique_items:
-                        # Add quantities if duplicate
-                        unique_items[item_id]['quantity'] = str(int(unique_items[item_id]['quantity']) + int(item.get('quantity', 1)))
-                    else:
-                        unique_items[item_id] = item
-            
-            # Display items in table
-            for item in unique_items.values():
-                item_name = item.get('item_name', 'Unknown Product')
-                item_id = item.get('item_id', '')
-                item_brand = item.get('item_brand', '-')
-                item_category = item.get('item_category', '-')
-                quantity = int(item.get('quantity', 1))
-                price = float(item.get('price', 0))
-                
-                html += f"""
-                                <tr>
-                                    <td>{item_name}<br><small>SKU: {item_id}</small></td>
-                                    <td>{item_brand}</td>
-                                    <td>{item_category}</td>
-                                    <td class="text-center">{quantity}</td>
-                                    <td class="text-end">${price:.2f}</td>
-                                    <td class="text-end">${quantity * price:.2f}</td>
-                                </tr>
-                """
-            
-            html += f"""
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
-                                <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
-                            <input type="date" class="form-control" id="followUpDate-{task_id}">
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <label for="notes-{task_id}" class="form-label">Notes</label>
-                        <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
-                        <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                    </div>
-                </div>
+        html += """
+                    </tbody>
+                </table>
             </div>
-            """
+        """
     
     # Add failed searches if any
     if data['search_no_results']['total_searches'] > 0:
         html += f"""
-            <h4 class="mt-4 mb-3">Failed Search Recovery Tasks</h4>
+            <h4>Failed Search Recovery Tasks</h4>
+            <div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Search Details</th>
+                            <th>Customers</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         """
         
-        for idx, sample in enumerate(data['search_no_results']['samples']):
+        for sample in data['search_no_results']['samples']:
             term = sample[0] or '-'
             total_searches = sample[1] or 0
             unique_sessions = sample[2] or 0
-            unique_users = sample[3] or 0
-            user_details_str = sample[4] or ''
-            completed = sample[5]
-            notes = sample[6]
+            user_details_json = sample[3] or '[]'
             
-            # Sanitize term for use in HTML id
-            safe_term = "".join(c if c.isalnum() else '_' for c in term)
-            task_id = f"search_{safe_term}"
+            search_details = f"<strong>Term:</strong> {term}<br><strong>Total Searches:</strong> {total_searches}<br><strong>Unique Sessions:</strong> {unique_sessions}"
             
-            status_badge = "success" if completed else "warning"
-            status_text = "Completed" if completed else "Pending"
+            customers_html_parts = []
+            try:
+                user_details = json.loads(user_details_json)
+                if not user_details or not any(user_details):
+                    customers_html_parts.append("No user details available")
+                else:
+                    for user in user_details:
+                        if not user or not user.get('name'): continue
+                        user_name = user.get('name') or 'Unknown'
+                        company = user.get('company') or ''
+                        email = user.get('email') or ''
+                        phone = user.get('phone') or ''
+                        
+                        customer_str_parts = [user_name]
+                        if company:
+                            customer_str_parts.append(company)
+                        if email:
+                            customer_str_parts.append(f"<a href='mailto:{email}'>{email}</a>")
+                        if phone:
+                            customer_str_parts.append(phone)
+                        customers_html_parts.append("<br>".join(customer_str_parts))
+            except json.JSONDecodeError:
+                customers_html_parts.append("Error parsing user details")
+                
+            customers_html = "<hr style='margin: 5px 0;'>".join(customers_html_parts)
             
             html += f"""
-            <div class="card mb-3">
-                <div class="card-header expandable-row" onclick="toggleDetails('search-{location_code}-{idx}')">
-                    <span id="icon-search-{location_code}-{idx}" class="expand-icon">▶</span>
-                    Search Term: "{term}" - {total_searches} searches from {unique_sessions} sessions ({unique_users} unique users)
-                    <span class="badge bg-{status_badge} float-end">{status_text}</span>
-                </div>
-                <div id="search-{location_code}-{idx}" class="card-body expanded-content">
-                    <div class="mb-3">
-                        <h6>Search Summary</h6>
-                        <p>
-                            <strong>Search Term:</strong> "{term}"<br>
-                            <strong>Total Searches:</strong> {total_searches}<br>
-                            <strong>Unique Sessions:</strong> {unique_sessions}<br>
-                            <strong>Unique Users:</strong> {unique_users}
-                        </p>
-                    </div>
-                    
-                    <h6>Users Who Searched for "{term}"</h6>
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Customer</th>
-                                    <th>Company</th>
-                                    <th>Contact</th>
-                                    <th>Search Date</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <tr>
+                            <td>{search_details}</td>
+                            <td>{customers_html}</td>
+                        </tr>
             """
             
-            # Parse user details
-            if user_details_str:
-                user_entries = user_details_str.split(';;')
-                for user_entry in user_entries:
-                    if user_entry and user_entry.strip():
-                        parts = user_entry.split('|')
-                        if len(parts) >= 7:
-                            user_name = parts[0] or 'Unknown'
-                            user_email = parts[1] or ''
-                            user_company = parts[2] or '-'
-                            user_phone = parts[3] or ''
-                            timestamp = parts[4]
-                            session_id = parts[5]
-                            user_id = parts[6]
-                            
-                            # Format timestamp
-                            search_date = ''
-                            if timestamp:
-                                try:
-                                    search_date = datetime.fromtimestamp(int(timestamp) / 1000000).strftime('%Y-%m-%d %H:%M')
-                                except:
-                                    search_date = 'N/A'
-                            
-                            html += f"""
-                                <tr>
-                                    <td>{user_name}</td>
-                                    <td>{user_company}</td>
-                                    <td>{user_email}<br>{user_phone}</td>
-                                    <td>{search_date}</td>
-                                </tr>
-                            """
-            else:
-                html += """
-                                <tr>
-                                    <td colspan="4" class="text-center text-muted">No user details available</td>
-                                </tr>
-                """
-            
-            html += f"""
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="alert alert-info">
-                        <strong>Suggested Action:</strong> Review inventory for "{term}" and contact the above customers about availability or suggest similar products.
-                    </div>
-                    
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
-                                <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
-                            <input type="date" class="form-control" id="followUpDate-{task_id}">
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <label for="notes-{task_id}" class="form-label">Notes</label>
-                        <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
-                        <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                    </div>
-                </div>
+        html += """
+                    </tbody>
+                </table>
             </div>
-            """
-
+        """
     # Add repeat visits if any
     if data['repeat_visits']['total'] > 0:
         html += f"""
-            <h4 class="mt-4 mb-3">Repeat Visit Conversion Tasks</h4>
+            <h4>Repeat Visit Conversion Tasks</h4>
+            <div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Customer Details</th>
+                            <th>Visited Pages (Top 5 by Base URL)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
         """
         
-        for idx, sample in enumerate(data['repeat_visits']['samples']):
+        for sample in data['repeat_visits']['samples']:
             customer = sample[1] or 'Unknown'
             email = sample[2] or ''
             company = sample[3] or '-'
             pages_viewed = sample[4] or 0
             last_visit_raw = sample[5]
             last_visit = datetime.fromtimestamp(int(last_visit_raw) / 1000000).strftime('%Y-%m-%d') if last_visit_raw else 'N/A'
-            pages_visited = sample[6] or ''
-            completed = sample[7]
-            notes = sample[8]
-            session_id = sample[0]
-            user_id = customer
-            task_id = f"REPEAT_{session_id}_{user_id}"
-            
-            status_badge = "success" if completed else "warning"
-            status_text = "Completed" if completed else "Pending"
+            pages_visited_json = sample[6] or ''
+
+            customer_details_parts = [customer]
+            if company and company != '-':
+                customer_details_parts.append(company)
+            customer_details_parts.append(f"Pages Viewed: {pages_viewed}")
+            if email:
+                customer_details_parts.append(f"Contact: <a href='mailto:{email}'>{email}</a>")
+            customer_details = "<br>".join(customer_details_parts)
+
+            pages_summary_parts = []
+            if pages_visited_json:
+                try:
+                    pages_data = json.loads(pages_visited_json)
+                    base_url_counts = {}
+
+                    for page in pages_data:
+                        if page and page.get('title') and page.get('url'):
+                            url = page['url']
+                            parsed_url = urlparse(url)
+                            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+                            
+                            if base_url not in base_url_counts:
+                                base_url_counts[base_url] = {'count': 0, 'titles': set()}
+                            
+                            base_url_counts[base_url]['count'] += 1
+                            base_url_counts[base_url]['titles'].add(page['title'])
+
+                    sorted_bases = sorted(base_url_counts.items(), key=lambda item: item[1]['count'], reverse=True)
+
+                    for base_url, data in sorted_bases:
+                        count = data['count']
+                        title_text = ", ".join(list(data['titles'])[:2])
+                        if len(data['titles']) > 2:
+                            title_text += "..."
+                        
+                        pages_summary_parts.append(f"{count}x <a href='{base_url}' target='_blank'>{title_text}</a>")
+
+                except (json.JSONDecodeError, TypeError):
+                    pages_summary_parts.append("Could not parse visited pages data.")
+
+            pages_summary = "<br>".join(pages_summary_parts) if pages_summary_parts else "N/A"
 
             html += f"""
-            <div class="card mb-3">
-                <div class="card-header expandable-row" onclick="toggleDetails('visit-{location_code}-{idx}')">
-                    <span id="icon-visit-{location_code}-{idx}" class="expand-icon">▶</span>
-                    {customer} - {company} - {pages_viewed} pages viewed
-                    <span class="badge bg-{status_badge} float-end">{status_text}</span>
-                </div>
-                <div id="visit-{location_code}-{idx}" class="card-body expanded-content">
-                    <p><strong>Contact:</strong> {email or 'N/A'}</p>
-                    <p><strong>Last Visit:</strong> {last_visit}</p>
-                    
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-sm">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Page Title</th>
-                                    <th>Visit Count</th>
-                                    <th>Category</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                        <tr>
+                            <td>{customer_details}</td>
+                            <td>{pages_summary}</td>
+                        </tr>
             """
             
-            # Parse and display visited pages
-            if pages_visited:
-                # Split pages by comma or other delimiter
-                pages = [p.strip() for p in pages_visited.split(',') if p.strip()]
-                # Create a dictionary to count page visits
-                page_counts = {}
-                for page in pages:
-                    if page in page_counts:
-                        page_counts[page] += 1
-                    else:
-                        page_counts[page] = 1
-                
-                # Display each unique page with its count
-                for page_title, count in page_counts.items():
-                    # Determine category based on page title
-                    category = 'Product Page'
-                    if 'home' in page_title.lower():
-                        category = 'Homepage'
-                    elif 'cart' in page_title.lower():
-                        category = 'Cart'
-                    elif 'checkout' in page_title.lower():
-                        category = 'Checkout'
-                    elif 'search' in page_title.lower():
-                        category = 'Search'
-                    
-                    html += f"""
-                                <tr>
-                                    <td>{page_title}</td>
-                                    <td class="text-center">{count}</td>
-                                    <td>{category}</td>
-                                </tr>
-                    """
-            else:
-                html += """
-                                <tr>
-                                    <td colspan="3" class="text-center text-muted">No page details available</td>
-                                </tr>
-                """
-            
-            html += f"""
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                    <div class="row g-3 mt-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="taskCompletedCheckbox-{task_id}" {'checked' if completed else ''}>
-                                <label class="form-check-label" for="taskCompletedCheckbox-{task_id}">Task Completed</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="followUpDate-{task_id}" class="form-label">Next Follow-up Date</label>
-                            <input type="date" class="form-control" id="followUpDate-{task_id}">
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <label for="notes-{task_id}" class="form-label">Notes</label>
-                        <textarea id="notes-{task_id}" class="form-control" rows="3">{notes or ''}</textarea>
-                        <button class="btn btn-primary mt-2" onclick="alert('Notes would be saved in the dashboard for task {task_id}');">Save Notes</button>
-                    </div>
-                </div>
+        html += """
+                    </tbody>
+                </table>
             </div>
-            """
+        """
     
     html += """
-        </div>
+        <hr class="my-5">
     """
     
     return html
@@ -817,7 +636,7 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     # Format date
     report_date = datetime.now().strftime("%B %d, %Y")
     
-    # Start HTML with Bootstrap
+    # Start HTML
     html = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -825,71 +644,13 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Branch-wise Sales Task Report - {report_date}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            background-color: #f8f9fa;
-            padding: 20px;
-        }}
-        .expandable-row {{
-            cursor: pointer;
-        }}
-        .expanded-content {{
-            display: none;
-        }}
-        .expand-icon {{
-            font-family: monospace;
-            margin-right: 8px;
-        }}
-        .location-section {{
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .overall-summary {{
-            background-color: #e8f4f8;
-            padding: 20px;
-            margin-bottom: 30px;
-            border-radius: 8px;
-            border: 1px solid #b0d4e3;
-        }}
-        .metric {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #2c5aa0;
-        }}
-        @media print {{
-            .expandable-row {{
-                cursor: default;
-            }}
-            .location-section {{
-                page-break-inside: avoid;
-            }}
-        }}
-    </style>
-    <script>
-        function toggleDetails(id) {{
-            const content = document.getElementById(id);
-            const icon = document.getElementById('icon-' + id);
-            if (content.style.display === 'block') {{
-                content.style.display = 'none';
-                if (icon) icon.innerHTML = '▶';
-            }} else {{
-                content.style.display = 'block';
-                if (icon) icon.innerHTML = '▼';
-            }}
-        }}
-    </script>
+    {HEAD_CONTENT}
 </head>
 <body>
     <div class="container">
-        <div class="row mb-4">
-            <div class="col">
-                <h1 class="border-bottom pb-2">Branch-wise Sales Task Report</h1>
-                <p class="text-muted">Report Date: {report_date}</p>
-            </div>
+        <div class="header">
+            <h1>Branch-wise Sales Task Report</h1>
+            <p>Report Date: {report_date}</p>
         </div>
     """
     
@@ -929,10 +690,10 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     
     # Add overall summary
     html += f"""
-        <div class="overall-summary">
+        <div>
             <h2>Overall Summary - All Branches</h2>
-            <div class="table-responsive">
-                <table class="table table-hover">
+            <div>
+                <table class="table">
                     <thead>
                         <tr>
                             <th>Metric</th>
@@ -943,22 +704,22 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
                     <tbody>
                         <tr>
                             <td>Total Purchases</td>
-                            <td><span class="metric">{overall_stats['total_purchases']}</span></td>
+                            <td>{overall_stats['total_purchases']}</td>
                             <td>${overall_stats['total_revenue']:.2f}</td>
                         </tr>
                         <tr>
                             <td>Total Cart Abandonments</td>
-                            <td><span class="metric">{overall_stats['total_carts']}</span></td>
+                            <td>{overall_stats['total_carts']}</td>
                             <td>${overall_stats['total_cart_value']:.2f}</td>
                         </tr>
                         <tr>
                             <td>Total Failed Searches</td>
-                            <td><span class="metric">{overall_stats['total_searches']}</span></td>
+                            <td>{overall_stats['total_searches']}</td>
                             <td>-</td>
                         </tr>
                         <tr>
                             <td>Total Repeat Visits (No Purchase)</td>
-                            <td><span class="metric">{overall_stats['total_repeat_visits']}</span></td>
+                            <td>{overall_stats['total_repeat_visits']}</td>
                             <td>-</td>
                         </tr>
                     </tbody>
@@ -984,119 +745,72 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
 </html>
     """
     
-    return html
+    # Inline CSS
+    p = Pynliner()
+    inlined_html = p.from_string(html).run()
+    inlined_html = htmlmin.minify(inlined_html, remove_empty_space=True)
+
+    return inlined_html
 
 def main():
     """Main function to generate the branch-wise email report"""
-    parser = argparse.ArgumentParser(description="Generate branch-wise email reports.")
-    parser.add_argument("--db-path", default="db/branch_wise_location.db", help="Path to the SQLite database.")
-    args = parser.parse_args()
-    
-    # Connect to database
-    conn = get_db_connection(args.db_path)
-    
-    try:
-        # Generate HTML report
-        html_report = generate_branch_wise_report(conn)
-        
-        # Save to file
-        report_dir = "branch_reports"
-        os.makedirs(report_dir, exist_ok=True)
-        report_filename = os.path.join(report_dir, f"D_All_report_{datetime.now().strftime('%Y%m%d')}.html")
+    # Create reports directory if it doesn't exist
+    if not os.path.exists('branch_reports'):
+        os.makedirs('branch_reports')
 
-        with open(report_filename, 'w', encoding='utf-8') as f:
-            f.write(html_report)
-        
-        print(f"Branch-wise report generated: {report_filename}")
-        
-        # Also generate individual reports for each location
-        locations = get_all_locations(conn)
-        
-        for location in locations:
-            location_data = {
-                'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
-                'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code']),
-                'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code']),
-                'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
-            }
-            
-            # Skip if no data
-            if (location_data['purchases']['total'] == 0 and 
-                location_data['cart_abandonment']['total'] == 0 and 
-                location_data['search_no_results']['total_searches'] == 0 and 
-                location_data['repeat_visits']['total'] == 0):
-                continue
-            
-            # Generate individual report
-            individual_html = f"""
+    conn = create_connection(DB_PATH)
+    if conn is not None:
+        try:
+            # Generate and save the combined report
+            html_report = generate_branch_wise_report(conn)
+            report_filename = f"branch_reports/D_All_report_{datetime.now().strftime('%Y%m%d')}.html"
+            with open(report_filename, 'w', encoding='utf-8') as f:
+                f.write(html_report)
+            print(f"Branch-wise report generated: {report_filename}")
+
+            # Generate and save individual reports for each location
+            locations = get_all_locations(conn)
+
+            for location in locations:
+                p = Pynliner()
+                location_data = {
+                    'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
+                    'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code']),
+                    'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code']),
+                    'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
+                }
+
+                # Skip if no data for this location
+                if not any(data.get('total', 0) > 0 for data in location_data.values()) and \
+                   location_data['search_no_results'].get('unique_terms', 0) == 0:
+                    continue
+
+                individual_html_template = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang=\"en\">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{location['warehouse_name']} - {location['city']} ({location['warehouse_code']}) - Sales Task Report</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body {{
-            font-family: Arial, sans-serif;
-            background-color: #f8f9fa;
-            padding: 20px;
-        }}
-        .expandable-row {{
-            cursor: pointer;
-        }}
-        .expanded-content {{
-            display: none;
-        }}
-        .expand-icon {{
-            font-family: monospace;
-            margin-right: 8px;
-        }}
-        .location-section {{
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-    </style>
-    <script>
-        function toggleDetails(id) {{
-            const content = document.getElementById(id);
-            const icon = document.getElementById('icon-' + id);
-            if (content.style.display === 'block') {{
-                content.style.display = 'none';
-                if (icon) icon.innerHTML = '▶';
-            }} else {{
-                content.style.display = 'block';
-                if (icon) icon.innerHTML = '▼';
-            }}
-        }}
-    </script>
+    <meta charset=\"UTF-8\">
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+    <title>{location['warehouse_name']} Report - {datetime.now().strftime('%B %d, %Y')}</title>
+    {HEAD_CONTENT}
 </head>
 <body>
-    <div class="container">
-        <div class="row mb-4">
-            <div class="col">
-                <h1 class="border-bottom pb-2">{location['warehouse_name']} - {location['city']} ({location['warehouse_code']})</h1>
-                <p class="text-muted">Report Date: {datetime.now().strftime("%B %d, %Y")}</p>
-            </div>
-        </div>
+    <div class=\"container\">
         {generate_location_section(location, location_data)}
     </div>
 </body>
 </html>
                 """
                 
-            # Save individual report
-            individual_filename = os.path.join(report_dir, f"{location['warehouse_code']}_report_{datetime.now().strftime('%Y%m%d')}.html")
+                inlined_html = p.from_string(individual_html_template).run()
+                minified_html = htmlmin.minify(inlined_html, remove_empty_space=True)
 
-            with open(individual_filename, 'w', encoding='utf-8') as f:
-                f.write(individual_html)
-            
-            print(f"Generated report for {location['warehouse_code']}: {individual_filename}")
-        
-    finally:
-        conn.close()
+                individual_filename = f"branch_reports/{location['warehouse_code']}_report_{datetime.now().strftime('%Y%m%d')}.html"
+                with open(individual_filename, 'w', encoding='utf-8') as f:
+                    f.write(minified_html)
+                print(f"Generated report for {location['warehouse_code']}: {individual_filename}")
+        finally:
+            conn.close()
 
-if __name__ == "__main__":
-    main() 
+if __name__ == '__main__':
+    main()

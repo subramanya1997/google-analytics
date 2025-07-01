@@ -1,0 +1,9 @@
+{
+    "server": "smtp.gmail.com",
+    "port": 587,
+    "use_tls": true,
+    "username": "your-email@gmail.com",
+    "password": "your-app-password",
+    "from_address": "Sales Analytics <analytics@company.com>",
+    "from_name": "Sales Analytics Team"
+} 

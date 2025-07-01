@@ -1,0 +1,155 @@
+{
+    "D01": {
+        "branch_name": "Downtown Branch",
+        "email": "john.doe@company.com",
+        "name": "John Doe",
+        "cc": "manager1@company.com",
+        "enabled": true
+    },
+    "D02": {
+        "branch_name": "Uptown Branch", 
+        "email": "jane.smith@company.com",
+        "name": "Jane Smith",
+        "cc": "",
+        "enabled": true
+    },
+    "D03": {
+        "branch_name": "West Side Branch",
+        "email": "bob.johnson@company.com",
+        "name": "Bob Johnson",
+        "cc": "manager2@company.com,regional@company.com",
+        "enabled": true
+    },
+    "D04": {
+        "branch_name": "East Side Branch",
+        "email": "alice.williams@company.com", 
+        "name": "Alice Williams",
+        "enabled": false
+    },
+    "D05": {
+        "branch_name": "North Branch",
+        "email": "charlie.brown@company.com",
+        "name": "Charlie Brown",
+        "enabled": true
+    },
+    "D06": {
+        "branch_name": "South Branch",
+        "email": "diana.davis@company.com",
+        "name": "Diana Davis",
+        "enabled": true
+    },
+    "D07": {
+        "branch_name": "Central Branch",
+        "email": "edward.miller@company.com",
+        "name": "Edward Miller",
+        "enabled": true
+    },
+    "D08": {
+        "branch_name": "Airport Branch",
+        "email": "fiona.wilson@company.com",
+        "name": "Fiona Wilson",
+        "enabled": true
+    },
+    "D09": {
+        "branch_name": "Mall Branch",
+        "email": "george.moore@company.com",
+        "name": "George Moore",
+        "enabled": true
+    },
+    "D10": {
+        "branch_name": "Industrial Branch",
+        "email": "helen.taylor@company.com",
+        "name": "Helen Taylor",
+        "enabled": true
+    },
+    "D11": {
+        "branch_name": "Suburban Branch",
+        "email": "ivan.anderson@company.com",
+        "name": "Ivan Anderson",
+        "enabled": true
+    },
+    "D12": {
+        "branch_name": "Harbor Branch",
+        "email": "julia.thomas@company.com",
+        "name": "Julia Thomas",
+        "enabled": true
+    },
+    "D13": {
+        "branch_name": "University Branch",
+        "email": "kevin.jackson@company.com",
+        "name": "Kevin Jackson",
+        "enabled": true
+    },
+    "D14": {
+        "branch_name": "Tech Park Branch",
+        "email": "laura.white@company.com",
+        "name": "Laura White",
+        "enabled": true
+    },
+    "D15": {
+        "branch_name": "Riverside Branch",
+        "email": "michael.harris@company.com",
+        "name": "Michael Harris",
+        "enabled": true
+    },
+    "D16": {
+        "branch_name": "Mountain View Branch",
+        "email": "nancy.martin@company.com",
+        "name": "Nancy Martin",
+        "enabled": true
+    },
+    "D17": {
+        "branch_name": "Lakeside Branch",
+        "email": "oliver.thompson@company.com",
+        "name": "Oliver Thompson",
+        "enabled": true
+    },
+    "D18": {
+        "branch_name": "Business District Branch",
+        "email": "patricia.garcia@company.com",
+        "name": "Patricia Garcia",
+        "enabled": true
+    },
+    "D19": {
+        "branch_name": "Midtown Branch",
+        "email": "quentin.martinez@company.com",
+        "name": "Quentin Martinez",
+        "enabled": true
+    },
+    "D20": {
+        "branch_name": "Old Town Branch",
+        "email": "rachel.robinson@company.com",
+        "name": "Rachel Robinson",
+        "enabled": true
+    },
+    "D21": {
+        "branch_name": "Plaza Branch",
+        "email": "samuel.clark@company.com",
+        "name": "Samuel Clark",
+        "enabled": true
+    },
+    "D22": {
+        "branch_name": "Gateway Branch",
+        "email": "tina.rodriguez@company.com",
+        "name": "Tina Rodriguez",
+        "enabled": true
+    },
+    "D23": {
+        "branch_name": "Crossroads Branch",
+        "email": "ulysses.lewis@company.com",
+        "name": "Ulysses Lewis",
+        "enabled": true
+    },
+    "D24": {
+        "branch_name": "Parkway Branch",
+        "email": "victoria.lee@company.com",
+        "name": "Victoria Lee",
+        "enabled": true
+    },
+    "D25": {
+        "branch_name": "Summit Branch",
+        "email": "william.walker@company.com",
+        "name": "William Walker",
+        "enabled": true
+    }
+} 

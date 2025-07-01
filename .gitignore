@@ -59,4 +59,15 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp 
+*.temp
+
+# Logs
+logs/
+*.log
+
+# Config files (keep examples)
+configs/sftp_config.json
+configs/smtp_config.json
+configs/branch_email_mapping.json
+configs/*.json
+!configs/*.json.example

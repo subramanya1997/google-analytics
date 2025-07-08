@@ -48,17 +48,18 @@ export default function PurchasesPage() {
       title="Purchase Follow-up"
       subtitle={subtitle}
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Location Selector */}
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row gap-4">
           <LocationSelector
             selectedLocation={selectedLocation}
             onLocationChange={setSelectedLocation}
+            className="w-full sm:w-auto"
           />
         </div>
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -88,14 +89,14 @@ export default function PurchasesPage() {
               <SelectItem value="customer">Customer Name</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" className="shrink-0">
             <Filter className="h-4 w-4" />
           </Button>
         </div>
 
         {/* Task Cards Grid */}
         {loading ? (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Skeleton key={i} className="h-[200px]" />
             ))}
@@ -105,7 +106,7 @@ export default function PurchasesPage() {
             Error: {error}
           </div>
         ) : tasks.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-8 sm:py-12">
             <p className="text-muted-foreground">
               {selectedLocation 
                 ? "No purchase tasks for this location" 
@@ -113,7 +114,7 @@ export default function PurchasesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {tasks.map((task) => (
               <TaskCard
                 key={task.id}
@@ -125,30 +126,30 @@ export default function PurchasesPage() {
 
         {/* Summary Stats */}
         {!loading && tasks.length > 0 && (
-          <div className="mt-8 rounded-lg border bg-card p-6">
-            <h3 className="text-lg font-semibold mb-4">Summary Statistics</h3>
-            <div className="grid gap-4 md:grid-cols-4">
+          <div className="mt-6 sm:mt-8 rounded-lg border bg-card p-4 sm:p-6">
+            <h3 className="text-base sm:text-lg font-semibold mb-4">Summary Statistics</h3>
+            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
               <div>
-                <p className="text-sm text-muted-foreground">Total Value</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xs sm:text-sm text-muted-foreground">Total Value</p>
+                <p className="text-xl sm:text-2xl font-bold">
                   ${tasks.reduce((sum, task) => sum + ((task.customer as any).orderValue || 0), 0).toFixed(2)}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Avg Order Value</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xs sm:text-sm text-muted-foreground">Avg Order Value</p>
+                <p className="text-xl sm:text-2xl font-bold">
                   ${(tasks.reduce((sum, task) => sum + ((task.customer as any).orderValue || 0), 0) / tasks.length).toFixed(2)}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">High Priority</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xs sm:text-sm text-muted-foreground">High Priority</p>
+                <p className="text-xl sm:text-2xl font-bold">
                   {tasks.filter(task => task.priority === 'high').length}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total Tasks</p>
-                <p className="text-2xl font-bold">{tasks.length}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Total Tasks</p>
+                <p className="text-xl sm:text-2xl font-bold">{tasks.length}</p>
               </div>
             </div>
           </div>

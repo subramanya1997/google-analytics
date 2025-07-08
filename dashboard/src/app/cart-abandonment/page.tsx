@@ -41,7 +41,7 @@ export default function CartAbandonmentPage() {
       title="Cart Abandonment Recovery"
       subtitle={subtitle}
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Location Selector */}
         <div className="flex justify-between items-center">
           <LocationSelector
@@ -51,13 +51,13 @@ export default function CartAbandonmentPage() {
         </div>
 
         {loading ? (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Skeleton key={i} className="h-[200px]" />
             ))}
           </div>
         ) : tasks.length === 0 ? (
-          <div className="text-center py-12">
+          <div className="text-center py-8 sm:py-12">
             <p className="text-muted-foreground">
               {selectedLocation 
                 ? "No abandoned cart tasks for this location" 
@@ -65,7 +65,7 @@ export default function CartAbandonmentPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {tasks.map((task) => (
               <TaskCard
                 key={task.id}

@@ -180,61 +180,66 @@ export default function PerformancePage() {
       title="Performance Issues"
       subtitle={subtitle}
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
 
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <AlertTriangle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search issues, pages, or customer..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+        <div className="space-y-3">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <AlertTriangle className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search issues, pages, or customer..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            
+            <LocationSelector
+              selectedLocation={selectedLocation}
+              onLocationChange={setSelectedLocation}
+              className="w-full sm:w-auto"
             />
           </div>
           
-          <LocationSelector
-            selectedLocation={selectedLocation}
-            onLocationChange={setSelectedLocation}
-          />
-          
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Priorities</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
 
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Issue Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="slow_page">Slow Page</SelectItem>
-              <SelectItem value="high_bounce">High Bounce</SelectItem>
-              <SelectItem value="page_bounce_issue">Page Bounce Issue</SelectItem>
-              <SelectItem value="form_abandonment">Form Abandonment</SelectItem>
-            </SelectContent>
-          </Select>
+            <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Issue Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="slow_page">Slow Page</SelectItem>
+                <SelectItem value="high_bounce">High Bounce</SelectItem>
+                <SelectItem value="page_bounce_issue">Page Bounce Issue</SelectItem>
+                <SelectItem value="form_abandonment">Form Abandonment</SelectItem>
+              </SelectContent>
+            </Select>
 
-          {hasActiveFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={clearFilters}
-              className="h-10 px-3"
-            >
-              <X className="h-4 w-4 mr-1" />
-              Clear
-            </Button>
-          )}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-10 px-3 self-start"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -244,8 +249,8 @@ export default function PerformancePage() {
             ))}
           </div>
         ) : filteredAndSortedTasks.length === 0 ? (
-          <div className="text-center py-12">
-            <AlertTriangle className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+          <div className="text-center py-8 sm:py-12">
+            <AlertTriangle className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground">
               {hasActiveFilters 
                 ? "No performance issues match your filters" 
@@ -264,15 +269,15 @@ export default function PerformancePage() {
           </div>
         ) : (
           <>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[250px]">
+                    <TableHead className="min-w-[200px] sm:min-w-[250px]">
                       Page
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="cursor-pointer hover:bg-muted/50 min-w-[120px]"
                       onClick={() => handleSort('type')}
                     >
                       <div className="flex items-center gap-2">
@@ -281,7 +286,7 @@ export default function PerformancePage() {
                       </div>
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="cursor-pointer hover:bg-muted/50 min-w-[150px]"
                       onClick={() => handleSort('customer')}
                     >
                       <div className="flex items-center gap-2">
@@ -290,7 +295,7 @@ export default function PerformancePage() {
                       </div>
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="cursor-pointer hover:bg-muted/50 min-w-[200px]"
                       onClick={() => handleSort('metric')}
                     >
                       <div className="flex items-center gap-2">
@@ -299,7 +304,7 @@ export default function PerformancePage() {
                       </div>
                     </TableHead>
                     <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="cursor-pointer hover:bg-muted/50 min-w-[100px]"
                       onClick={() => handleSort('priority')}
                     >
                       <div className="flex items-center gap-2">
@@ -312,7 +317,7 @@ export default function PerformancePage() {
                 <TableBody>
                   {filteredAndSortedTasks.map((task) => (
                     <TableRow key={task.id}>
-                      <TableCell className="max-w-md">
+                      <TableCell className="max-w-xs sm:max-w-md">
                         <div className="space-y-1">
                           {task.metadata?.pageTitle && task.metadata?.pageUrl ? (
                             <a 
@@ -321,7 +326,7 @@ export default function PerformancePage() {
                               rel="noopener noreferrer"
                               className="font-medium text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
                             >
-                              {task.metadata.pageTitle}
+                              <span className="truncate">{task.metadata.pageTitle}</span>
                               <ExternalLink className="h-3 w-3 flex-shrink-0" />
                             </a>
                           ) : (
@@ -336,7 +341,7 @@ export default function PerformancePage() {
                             task.metadata?.issueType === 'slow_page' ? 'destructive' : 
                             task.metadata?.issueType === 'high_bounce' ? 'default' : 
                             task.metadata?.issueType === 'page_bounce_issue' ? 'default' : 'secondary'
-                          }>
+                          } className="text-xs">
                             {task.metadata?.issueType === 'slow_page' && 'Slow Page'}
                             {task.metadata?.issueType === 'high_bounce' && 'High Bounce'}
                             {task.metadata?.issueType === 'page_bounce_issue' && 'Page Bounce'}
@@ -346,29 +351,29 @@ export default function PerformancePage() {
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1">
-                          <div className="font-medium">{task.customer.name}</div>
+                          <div className="font-medium text-sm">{task.customer.name}</div>
                           {task.customer.email && (
                             <a href={`mailto:${task.customer.email}`} className="flex items-center gap-1 text-xs text-muted-foreground hover:underline">
                               <Mail className="h-3 w-3" />
-                              {task.customer.email}
+                              <span className="truncate">{task.customer.email}</span>
                             </a>
                           )}
                           {task.metadata?.location && (
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <MapPin className="h-3 w-3" />
-                              {task.metadata.location}
+                              <span className="truncate">{task.metadata.location}</span>
                             </div>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <p className="text-sm text-muted-foreground">{task.description}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground">{task.description}</p>
                       </TableCell>
                       <TableCell>
                         <Badge variant={
                           task.priority === 'high' ? 'destructive' : 
                           task.priority === 'medium' ? 'default' : 'secondary'
-                        }>
+                        } className="text-xs">
                           {task.priority}
                         </Badge>
                       </TableCell>
@@ -379,9 +384,9 @@ export default function PerformancePage() {
             </div>
 
             {/* Pagination Controls */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <p className="text-sm text-muted-foreground">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+              <div className="flex items-center space-x-2 text-xs sm:text-sm">
+                <p className="text-muted-foreground">
                   Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} results
                 </p>
                 <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
@@ -395,7 +400,7 @@ export default function PerformancePage() {
                     <SelectItem value="100">100</SelectItem>
                   </SelectContent>
                 </Select>
-                <span className="text-sm text-muted-foreground">per page</span>
+                <span className="text-muted-foreground hidden sm:inline">per page</span>
               </div>
               
               <div className="flex items-center space-x-2">
@@ -404,21 +409,23 @@ export default function PerformancePage() {
                   size="sm"
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
+                  className="h-8 text-xs sm:text-sm"
                 >
                   <ChevronLeft className="h-4 w-4" />
-                  Previous
+                  <span className="hidden sm:inline">Previous</span>
                 </Button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  {/* Show fewer page buttons on mobile */}
+                  {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
                     let pageNum
-                    if (totalPages <= 5) {
+                    if (totalPages <= 3) {
                       pageNum = i + 1
-                    } else if (currentPage <= 3) {
+                    } else if (currentPage === 1) {
                       pageNum = i + 1
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i
+                    } else if (currentPage === totalPages) {
+                      pageNum = totalPages - 2 + i
                     } else {
-                      pageNum = currentPage - 2 + i
+                      pageNum = currentPage - 1 + i
                     }
                     
                     return (
@@ -427,20 +434,43 @@ export default function PerformancePage() {
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}
-                        className="h-8 w-8 p-0"
+                        className="h-8 w-8 p-0 text-xs sm:text-sm"
                       >
                         {pageNum}
                       </Button>
                     )
                   })}
+                  <span className="text-xs text-muted-foreground px-1 sm:hidden">
+                    of {totalPages}
+                  </span>
+                  {/* Show more page buttons on desktop */}
+                  <div className="hidden sm:flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) - 3 }, (_, i) => {
+                      const pageNum = currentPage <= 3 ? 4 + i : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage + i
+                      if (pageNum > totalPages || pageNum < 1) return null
+                      
+                      return (
+                        <Button
+                          key={`desktop-${i}`}
+                          variant={pageNum === currentPage ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handlePageChange(pageNum)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {pageNum}
+                        </Button>
+                      )
+                    })}
+                  </div>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === totalPages}
+                  className="h-8 text-xs sm:text-sm"
                 >
-                  Next
+                  <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>

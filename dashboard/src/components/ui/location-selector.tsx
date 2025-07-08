@@ -45,19 +45,21 @@ export function LocationSelector({ selectedLocation, onLocationChange, className
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <MapPin className="h-4 w-4 text-muted-foreground" />
+      <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
       <Select
         value={selectedLocation || "all"}
         onValueChange={(value) => onLocationChange(value === "all" ? null : value)}
       >
-        <SelectTrigger className="w-[250px]">
+        <SelectTrigger className="w-full sm:w-[250px]">
           <SelectValue placeholder="Select location" />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Locations</SelectItem>
           {locations.map((location) => (
             <SelectItem key={location.locationId} value={location.locationId}>
-              {location.locationName} - {location.city}, {location.state}
+              <span className="truncate">
+                {location.locationName} - {location.city}, {location.state}
+              </span>
             </SelectItem>
           ))}
         </SelectContent>

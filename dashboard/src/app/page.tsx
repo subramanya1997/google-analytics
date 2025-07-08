@@ -70,7 +70,7 @@ export default function DashboardPage() {
       title="Dashboard Overview"
       subtitle={subtitle}
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Location Selector */}
         <div className="flex justify-between items-center">
           <LocationSelector
@@ -81,13 +81,13 @@ export default function DashboardPage() {
 
         {/* Overall Metrics Grid */}
         {loading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Skeleton key={i} className="h-[125px]" />
             ))}
           </div>
         ) : metrics && (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <MetricCard
               title="Total Revenue"
               value={metrics.totalRevenue}
@@ -128,12 +128,12 @@ export default function DashboardPage() {
         )}
         {/* Activity Timeline */}
         <div className="space-y-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <BarChart3 className="h-5 w-5" />
+          <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5" />
               Activity Timeline
           </h3>
           {loading ? (
-            <Skeleton className="h-[400px]" />
+            <Skeleton className="h-[300px] sm:h-[400px]" />
           ) : (
             <OverviewChart data={chartData} />
           )}
@@ -142,18 +142,18 @@ export default function DashboardPage() {
         {/* Location Breakdown - Only show when no location is selected */}
             {!selectedLocation && (
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <MapPin className="h-5 w-5" />
+            <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+              <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />
               Performance by Location
             </h3>
                 {loading ? (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                     {[1, 2, 3, 4, 5, 6].map((i) => (
                       <Skeleton key={i} className="h-[200px]" />
                     ))}
                   </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
                     {locationStats.map((location) => (
                       <LocationStatsCard
                         key={location.locationId}

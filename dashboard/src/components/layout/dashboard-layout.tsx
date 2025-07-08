@@ -13,7 +13,7 @@ export function DashboardLayout({ children, title, subtitle }: DashboardLayoutPr
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header title={title} subtitle={subtitle} />
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           {children}
         </main>
       </div>

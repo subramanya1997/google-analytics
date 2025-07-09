@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { LocationSelector } from "@/components/ui/location-selector"
+import { useDashboard } from "@/contexts/dashboard-context"
+import { buildApiQueryParams } from "@/lib/api-utils"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,13 +31,13 @@ type SortField = 'customer' | 'type' | 'metric' | 'priority'
 type SortOrder = 'asc' | 'desc'
 
 export default function PerformancePage() {
+  const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(50)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("")
@@ -59,8 +60,10 @@ export default function PerformancePage() {
   }, [searchQuery])
 
   useEffect(() => {
-    fetchPerformanceTasks()
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation])
+    if (dateRange?.from && dateRange?.to) {
+      fetchPerformanceTasks()
+    }
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
 
   const fetchPerformanceTasks = async () => {
     try {
@@ -144,10 +147,9 @@ export default function PerformancePage() {
     setSearchQuery("")
     setPriorityFilter("all")
     setTypeFilter("all")
-    setSelectedLocation(null)
   }
 
-  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all" || selectedLocation
+  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all"
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -176,10 +178,7 @@ export default function PerformancePage() {
     : "Address technical issues affecting user experience and conversions"
 
   return (
-    <DashboardLayout
-      title="Performance Issues"
-      subtitle={subtitle}
-    >
+    <DashboardLayout>
       <div className="space-y-4 sm:space-y-6">
 
         {/* Filters */}
@@ -194,12 +193,6 @@ export default function PerformancePage() {
                 className="pl-10"
               />
             </div>
-            
-            <LocationSelector
-              selectedLocation={selectedLocation}
-              onLocationChange={setSelectedLocation}
-              className="w-full sm:w-auto"
-            />
           </div>
           
           <div className="flex flex-col sm:flex-row gap-3">

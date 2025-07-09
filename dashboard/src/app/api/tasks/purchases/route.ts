@@ -7,15 +7,26 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
     
     const db = await getDb()
     
     // Build location filter
     const locationFilter = locationId ? `AND p.user_prop_default_branch_id = '${locationId}'` : ''
     
+    // Build date filter
+    let dateFilter = ''
+    if (startDate && endDate) {
+      // Convert ISO dates to YYYYMMDD format used in database
+      const start = startDate.replace(/-/g, '')
+      const end = endDate.replace(/-/g, '')
+      dateFilter = `AND p.event_date BETWEEN '${start}' AND '${end}'`
+    }
+    
     // Get recent purchases
     const query = `
-      SELECT 
+      SELECT DISTINCT
         p.param_transaction_id as transaction_id,
         p.param_ga_session_id as session_id,
         p.user_prop_webuserid as web_user_id,
@@ -31,6 +42,7 @@ export async function GET(request: Request) {
       LEFT JOIN locations l ON p.user_prop_default_branch_id = l.warehouse_code
       WHERE p.param_transaction_id IS NOT NULL
       ${locationFilter}
+      ${dateFilter}
       ORDER BY p.event_timestamp DESC
       LIMIT 50
     `

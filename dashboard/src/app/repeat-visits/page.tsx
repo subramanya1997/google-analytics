@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useDashboard } from "@/contexts/dashboard-context"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -24,14 +25,15 @@ import {
 } from "@/components/ui/select"
 import { Mail, Phone, Eye, ShoppingBag, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, Search } from "lucide-react"
 import React from "react"
-import { LocationSelector } from "@/components/ui/location-selector"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet"
+import { format } from "date-fns"
 
 type SortField = 'customer' | 'lastVisit' | 'visitCount' | 'products' | 'priority'
 type SortOrder = 'asc' | 'desc'
 
 export default function RepeatVisitsPage() {
+  const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
@@ -43,7 +45,6 @@ export default function RepeatVisitsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [priorityFilter, setPriorityFilter] = useState<string>("all")
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   
   // Sort states
   const [sortField, setSortField] = useState<SortField>('visitCount')
@@ -63,8 +64,10 @@ export default function RepeatVisitsPage() {
   }, [searchQuery])
 
   useEffect(() => {
-    fetchRepeatVisitTasks()
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation])
+    if (dateRange?.from && dateRange?.to) {
+      fetchRepeatVisitTasks()
+    }
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
 
   const fetchRepeatVisitTasks = async () => {
     try {
@@ -80,6 +83,11 @@ export default function RepeatVisitsPage() {
       
       if (selectedLocation) {
         params.append('locationId', selectedLocation)
+      }
+      
+      if (dateRange?.from && dateRange?.to) {
+        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
       }
       
       const response = await fetch(`/api/tasks/repeat-visits?${params}`)
@@ -158,10 +166,9 @@ export default function RepeatVisitsPage() {
   const clearFilters = () => {
     setSearchQuery("")
     setPriorityFilter("all")
-    setSelectedLocation(null)
   }
 
-  const hasActiveFilters = searchQuery || priorityFilter !== "all" || selectedLocation
+  const hasActiveFilters = searchQuery || priorityFilter !== "all"
 
   const toggleRowExpanded = (taskId: string) => {
     setExpandedRows(prev => {
@@ -198,10 +205,7 @@ export default function RepeatVisitsPage() {
     : "Engage with visitors who showed high interest but didn't purchase"
 
   return (
-    <DashboardLayout
-      title="Repeat Visits"
-      subtitle={subtitle}
-    >
+    <DashboardLayout>
       <div className="space-y-6">
 
         {/* Filters */}
@@ -215,10 +219,6 @@ export default function RepeatVisitsPage() {
               className="pl-10"
             />
           </div>
-          <LocationSelector
-            selectedLocation={selectedLocation}
-            onLocationChange={setSelectedLocation}
-          />
           
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
             <SelectTrigger className="w-[140px]">

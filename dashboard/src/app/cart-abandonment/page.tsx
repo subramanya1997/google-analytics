@@ -3,24 +3,28 @@
 import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { TaskCard } from "@/components/tasks/task-card"
-import { LocationSelector } from "@/components/ui/location-selector"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Task } from "@/types/tasks"
+import { useDashboard } from "@/contexts/dashboard-context"
+import { buildApiQueryParams } from "@/lib/api-utils"
 
 export default function CartAbandonmentPage() {
+  const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchCartTasks()
-  }, [selectedLocation])
+    if (dateRange?.from && dateRange?.to) {
+      fetchCartTasks()
+    }
+  }, [selectedLocation, dateRange])
 
   const fetchCartTasks = async () => {
     try {
-      const url = selectedLocation 
-        ? `/api/tasks/cart-abandonment?locationId=${selectedLocation}`
-        : '/api/tasks/cart-abandonment'
+      setLoading(true)
+      
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange)
+      const url = `/api/tasks/cart-abandonment${queryParams}`
         
       const response = await fetch(url)
       const data = await response.json()
@@ -32,24 +36,9 @@ export default function CartAbandonmentPage() {
     }
   }
 
-  const subtitle = selectedLocation 
-    ? `Recover lost sales by reaching out to customers who left items in their cart (Filtered by location)`
-    : "Recover lost sales by reaching out to customers who left items in their cart"
-
   return (
-    <DashboardLayout
-      title="Cart Abandonment Recovery"
-      subtitle={subtitle}
-    >
+    <DashboardLayout>
       <div className="space-y-4 sm:space-y-6">
-        {/* Location Selector */}
-        <div className="flex justify-between items-center">
-          <LocationSelector
-            selectedLocation={selectedLocation}
-            onLocationChange={setSelectedLocation}
-          />
-        </div>
-
         {loading ? (
           <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -60,8 +49,8 @@ export default function CartAbandonmentPage() {
           <div className="text-center py-8 sm:py-12">
             <p className="text-muted-foreground">
               {selectedLocation 
-                ? "No abandoned cart tasks for this location" 
-                : "No abandoned cart tasks at the moment"}
+                ? "No abandoned cart tasks for this location and date range" 
+                : "No abandoned cart tasks for this date range"}
             </p>
           </div>
         ) : (

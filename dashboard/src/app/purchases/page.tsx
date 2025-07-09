@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useDashboard } from "@/contexts/dashboard-context"
+import { buildApiQueryParams } from "@/lib/api-utils"
 import { TaskCard } from "@/components/tasks/task-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -9,24 +11,24 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Filter } from "lucide-react"
-import { LocationSelector } from "@/components/ui/location-selector"
 import { Task } from "@/types/tasks"
 
 export default function PurchasesPage() {
+  const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchPurchaseTasks()
-  }, [selectedLocation])
+    if (dateRange?.from && dateRange?.to) {
+      fetchPurchaseTasks()
+    }
+  }, [selectedLocation, dateRange])
 
   const fetchPurchaseTasks = async () => {
     try {
-      const url = selectedLocation 
-        ? `/api/tasks/purchases?locationId=${selectedLocation}`
-        : '/api/tasks/purchases'
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange)
+      const url = `/api/tasks/purchases${queryParams}`
         
       const response = await fetch(url)
       const data = await response.json()
@@ -39,25 +41,9 @@ export default function PurchasesPage() {
     }
   }
 
-  const subtitle = selectedLocation 
-    ? `Engage with customers who made recent purchases (Filtered by location)`
-    : "Engage with customers who made recent purchases"
-
   return (
-    <DashboardLayout
-      title="Purchase Follow-up"
-      subtitle={subtitle}
-    >
+    <DashboardLayout>
       <div className="space-y-4 sm:space-y-6">
-        {/* Location Selector */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <LocationSelector
-            selectedLocation={selectedLocation}
-            onLocationChange={setSelectedLocation}
-            className="w-full sm:w-auto"
-          />
-        </div>
-
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
@@ -109,8 +95,8 @@ export default function PurchasesPage() {
           <div className="text-center py-8 sm:py-12">
             <p className="text-muted-foreground">
               {selectedLocation 
-                ? "No purchase tasks for this location" 
-                : "No purchase tasks at the moment"}
+                ? "No purchase tasks for this location and date range" 
+                : "No purchase tasks for this date range"}
             </p>
           </div>
         ) : (

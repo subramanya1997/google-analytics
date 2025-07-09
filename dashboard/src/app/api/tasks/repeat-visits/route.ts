@@ -8,6 +8,8 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') || '50')
   const query = searchParams.get('q') || ''
   const locationId = searchParams.get('locationId')
+  const startDate = searchParams.get('startDate')
+  const endDate = searchParams.get('endDate')
   const offset = (page - 1) * limit
 
   const db = await getDb()
@@ -25,8 +27,19 @@ export async function GET(request: Request) {
     // Build location filter
     const locationFilter = locationId ? `AND pv.user_prop_default_branch_id = ?` : ""
     
+    // Build date filter
+    let dateFilter = ''
+    let dateParams: string[] = []
+    if (startDate && endDate) {
+      // Convert ISO dates to YYYYMMDD format used in database
+      const start = startDate.replace(/-/g, '')
+      const end = endDate.replace(/-/g, '')
+      dateFilter = `AND pv.event_date BETWEEN ? AND ?`
+      dateParams = [start, end]
+    }
+    
     const searchParams = query ? [query, query, query] : []
-    const allParams = locationId ? [...searchParams, locationId] : searchParams
+    const allParams = [...searchParams, ...(locationId ? [locationId] : []), ...dateParams]
 
     // Get total count
     const countQuery = `
@@ -36,16 +49,20 @@ export async function GET(request: Request) {
       WHERE pv.user_prop_webuserid IS NOT NULL
       ${searchFilter}
       ${locationFilter}
+      ${dateFilter}
       AND EXISTS (
         SELECT 1 FROM page_view pv2
         WHERE pv2.param_ga_session_id = pv.param_ga_session_id
         ${locationId ? 'AND pv2.user_prop_default_branch_id = pv.user_prop_default_branch_id' : ''}
+        ${dateFilter.replace(/pv\./g, 'pv2.')}
         GROUP BY pv2.param_ga_session_id
         HAVING COUNT(DISTINCT pv2.param_page_location) >= 3
       )
     `
 
-    const countResult = await db.get(countQuery, ...allParams) as { total: number }
+    // Update the EXISTS subquery params
+    const countParams = [...allParams, ...dateParams]
+    const countResult = await db.get(countQuery, ...countParams) as { total: number }
     const totalCount = countResult.total || 0
 
     // Main query
@@ -77,6 +94,7 @@ export async function GET(request: Request) {
         WHERE pv.user_prop_webuserid IS NOT NULL
         ${searchFilter}
         ${locationFilter}
+        ${dateFilter}
         GROUP BY pv.param_ga_session_id, pv.user_prop_default_branch_id, u.user_id
         HAVING unique_pages_viewed >= 3
       )

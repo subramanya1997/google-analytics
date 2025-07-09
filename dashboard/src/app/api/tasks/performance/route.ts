@@ -8,6 +8,8 @@ export async function GET(request: Request) {
   const limit = parseInt(searchParams.get('limit') || '50') 
   const query = searchParams.get('q') || ''
   const locationId = searchParams.get('locationId')
+  const startDate = searchParams.get('startDate')
+  const endDate = searchParams.get('endDate')
   const offset = (page - 1) * limit
 
   const db = await getDb()
@@ -27,8 +29,19 @@ export async function GET(request: Request) {
     // Build location filter - we'll apply it with proper table alias in each context
     const locationFilter = locationId ? true : false
     
+    // Build date filter
+    let dateFilter = ''
+    let dateParams: string[] = []
+    if (startDate && endDate) {
+      // Convert ISO dates to YYYYMMDD format used in database
+      const start = startDate.replace(/-/g, '')
+      const end = endDate.replace(/-/g, '')
+      dateFilter = 'AND pv.event_date BETWEEN ? AND ?'
+      dateParams = [start, end]
+    }
+    
     const searchParams = query ? Array(5).fill(query) : []
-    const allParams = locationId ? [...searchParams, locationId] : searchParams
+    const allParams = locationId ? [...searchParams, locationId, ...dateParams] : [...searchParams, ...dateParams]
 
     // Get total count of bounce sessions
     const countQuery = `
@@ -40,6 +53,7 @@ export async function GET(request: Request) {
           WHERE pv.user_prop_webuserid IS NOT NULL
           ${searchFilter}
           ${locationFilter ? 'AND pv.user_prop_default_branch_id = ?' : ''}
+          ${dateFilter}
           GROUP BY pv.param_ga_session_id
           HAVING COUNT(*) = 1
         )) +
@@ -50,16 +64,25 @@ export async function GET(request: Request) {
             SELECT param_ga_session_id 
             FROM page_view 
             WHERE 1=1 ${locationFilter ? 'AND user_prop_default_branch_id = ?' : ''}
+            ${dateFilter.replace(/pv\./g, '')}
             GROUP BY param_ga_session_id 
             HAVING COUNT(*) = 1
           )
           ${locationFilter ? 'AND user_prop_default_branch_id = ?' : ''}
+          ${dateFilter.replace(/pv\./g, '')}
           GROUP BY param_page_location
           HAVING bounce_count > 2
         )) as total
     `
 
-    const countResult = await db.get(countQuery, ...allParams, ...(locationId ? [locationId, locationId, locationId] : [])) as { total: number }
+    const countParams = [...allParams]
+    if (locationFilter) {
+      countParams.push(locationId, ...dateParams, locationId, ...dateParams)
+    } else {
+      countParams.push(...dateParams, ...dateParams)
+    }
+    
+    const countResult = await db.get(countQuery, ...countParams) as { total: number }
     const totalCount = countResult?.total || 0
 
     // Main query to get performance tasks
@@ -86,6 +109,7 @@ export async function GET(request: Request) {
         WHERE pv.user_prop_webuserid IS NOT NULL
         ${searchFilter}
         ${locationFilter ? 'AND pv.user_prop_default_branch_id = ?' : ''}
+        ${dateFilter}
         GROUP BY pv.param_ga_session_id, pv.user_prop_default_branch_id, u.user_id, u.name, u.email, u.office_phone, u.customer_name, l.warehouse_name, l.city, l.state, pv.param_page_title, pv.param_page_location
         HAVING COUNT(*) = 1
       ),
@@ -110,10 +134,12 @@ export async function GET(request: Request) {
           SELECT param_ga_session_id 
           FROM page_view 
           WHERE 1=1 ${locationFilter ? 'AND user_prop_default_branch_id = ?' : ''}
+          ${dateFilter.replace(/pv\./g, '')}
           GROUP BY param_ga_session_id 
           HAVING COUNT(*) = 1
         )
         ${locationFilter ? 'AND pv.user_prop_default_branch_id = ?' : ''}
+        ${dateFilter}
         GROUP BY pv.param_page_location, pv.param_page_title${locationId ? ', l.warehouse_name, l.city, l.state' : ''}
         HAVING bounce_count > 2
       )
@@ -192,7 +218,13 @@ export async function GET(request: Request) {
       LIMIT ? OFFSET ?
     `
 
-    const queryParams = [...allParams, ...(locationId ? [locationId, locationId, locationId] : []), limit, offset]
+    const queryParams = [...allParams]
+    if (locationFilter) {
+      queryParams.push(locationId, ...dateParams, locationId, ...dateParams)
+    } else {
+      queryParams.push(...dateParams, ...dateParams)
+    }
+    queryParams.push(limit, offset)
       
     const performanceTasks = await db.all(tasksQuery, ...queryParams) as any[]
     

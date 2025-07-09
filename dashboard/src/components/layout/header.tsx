@@ -1,18 +1,81 @@
 "use client"
 
+import { usePathname } from "next/navigation"
+import { LocationSelector } from "../ui/location-selector"
+import { DateRangeSelector } from "../ui/date-range-selector"
+import { DateRange } from "react-day-picker"
+
 interface HeaderProps {
-  title: string
-  subtitle?: string
+  selectedLocation: string | null
+  onLocationChange: (locationId: string | null) => void
+  dateRange: DateRange | undefined
+  onDateRangeChange: (dateRange: DateRange | undefined) => void
 }
 
-export function Header({ title, subtitle }: HeaderProps) {
+export function Header({ selectedLocation, onLocationChange, dateRange, onDateRangeChange }: HeaderProps) {
+  const pathname = usePathname()
+  
+  const getPageInfo = () => {
+    switch (pathname) {
+      case "/":
+        return {
+          title: "Analytics Dashboard",
+          subtitle: "Real-time insights and performance metrics"
+        }
+      case "/cart-abandonment":
+        return {
+          title: "Cart Abandonment",
+          subtitle: "Track and recover abandoned shopping sessions"
+        }
+      case "/search-analysis":
+        return {
+          title: "Search Analysis",
+          subtitle: "Optimize search performance and user experience"
+        }
+      case "/repeat-visits":
+        return {
+          title: "Repeat Visits",
+          subtitle: "Identify engaged visitors for targeted outreach"
+        }
+      case "/performance":
+        return {
+          title: "Performance Issues",
+          subtitle: "Monitor and resolve user experience problems"
+        }
+      case "/purchases":
+        return {
+          title: "Recent Purchases",
+          subtitle: "Track successful transactions and customer activity"
+        }
+      default:
+        return {
+          title: "Dashboard",
+          subtitle: "Analytics and insights"
+        }
+    }
+  }
+  
+  const { title, subtitle } = getPageInfo()
+  
   return (
-    <header className="flex h-16 sm:h-20 items-center border-b bg-card px-4 sm:px-6">
-      <div className="flex flex-col gap-1 ml-14 lg:ml-0">
-        <h1 className="text-lg sm:text-xl font-semibold line-clamp-1">{title}</h1>
-        {subtitle && (
-          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-1">{subtitle}</p>
-        )}
+    <header className="relative z-10 border-b bg-white ml-0 lg:ml-14">
+      <div className="flex flex-col sm:flex-row sm:items-center px-4 sm:px-6 py-4 gap-4">
+        <div className="flex-1 ml-12 lg:ml-0">
+          <h1 className="text-xl sm:text-2xl font-semibold line-clamp-1">{title}</h1>
+          <p className="text-sm text-muted-foreground line-clamp-1">{subtitle}</p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+          <DateRangeSelector 
+            dateRange={dateRange}
+            className="w-full sm:w-[200px] lg:w-[260px]"
+            onDateRangeChange={onDateRangeChange}
+          />
+          <LocationSelector 
+            selectedLocation={selectedLocation}
+            onLocationChange={onLocationChange}
+            className="w-full sm:w-auto"
+          />
+        </div>
       </div>
     </header>
   )

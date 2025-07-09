@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { LocationSelector } from "@/components/ui/location-selector"
+import { useDashboard } from "@/contexts/dashboard-context"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,11 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
+import { format } from "date-fns"
 
 type SortField = 'searchTerms' | 'customer' | 'type' | 'attempts' | 'priority'
 type SortOrder = 'asc' | 'desc'
 
 export default function SearchAnalysisPage() {
+  const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
@@ -37,7 +39,6 @@ export default function SearchAnalysisPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(50)
   const [includeConverted, setIncludeConverted] = useState(false)
-  const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("")
@@ -60,15 +61,20 @@ export default function SearchAnalysisPage() {
   }, [searchQuery])
 
   useEffect(() => {
-    fetchSearchTasks()
-  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation])
+    if (dateRange?.from && dateRange?.to) {
+      fetchSearchTasks()
+    }
+  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
 
   const fetchSearchTasks = async () => {
     try {
       setLoading(true)
       const qParam = debouncedSearchQuery ? `&q=${encodeURIComponent(debouncedSearchQuery)}` : ''
       const locationParam = selectedLocation ? `&locationId=${selectedLocation}` : ''
-      const url = `/api/tasks/search-analysis?page=${currentPage}&limit=${itemsPerPage}&includeConverted=${includeConverted}${qParam}${locationParam}`
+      const dateParams = dateRange?.from && dateRange?.to 
+        ? `&startDate=${format(dateRange.from, 'yyyy-MM-dd')}&endDate=${format(dateRange.to, 'yyyy-MM-dd')}`
+        : ''
+      const url = `/api/tasks/search-analysis?page=${currentPage}&limit=${itemsPerPage}&includeConverted=${includeConverted}${qParam}${locationParam}${dateParams}`
       const response = await fetch(url)
       const data = await response.json()
       setTasks(data.tasks || [])
@@ -150,10 +156,9 @@ export default function SearchAnalysisPage() {
     setSearchQuery("")
     setPriorityFilter("all")
     setTypeFilter("all")
-    setSelectedLocation(null)
   }
 
-  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all" || selectedLocation
+  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all"
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -169,10 +174,7 @@ export default function SearchAnalysisPage() {
     : "Follow up with customers who searched but didn't find what they needed"
 
   return (
-    <DashboardLayout
-      title="Search Analysis"
-      subtitle={subtitle}
-    >
+    <DashboardLayout>
       <div className="space-y-6">
 
         {/* Filters */}
@@ -187,11 +189,6 @@ export default function SearchAnalysisPage() {
                 className="pl-10"
               />
             </div>
-            
-            <LocationSelector
-              selectedLocation={selectedLocation}
-              onLocationChange={setSelectedLocation}
-            />
             
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-[140px]">

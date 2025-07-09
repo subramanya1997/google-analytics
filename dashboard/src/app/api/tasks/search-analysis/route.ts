@@ -13,17 +13,30 @@ export async function GET(request: Request) {
     const includeConverted = searchParams.get('includeConverted') === 'true'
     const query = (searchParams.get('q') || '').toLowerCase()
     const locationId = searchParams.get('locationId')
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
     const offset = (page - 1) * limit
     
     // Build location filter
     const locationFilter = locationId ? " AND user_prop_default_branch_id = ? " : ""
     const locationParams = locationId ? [locationId] : []
     
+    // Build date filter
+    let dateFilter = ''
+    let dateParams: string[] = []
+    if (startDate && endDate) {
+      // Convert ISO dates to YYYYMMDD format used in database
+      const start = startDate.replace(/-/g, '')
+      const end = endDate.replace(/-/g, '')
+      dateFilter = " AND event_date BETWEEN ? AND ? "
+      dateParams = [start, end]
+    }
+    
     // Build search filter for failed searches
     const failedSearchFilter = query ? 
       " AND LOWER(param_no_search_results_term) LIKE ? " : ""
     const failedSearchParams = query ? [`%${query}%`] : []
-    const failedSearchAllParams = [...failedSearchParams, ...locationParams]
+    const failedSearchAllParams = [...failedSearchParams, ...locationParams, ...dateParams]
     
     // Count failed searches
     const failedSearchCountQuery = `
@@ -34,6 +47,7 @@ export async function GET(request: Request) {
         WHERE param_no_search_results_term IS NOT NULL
         ${failedSearchFilter}
         ${locationFilter}
+        ${dateFilter}
       ) AS tmp
     `
     
@@ -50,6 +64,7 @@ export async function GET(request: Request) {
           SELECT 1 FROM purchase p 
           WHERE p.param_ga_session_id = nsr.param_ga_session_id
           ${locationId ? 'AND p.user_prop_default_branch_id = nsr.user_prop_default_branch_id' : ''}
+          ${dateFilter.replace(/event_date/g, 'p.event_date')}
         ) as has_purchase,
         l.warehouse_name as location_name,
         l.city,
@@ -59,6 +74,7 @@ export async function GET(request: Request) {
       WHERE nsr.param_no_search_results_term IS NOT NULL
       ${failedSearchFilter}
       ${locationFilter}
+      ${dateFilter}
       GROUP BY nsr.param_ga_session_id, nsr.param_no_search_results_term, nsr.user_prop_default_branch_id
       ORDER BY search_attempts DESC, nsr.event_timestamp DESC
       LIMIT ? OFFSET ?
@@ -73,6 +89,7 @@ export async function GET(request: Request) {
       AND vsr.param_ga_session_id NOT IN (
         SELECT DISTINCT param_ga_session_id FROM purchase
         WHERE 1=1 ${locationFilter}
+        ${dateFilter}
       )
     `
     
@@ -84,12 +101,14 @@ export async function GET(request: Request) {
         ${conversionFilter}
         ${searchFilter}
         ${locationFilter}
+        ${dateFilter}
         AND param_ga_session_id IN (
           SELECT param_ga_session_id 
           FROM view_search_results 
           WHERE param_search_term IS NOT NULL
             ${searchFilter}
             ${locationFilter}
+            ${dateFilter}
           GROUP BY param_ga_session_id 
           HAVING COUNT(*) > 2
         )
@@ -111,6 +130,7 @@ export async function GET(request: Request) {
               SELECT 1 FROM purchase p 
               WHERE p.param_ga_session_id = vsr.param_ga_session_id
               ${locationId ? 'AND p.user_prop_default_branch_id = vsr.user_prop_default_branch_id' : ''}
+              ${dateFilter.replace(/event_date/g, 'p.event_date')}
             )
           ` : '0'} as has_purchase,
           l.warehouse_name as location_name,
@@ -122,6 +142,7 @@ export async function GET(request: Request) {
           ${conversionFilter}
           ${searchFilter}
           ${locationFilter}
+          ${dateFilter}
         GROUP BY vsr.param_ga_session_id, vsr.user_prop_default_branch_id
         HAVING total_searches > 2
       )
@@ -133,8 +154,8 @@ export async function GET(request: Request) {
     // Execute queries
     const failedSearchCount = await db.get(failedSearchCountQuery, ...failedSearchAllParams)
     const unconvertedCountParams = query ? 
-      (includeConverted ? [...searchQueryParams, ...locationParams] : [...searchQueryParams, ...locationParams, ...searchQueryParams, ...locationParams]) 
-      : (includeConverted ? locationParams : [...locationParams, ...locationParams])
+      (includeConverted ? [...searchQueryParams, ...locationParams, ...dateParams, ...searchQueryParams, ...locationParams, ...dateParams] : [...searchQueryParams, ...locationParams, ...dateParams, ...dateParams, ...searchQueryParams, ...locationParams, ...dateParams]) 
+      : (includeConverted ? [...locationParams, ...dateParams, ...locationParams, ...dateParams] : [...locationParams, ...dateParams, ...dateParams, ...locationParams, ...dateParams])
     const unconvertedSearchCount = await db.get(unconvertedSearchCountQuery, ...unconvertedCountParams)
     
     const failedSearches = await db.all(
@@ -144,7 +165,7 @@ export async function GET(request: Request) {
       offset
     )
     
-    const unconvertedSearchAllParams = [...searchQueryParams, ...locationParams]
+    const unconvertedSearchAllParams = [...searchQueryParams, ...locationParams, ...dateParams]
     const unconvertedSearches = await db.all(
       unconvertedSearchesQuery,
       ...unconvertedSearchAllParams,

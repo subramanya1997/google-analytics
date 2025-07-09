@@ -1,15 +1,43 @@
 #!/usr/bin/env python3
 """
-Enhanced SQLite loader that captures ALL fields from GA4 JSONL, including nested structures
+Enhanced SQLite loader that captures ALL fields from GA4 JSON/JSONL, including nested structures
 """
 
 import os
 import json
 import re
 import sqlite3
+import logging
 from typing import Dict, Set, List, Any
 import pandas as pd
 from datetime import datetime
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def read_records(file_path: str):
+    """Generator to yield records from either a .json or .jsonl file."""
+    if file_path.endswith('.jsonl'):
+        with open(file_path, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+    elif file_path.endswith('.json'):
+        with open(file_path, "r", encoding="utf-8") as f:
+            try:
+                for line in f:
+                    try:
+                        yield json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+            except json.JSONDecodeError:
+                pass # Silently ignore malformed JSON files
 
 def sanitize_column(name: str) -> str:
     """Sanitize arbitrary GA4 param key into a SQLite-compatible column identifier."""
@@ -154,19 +182,14 @@ def extract_all_fields(record: Dict) -> Dict[str, Any]:
     
     return extracted
 
-def discover_enhanced_schema(jsonl_path: str, max_lines: int = 10000) -> Dict[str, Set[str]]:
-    """Discover all fields including nested structures"""
+def discover_enhanced_schema(file_path: str, max_lines: int = 10000) -> Dict[str, Set[str]]:
+    """Discover all fields including nested structures from a JSON or JSONL file."""
     schema: Dict[str, Set[str]] = {}
     
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        for idx, line in enumerate(f):
-            if idx >= max_lines:
-                break
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-                
+    for idx, record in enumerate(read_records(file_path)):
+        if idx >= max_lines:
+            break
+        try:
             event_name = record.get("event_name")
             if not event_name:
                 continue
@@ -178,6 +201,8 @@ def discover_enhanced_schema(jsonl_path: str, max_lines: int = 10000) -> Dict[st
             sanitized_fields = {sanitize_column(k) for k in fields.keys()}
             
             schema.setdefault(event_name, set()).update(sanitized_fields)
+        except Exception: # Broad exception to avoid crashing on one bad record
+            continue
     
     return schema
 
@@ -188,35 +213,48 @@ def create_enhanced_tables(conn: sqlite3.Connection, schema: Dict[str, Set[str]]
     for event_name, columns in schema.items():
         table_name = sanitize_column(event_name)
         
-        # All columns as TEXT for simplicity and to avoid type issues
-        cols_sql = [f"{col} TEXT" for col in sorted(columns)]
+        # Check if table exists
+        cur.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+        table_exists = cur.fetchone() is not None
         
-        cur.execute(f"DROP TABLE IF EXISTS {table_name};")
-        cur.execute(
-            f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, {', '.join(cols_sql)});"
-        )
+        if table_exists:
+            # Get existing columns
+            cur.execute(f"PRAGMA table_info({table_name})")
+            existing_columns = {row[1] for row in cur.fetchall() if row[1] != 'id'}
+            
+            # Add any new columns that don't exist
+            new_columns = columns - existing_columns
+            if new_columns:
+                logger.info(f"Adding {len(new_columns)} new columns to table {table_name}")
+                for col in new_columns:
+                    try:
+                        cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {col} TEXT;")
+                    except sqlite3.OperationalError as e:
+                        logger.warning(f"Could not add column {col} to {table_name}: {e}")
+        else:
+            # Create new table
+            cols_sql = [f"{col} TEXT" for col in sorted(columns)]
+            cur.execute(
+                f"CREATE TABLE {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, {', '.join(cols_sql)});"
+            )
+            logger.info(f"Created new table {table_name} with {len(columns)} columns")
     
     conn.commit()
 
-def ingest_enhanced_events(conn: sqlite3.Connection, jsonl_path: str, schema: Dict[str, Set[str]], batch: int = 1000):
-    """Ingest events with all fields"""
+def ingest_enhanced_events(conn: sqlite3.Connection, file_path: str, schema: Dict[str, Set[str]], batch: int = 1000):
+    """Ingest events with all fields from a JSON or JSONL file."""
     cur = conn.cursor()
     
     # Track skipped event types
     skipped_events = set()
     
-    with open(jsonl_path, "r", encoding="utf-8") as f:
-        buffer_by_table: Dict[str, List[List]] = {}
-        
-        for line_num, line in enumerate(f):
-            if line_num % 1000 == 0:
-                print(f"  Processing line {line_num:,}...")
-                
-            try:
-                record = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-                
+    buffer_by_table: Dict[str, List[List]] = {}
+    
+    for record_num, record in enumerate(read_records(file_path)):
+        if record_num % 1000 == 0:
+            print(f"  Processing record {record_num:,}...")
+            
+        try:
             event_name = record.get("event_name")
             if not event_name:
                 continue
@@ -248,27 +286,29 @@ def ingest_enhanced_events(conn: sqlite3.Connection, jsonl_path: str, schema: Di
             buffer_by_table.setdefault(table, []).append(values)
             
             # Flush if batch reached
-            if len(buffer_by_table[table]) >= batch:
+            if len(buffer_by_table.get(table, [])) >= batch:
                 placeholders = ",".join(["?"] * len(columns_order))
                 cur.executemany(
                     f"INSERT INTO {table} ({', '.join(columns_order)}) VALUES ({placeholders});",
                     buffer_by_table[table],
                 )
                 buffer_by_table[table].clear()
-        
-        # Flush remaining
-        for table, rows in buffer_by_table.items():
-            if not rows:
-                continue
-            # Get columns for this table
-            event_name_original = [k for k in schema.keys() if sanitize_column(k) == table][0]
-            allowed_cols = schema[event_name_original]
-            columns_order = sorted(allowed_cols)
-            placeholders = ",".join(["?"] * len(columns_order))
-            cur.executemany(
-                f"INSERT INTO {table} ({', '.join(columns_order)}) VALUES ({placeholders});",
-                rows,
-            )
+        except Exception: # Broad exception to handle any bad records
+            continue
+    
+    # Flush remaining
+    for table, rows in buffer_by_table.items():
+        if not rows:
+            continue
+        # Get columns for this table
+        event_name_original = [k for k in schema.keys() if sanitize_column(k) == table][0]
+        allowed_cols = schema[event_name_original]
+        columns_order = sorted(allowed_cols)
+        placeholders = ",".join(["?"] * len(columns_order))
+        cur.executemany(
+            f"INSERT INTO {table} ({', '.join(columns_order)}) VALUES ({placeholders});",
+            rows,
+        )
     
     # Print summary of skipped events if any
     if skipped_events:
@@ -347,7 +387,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Enhanced GA4 JSONL loader with all fields")
     parser.add_argument("--data-dir", required=True, help="Path to directory containing JSONL and Excel files")
-    parser.add_argument("--jsonl-pattern", default="*.jsonl", help="Glob pattern for GA4 JSONL files")
+    parser.add_argument("--ga-file-pattern", default="*.json*", help="Glob pattern for GA4 JSON/JSONL files")
     parser.add_argument("--excel-file", required=True, help="Excel file name inside data dir for users")
     parser.add_argument("--locations-file", required=True, help="Excel file name inside data dir for locations")
     parser.add_argument("--out", default="db/branch_wise_location.db", help="Output SQLite DB path")
@@ -373,7 +413,7 @@ def main():
     if isinstance(df, dict):
         df = next(iter(df.values()))
     df.columns = [sanitize_column(c) for c in df.columns]
-    df.to_sql("users", conn, if_exists="replace", index=False)
+    df.to_sql("users", conn, if_exists="append", index=False)
     
     # Process Locations Excel
     locations_path = os.path.join(data_dir, args.locations_file)
@@ -382,15 +422,18 @@ def main():
     if isinstance(locations_df, dict):
         locations_df = next(iter(locations_df.values()))
     locations_df.columns = [sanitize_column(c) for c in locations_df.columns]
-    locations_df.to_sql("locations", conn, if_exists="replace", index=False)
+    locations_df.to_sql("locations", conn, if_exists="append", index=False)
     print(f"  Loaded {len(locations_df)} locations")
     
     # Discover enhanced schema
     import glob
-    jsonl_paths = glob.glob(os.path.join(data_dir, args.jsonl_pattern))
+    ga4_file_paths = glob.glob(os.path.join(data_dir, args.ga_file_pattern))
+    
+    if not ga4_file_paths:
+        print(f"Warning: No files found for pattern '{args.ga_file_pattern}' in '{data_dir}'")
     
     combined_schema: Dict[str, Set[str]] = {}
-    for path in jsonl_paths:
+    for path in ga4_file_paths:
         print(f"Discovering enhanced schema in {path}...")
         schema = discover_enhanced_schema(path, max_lines=args.sample_lines)
         # Merge schemas
@@ -408,7 +451,7 @@ def main():
     print("\nCreating task tracking table...")
     create_task_tracking_table(conn)
     
-    for path in jsonl_paths:
+    for path in ga4_file_paths:
         print(f"\nIngesting all fields from {path}...")
         ingest_enhanced_events(conn, path, combined_schema)
     

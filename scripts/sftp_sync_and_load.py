@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SFTP sync script to fetch .jsonl files and run data loading with cleanup
+SFTP sync script to fetch .json/.jsonl files and run data loading with cleanup
 """
 
 import os
@@ -81,40 +81,71 @@ class SFTPDataSyncer:
             self.ssh.close()
         logger.info("SFTP connection closed")
     
-    def list_jsonl_files(self, remote_path: str = '.') -> List[str]:
-        """List all .jsonl files in remote directory"""
+    def list_json_files(self, remote_path: str = '.') -> List[str]:
+        """List all .json and .jsonl files in remote directory"""
         try:
             files = []
             for file_attr in self.sftp.listdir_attr(remote_path):
-                if file_attr.filename.endswith('.jsonl'):
+                if file_attr.filename.endswith('.jsonl') or file_attr.filename.endswith('.json'):
                     files.append(file_attr.filename)
-            logger.info(f"Found {len(files)} .jsonl files on remote server")
+            logger.info(f"Found {len(files)} .json/.jsonl files on remote server")
             return files
         except Exception as e:
             logger.error(f"Failed to list remote files: {e}")
             return []
     
     def download_file(self, remote_file: str, local_file: str, remote_path: str = '.') -> bool:
-        """Download a single file from SFTP server"""
-        try:
-            remote_full_path = f"{remote_path}/{remote_file}" if remote_path != '.' else remote_file
-            logger.info(f"Downloading {remote_full_path} to {local_file}")
-            self.sftp.get(remote_full_path, local_file)
-            
-            # Verify file size
-            remote_stat = self.sftp.stat(remote_full_path)
-            local_stat = os.stat(local_file)
-            
-            if remote_stat.st_size == local_stat.st_size:
-                logger.info(f"Successfully downloaded {remote_file} ({local_stat.st_size:,} bytes)")
-                return True
-            else:
-                logger.error(f"File size mismatch for {remote_file}")
-                return False
+        """Download a single file from SFTP server with automatic reconnection"""
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Check if connection is still alive
+                try:
+                    self.sftp.getcwd()
+                except:
+                    logger.info("Connection lost, attempting to reconnect...")
+                    self.disconnect()
+                    if not self.connect():
+                        logger.error("Failed to reconnect to SFTP server")
+                        return False
                 
-        except Exception as e:
-            logger.error(f"Failed to download {remote_file}: {e}")
-            return False
+                remote_full_path = f"{remote_path}/{remote_file}" if remote_path != '.' else remote_file
+                logger.info(f"Downloading {remote_full_path} to {local_file}")
+                
+                # Download the file
+                self.sftp.get(remote_full_path, local_file)
+                
+                # Verify file size
+                remote_stat = self.sftp.stat(remote_full_path)
+                local_stat = os.stat(local_file)
+                
+                if remote_stat.st_size == local_stat.st_size:
+                    logger.info(f"Successfully downloaded {remote_file} ({local_stat.st_size:,} bytes)")
+                    return True
+                else:
+                    logger.error(f"File size mismatch for {remote_file}")
+                    if os.path.exists(local_file):
+                        os.remove(local_file)
+                    return False
+                    
+            except Exception as e:
+                retry_count += 1
+                logger.error(f"Failed to download {remote_file} (attempt {retry_count}/{max_retries}): {e}")
+                
+                # Remove partial file if exists
+                if os.path.exists(local_file):
+                    os.remove(local_file)
+                
+                if retry_count < max_retries:
+                    logger.info("Reconnecting for retry...")
+                    self.disconnect()
+                    if not self.connect():
+                        logger.error("Failed to reconnect to SFTP server")
+                        return False
+                    
+        return False
 
 
 def get_date_suffix(use_yesterday: bool = False) -> str:
@@ -188,7 +219,8 @@ def run_load_data(data_dir: str, user_file: str, locations_file: str, db_path: s
         "--data-dir", data_dir,
         "--excel-file", user_file,
         "--locations-file", locations_file,
-        "--out", db_path
+        "--out", db_path,
+        "--ga-file-pattern", "*.json*"  # Ensure we process both .json and .jsonl files
     ]
     
     logger.info(f"Running load_data.py with command: {' '.join(cmd)}")
@@ -306,9 +338,10 @@ def main():
     parser.add_argument("--locations-file", default="Locations_List1750281613134.xlsx", help="Locations Excel file name")
     parser.add_argument("--db-path", default="db/branch_wise_location.db", help="Database output path")
     parser.add_argument("--no-db-backup", action="store_true", help="Don't backup database before cleaning")
+    parser.add_argument("--no-clean-db", action="store_true", help="Don't clean/remove existing database (append mode)")
     
-    # Configuration file
-    parser.add_argument("--config", help="JSON configuration file (overrides command line args)")
+    # Configuration file - default to configs/sftp_config.json
+    parser.add_argument("--config", default="configs/sftp_config.json", help="JSON configuration file (overrides command line args)")
     
     # Control flags
     parser.add_argument("--download-only", action="store_true", help="Only download files, don't run load_data")
@@ -323,13 +356,38 @@ def main():
     
     args = parser.parse_args()
     
-    # Load config file if provided
-    if args.config:
+    # Load config file - use default if it exists
+    config = {}
+    if args.config and os.path.exists(args.config):
         config = load_config(args.config)
-        # Override args with config values
+        logger.info(f"Loaded configuration from: {args.config}")
+        
+        # Get the defaults for comparison
+        defaults = vars(parser.parse_args([]))
+        
+        # Override args with config values (only if arg wasn't explicitly provided)
         for key, value in config.items():
-            if hasattr(args, key) and getattr(args, key) is None:
-                setattr(args, key, value)
+            # Map config keys to argument attribute names (hyphens become underscores)
+            arg_attr = key.replace('-', '_')
+            
+            # Special handling for boolean flags
+            if arg_attr in ['use_yesterday', 'no_date_suffix', 'no_db_backup', 'no_clean_db', 'generate_reports', 'send_emails']:
+                if value and not getattr(args, arg_attr, False):
+                    setattr(args, arg_attr, value)
+            # For other values, only override if not explicitly set (matches default)
+            elif hasattr(args, arg_attr) and getattr(args, arg_attr) == defaults.get(arg_attr):
+                setattr(args, arg_attr, value)
+    elif args.config:
+        logger.warning(f"Configuration file not found: {args.config}")
+    
+    # Log key configuration values
+    logger.info("Configuration summary:")
+    logger.info(f"  SFTP Host: {args.host}")
+    logger.info(f"  Remote Path: {args.remote_path}")
+    logger.info(f"  Data Directory: {args.data_dir}")
+    logger.info(f"  Database Path: {args.db_path}")
+    logger.info(f"  Generate Reports: {args.generate_reports}")
+    logger.info(f"  Send Emails: {args.send_emails}")
     
     # Validate required parameters
     if not args.load_only:
@@ -360,10 +418,10 @@ def main():
         
         try:
             # List remote files
-            remote_files = syncer.list_jsonl_files(args.remote_path)
+            remote_files = syncer.list_json_files(args.remote_path)
             
             if not remote_files:
-                logger.warning("No .jsonl files found on remote server")
+                logger.warning("No .json/.jsonl files found on remote server")
             else:
                 # Clean data folder before downloading
                 if not args.dry_run:
@@ -377,8 +435,13 @@ def main():
                 for remote_file in remote_files:
                     # Determine local filename
                     if date_suffix:
-                        base_name = remote_file.replace('.jsonl', '')
-                        local_file = f"{base_name}_{date_suffix}.jsonl"
+                        # Handle both .json and .jsonl extensions
+                        if remote_file.endswith('.jsonl'):
+                            base_name = remote_file.replace('.jsonl', '')
+                            local_file = f"{base_name}_{date_suffix}.jsonl"
+                        else:  # .json
+                            base_name = remote_file.replace('.json', '')
+                            local_file = f"{base_name}_{date_suffix}.json"
                     else:
                         local_file = remote_file
                     
@@ -398,20 +461,28 @@ def main():
     
     # Step 2: Run load_data.py
     if not args.download_only:
-        # Check if we have .jsonl files to process
+        # Check if we have .json or .jsonl files to process
+        json_files = glob.glob(os.path.join(args.data_dir, "*.json"))
         jsonl_files = glob.glob(os.path.join(args.data_dir, "*.jsonl"))
+        all_json_files = json_files + jsonl_files
         
-        if not jsonl_files:
-            logger.error("No .jsonl files found in data directory")
+        if not all_json_files:
+            logger.error("No .json/.jsonl files found in data directory")
             return 1
         
-        logger.info(f"Found {len(jsonl_files)} .jsonl files to process")
+        logger.info(f"Found {len(all_json_files)} .json/.jsonl files to process ({len(json_files)} .json, {len(jsonl_files)} .jsonl)")
         
         # Clean database
         if not args.dry_run:
-            clean_database(args.db_path, backup=not args.no_db_backup)
+            if not args.no_clean_db:
+                clean_database(args.db_path, backup=not args.no_db_backup)
+            else:
+                logger.info(f"Skipping database cleanup - appending to existing database: {args.db_path}")
         else:
-            logger.info(f"[DRY RUN] Would clean database: {args.db_path}")
+            if not args.no_clean_db:
+                logger.info(f"[DRY RUN] Would clean database: {args.db_path}")
+            else:
+                logger.info(f"[DRY RUN] Would NOT clean database: {args.db_path} (append mode)")
         
         # Run load_data
         if not args.dry_run:

@@ -43,27 +43,38 @@ export function LocationSelector({ selectedLocation, onLocationChange, className
     }
   }
 
+  const getLocationDisplay = () => {
+    if (selectedLocation === null || selectedLocation === "all") {
+      return "All Locations"
+    }
+    const location = locations.find(loc => loc.locationId === selectedLocation)
+    if (location) {
+      return `${location.locationName} - ${location.city}, ${location.state}`
+    }
+    return "Select location"
+  }
+
   return (
-    <div className={`flex items-center gap-2 ${className}`}>
-      <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-      <Select
-        value={selectedLocation || "all"}
-        onValueChange={(value) => onLocationChange(value === "all" ? null : value)}
-      >
-        <SelectTrigger className="w-full sm:w-[250px]">
-          <SelectValue placeholder="Select location" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All Locations</SelectItem>
-          {locations.map((location) => (
-            <SelectItem key={location.locationId} value={location.locationId}>
-              <span className="truncate">
-                {location.locationName} - {location.city}, {location.state}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <Select
+      value={selectedLocation || "all"}
+      onValueChange={(value) => onLocationChange(value === "all" ? null : value)}
+    >
+      <SelectTrigger className={`w-full sm:w-[250px] ${className || ''}`}>
+        <div className="flex items-center gap-2 truncate">
+          <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+          <span className="truncate">{getLocationDisplay()}</span>
+        </div>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Locations</SelectItem>
+        {locations.map((location) => (
+          <SelectItem key={location.locationId} value={location.locationId}>
+            <span className="truncate">
+              {location.locationName} - {location.city}, {location.state}
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 } 

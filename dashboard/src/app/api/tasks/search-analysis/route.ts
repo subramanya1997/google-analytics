@@ -95,19 +95,22 @@ export async function GET(request: Request) {
     
     // Count unconverted searches
     const unconvertedSearchCountQuery = `
-      SELECT COUNT(DISTINCT param_ga_session_id) as count
+      SELECT COUNT(DISTINCT vsr.param_ga_session_id) as count
       FROM view_search_results vsr
-      WHERE param_search_term IS NOT NULL
-        ${conversionFilter}
+      INNER JOIN (
+        SELECT DISTINCT param_ga_session_id, user_prop_default_branch_id 
+        FROM page_view 
+        WHERE 1=1 ${locationFilter} ${dateFilter}
+      ) pv ON vsr.param_ga_session_id = pv.param_ga_session_id
+      WHERE vsr.param_search_term IS NOT NULL
+        ${conversionFilter.replace(/vsr\./g, 'pv.')}
         ${searchFilter}
-        ${locationFilter}
         ${dateFilter}
-        AND param_ga_session_id IN (
+        AND vsr.param_ga_session_id IN (
           SELECT param_ga_session_id 
           FROM view_search_results 
           WHERE param_search_term IS NOT NULL
             ${searchFilter}
-            ${locationFilter}
             ${dateFilter}
           GROUP BY param_ga_session_id 
           HAVING COUNT(*) > 2
@@ -121,7 +124,7 @@ export async function GET(request: Request) {
           vsr.param_ga_session_id as session_id,
           vsr.event_date,
           vsr.event_timestamp,
-          vsr.user_prop_default_branch_id as branch_id,
+          pv.user_prop_default_branch_id as branch_id,
           COUNT(DISTINCT vsr.param_search_term) as unique_terms,
           COUNT(*) as total_searches,
           GROUP_CONCAT(vsr.param_search_term, ', ') as all_search_terms,
@@ -129,7 +132,7 @@ export async function GET(request: Request) {
             EXISTS(
               SELECT 1 FROM purchase p 
               WHERE p.param_ga_session_id = vsr.param_ga_session_id
-              ${locationId ? 'AND p.user_prop_default_branch_id = vsr.user_prop_default_branch_id' : ''}
+              ${locationId ? 'AND p.user_prop_default_branch_id = pv.user_prop_default_branch_id' : ''}
               ${dateFilter.replace(/event_date/g, 'p.event_date')}
             )
           ` : '0'} as has_purchase,
@@ -137,13 +140,17 @@ export async function GET(request: Request) {
           l.city,
           l.state
         FROM view_search_results vsr
-        LEFT JOIN locations l ON vsr.user_prop_default_branch_id = l.warehouse_code
+        INNER JOIN (
+          SELECT DISTINCT param_ga_session_id, user_prop_default_branch_id 
+          FROM page_view 
+          WHERE 1=1 ${locationFilter} ${dateFilter}
+        ) pv ON vsr.param_ga_session_id = pv.param_ga_session_id
+        LEFT JOIN locations l ON pv.user_prop_default_branch_id = l.warehouse_code
         WHERE vsr.param_search_term IS NOT NULL
-          ${conversionFilter}
+          ${conversionFilter.replace(/vsr\./g, 'pv.')}
           ${searchFilter}
-          ${locationFilter}
           ${dateFilter}
-        GROUP BY vsr.param_ga_session_id, vsr.user_prop_default_branch_id
+        GROUP BY vsr.param_ga_session_id, pv.user_prop_default_branch_id
         HAVING total_searches > 2
       )
       SELECT * FROM search_sessions
@@ -153,19 +160,75 @@ export async function GET(request: Request) {
     
     // Execute queries
     const failedSearchCount = await db.get(failedSearchCountQuery, ...failedSearchAllParams)
-    const unconvertedCountParams = query ? 
-      (includeConverted ? [...searchQueryParams, ...locationParams, ...dateParams, ...searchQueryParams, ...locationParams, ...dateParams] : [...searchQueryParams, ...locationParams, ...dateParams, ...dateParams, ...searchQueryParams, ...locationParams, ...dateParams]) 
-      : (includeConverted ? [...locationParams, ...dateParams, ...locationParams, ...dateParams] : [...locationParams, ...dateParams, ...dateParams, ...locationParams, ...dateParams])
+    
+    // For unconvertedSearchCountQuery, parameters are needed in this order:
+    // 1. page_view subquery: locationFilter, dateFilter
+    // 2. conversionFilter subquery (if !includeConverted): locationFilter, dateFilter
+    // 3. main WHERE clause: searchFilter, dateFilter
+    // 4. inner subquery: searchFilter, dateFilter
+    const unconvertedCountParams = []
+    // page_view subquery
+    unconvertedCountParams.push(...locationParams, ...dateParams)
+    if (!includeConverted) {
+      // conversionFilter subquery
+      unconvertedCountParams.push(...locationParams, ...dateParams)
+    }
+    // main WHERE clause
+    unconvertedCountParams.push(...searchQueryParams, ...dateParams)
+    // inner subquery
+    unconvertedCountParams.push(...searchQueryParams, ...dateParams)
+    
     const unconvertedSearchCount = await db.get(unconvertedSearchCountQuery, ...unconvertedCountParams)
+    
+    // For failedSearchesQuery, we need to account for the EXISTS subquery parameters
+    const failedSearchesParams = [
+      ...failedSearchParams,  // for main WHERE clause
+      ...locationParams,      // for main WHERE clause
+      ...dateParams,          // for main WHERE clause
+      ...dateParams,          // for EXISTS subquery (p.event_date)
+    ]
     
     const failedSearches = await db.all(
       failedSearchesQuery, 
-      ...failedSearchAllParams, 
+      ...failedSearchesParams, 
       Math.floor(limit / 2), 
       offset
     )
     
-    const unconvertedSearchAllParams = [...searchQueryParams, ...locationParams, ...dateParams]
+    // For unconvertedSearchesQuery, parameters are needed in this order:
+    // 1. has_purchase EXISTS subquery (if includeConverted): dateFilter (with p.event_date)
+    // 2. page_view subquery: locationFilter, dateFilter
+    // 3. conversionFilter subquery (if !includeConverted): locationFilter, dateFilter
+    // 4. main WHERE clause: searchFilter, dateFilter
+    // 5. LIMIT and OFFSET
+    const unconvertedSearchAllParams = []
+    if (includeConverted && dateParams.length > 0) {
+      unconvertedSearchAllParams.push(...dateParams)
+    }
+    // page_view subquery
+    unconvertedSearchAllParams.push(...locationParams, ...dateParams)
+    if (!includeConverted) {
+      // conversionFilter subquery
+      unconvertedSearchAllParams.push(...locationParams, ...dateParams)
+    }
+    // main WHERE clause
+    unconvertedSearchAllParams.push(...searchQueryParams, ...dateParams)
+    
+    // Debug logging
+    console.log('unconvertedSearchesQuery params:', {
+      includeConverted,
+      query,
+      locationId,
+      startDate,
+      endDate,
+      dateParams,
+      locationParams,
+      searchQueryParams,
+      unconvertedSearchAllParams,
+      limit: Math.ceil(limit / 2),
+      offset
+    })
+    
     const unconvertedSearches = await db.all(
       unconvertedSearchesQuery,
       ...unconvertedSearchAllParams,

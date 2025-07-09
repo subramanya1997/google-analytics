@@ -417,7 +417,7 @@ export default function RepeatVisitsPage() {
                                       
                                       return (
                                         <div 
-                                          key={i} 
+                                          key={`${task.id}-${i}`} 
                                           className="group relative overflow-hidden rounded-lg border bg-card hover:bg-accent/50 transition-all duration-200 hover:shadow-md"
                                         >
                                           {url ? (

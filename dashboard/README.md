@@ -1,4 +1,4 @@
-# Impax Analytics Dashboard
+# impaqx Analytics Dashboard
 
 A modern, modular e-commerce analytics dashboard built with Next.js 14, Shadcn UI, and Tailwind CSS. This dashboard visualizes Google Analytics data and provides actionable insights for sales teams.
 

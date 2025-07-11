@@ -102,7 +102,7 @@ export function Sidebar() {
         </SheetTrigger>
         <SheetContent side="left" className="w-64 p-0">
           <div className="flex h-16 items-center px-6 border-b">
-            <SheetTitle className="text-lg font-semibold">Impax Analytics</SheetTitle>
+            <SheetTitle className="text-lg font-semibold">impaqx Analytics</SheetTitle>
           </div>
           <SidebarContent pathname={pathname} onItemClick={() => setMobileOpen(false)} />
         </SheetContent>
@@ -111,7 +111,7 @@ export function Sidebar() {
       {/* Desktop Sidebar */}
       <div className="hidden lg:flex h-full w-64 flex-col bg-card border-r">
         <div className="flex h-16 items-center px-6 border-b">
-          <h2 className="text-lg font-semibold">Impax Analytics</h2>
+          <h2 className="text-lg font-semibold">impaqx Analytics</h2>
         </div>
         <SidebarContent pathname={pathname} />
       </div>

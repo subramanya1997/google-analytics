@@ -11,10 +11,11 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-from datetime import datetime
+from datetime import datetime, timedelta
 import glob
 from typing import Dict, List, Optional
 import argparse
+import re
 
 # Configure logging
 logging.basicConfig(
@@ -153,10 +154,10 @@ class BranchReportEmailer:
         
         # Determine report pattern
         if date_suffix:
-            pattern = f"{report_dir}/D*_report_{date_suffix}.html"
+            pattern = f"{report_dir}/*_report_{date_suffix}.html"
         else:
             # Find the most recent reports
-            all_reports = glob.glob(f"{report_dir}/D*_report_*.html")
+            all_reports = glob.glob(f"{report_dir}/*_report_*.html")
             if not all_reports:
                 logger.warning("No branch reports found")
                 return results
@@ -164,15 +165,15 @@ class BranchReportEmailer:
             # Get the most recent date suffix
             dates = set()
             for report in all_reports:
-                parts = os.path.basename(report).split('_')
-                if len(parts) >= 3:
-                    dates.add(parts[2].replace('.html', ''))
+                match = re.search(r'_(\d{8})\.html$', report)
+                if match:
+                    dates.add(match.group(1))
             
             if dates:
                 date_suffix = max(dates)
-                pattern = f"{report_dir}/D*_report_{date_suffix}.html"
+                pattern = f"{report_dir}/*_report_{date_suffix}.html"
             else:
-                logger.error("Could not determine report date suffix")
+                logger.error("Could not determine report date suffix from filenames")
                 return results
         
         # Find all branch reports
@@ -219,7 +220,7 @@ def main():
                        help="Branch to email mapping file")
     parser.add_argument("--report-dir", default="branch_reports",
                        help="Directory containing branch reports")
-    parser.add_argument("--date-suffix", help="Specific date suffix (e.g., 20250629)")
+    parser.add_argument("--date-suffix", help="Specific date suffix (e.g., 20250629). Defaults to yesterday.")
     parser.add_argument("--branch", help="Send report for specific branch only")
     parser.add_argument("--dry-run", action="store_true", 
                        help="Show what would be sent without sending")
@@ -266,7 +267,16 @@ def main():
             return 1
     else:
         # Send all branch reports
-        results = emailer.send_all_branch_reports(args.report_dir, args.date_suffix)
+        date_suffix_to_send = args.date_suffix
+        if not date_suffix_to_send:
+            # If no date is specified, default to yesterday
+            yesterday = datetime.now() - timedelta(days=1)
+            date_suffix_to_send = yesterday.strftime('%Y%m%d')
+            logger.info(f"No date suffix provided, defaulting to sending reports for {date_suffix_to_send} (yesterday).")
+
+        results = emailer.send_all_branch_reports(args.report_dir, date_suffix_to_send)
+        if not results:
+             logger.warning(f"No reports found for date {date_suffix_to_send} to send.")
         return 0 if any(results.values()) else 1
 
 

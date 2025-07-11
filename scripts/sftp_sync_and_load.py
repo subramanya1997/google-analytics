@@ -117,20 +117,27 @@ class SFTPDataSyncer:
                         return False
                 
                 remote_full_path = f"{remote_path}/{remote_file}" if remote_path != '.' else remote_file
-                logger.info(f"Downloading {remote_full_path} to {local_file}")
                 
-                # Get remote file size
+                # Get remote file stats
                 remote_stat = self.sftp.stat(remote_full_path)
+                remote_mtime = remote_stat.st_mtime
                 remote_size = remote_stat.st_size
+                
+                # Check if local file is up-to-date and skip if so
+                if os.path.exists(local_file):
+                    local_mtime = os.path.getmtime(local_file)
+                    local_size = os.path.getsize(local_file)
+                    if local_mtime >= remote_mtime and local_size == remote_size:
+                        logger.info(f"Skipping up-to-date file: {os.path.basename(local_file)}")
+                        return True
+
+                logger.info(f"Downloading {remote_full_path} to {local_file}")
                 
                 # Get current local size for resume
                 local_size = 0
                 if os.path.exists(local_file):
                     local_size = os.path.getsize(local_file)
-                    if local_size == remote_size:
-                        logger.info(f"File already completely downloaded: {remote_file} ({remote_size:,} bytes)")
-                        return True
-                    elif local_size > remote_size:
+                    if local_size > remote_size:
                         logger.warning(f"Local file larger than remote, restarting download: {local_file}")
                         os.remove(local_file)
                         local_size = 0
@@ -164,6 +171,8 @@ class SFTPDataSyncer:
                 final_local_size = os.path.getsize(local_file)
                 if final_local_size == remote_size:
                     logger.info(f"Successfully downloaded {remote_file} ({remote_size:,} bytes)")
+                    # Set mtime to match remote
+                    os.utime(local_file, (remote_stat.st_atime, remote_mtime))
                     return True
                 else:
                     logger.error(f"File size mismatch for {remote_file}: local {final_local_size:,} vs remote {remote_size:,}")
@@ -246,7 +255,7 @@ def clean_database(db_path: str, backup: bool = True) -> None:
             logger.error(f"Failed to remove database: {e}")
 
 
-def run_load_data(data_dir: str, user_file: str, locations_file: str, db_path: str) -> bool:
+def run_load_data(data_dir: str, user_file: str, locations_file: str, db_path: str, file_pattern: str = "*.json*") -> bool:
     """Run the load_data.py script"""
     script_path = os.path.join("scripts", "load_data.py")
     
@@ -257,7 +266,7 @@ def run_load_data(data_dir: str, user_file: str, locations_file: str, db_path: s
         "--excel-file", user_file,
         "--locations-file", locations_file,
         "--out", db_path,
-        "--ga-file-pattern", "*.json*"  # Ensure we process both .json and .jsonl files
+        "--ga-file-pattern", file_pattern
     ]
     
     logger.info(f"Running load_data.py with command: {' '.join(cmd)}")
@@ -463,11 +472,11 @@ def main():
             if not remote_files:
                 logger.warning("No .json/.jsonl files found on remote server")
             else:
-                # Clean data folder before downloading
-                if not args.dry_run:
-                    clean_data_folder(args.data_dir, keep_patterns=["*.xlsx"])
-                else:
-                    logger.info("[DRY RUN] Would clean data folder")
+                # Clean data folder before downloading - NO LONGER CLEANING
+                # if not args.dry_run:
+                #     clean_data_folder(args.data_dir, keep_patterns=["*.xlsx"])
+                # else:
+                #     logger.info("[DRY RUN] Would clean data folder")
                 
                 # Download each file
                 date_suffix = get_date_suffix(args.use_yesterday) if not args.no_date_suffix else ""
@@ -519,6 +528,11 @@ def main():
         
         logger.info(f"Found {len(all_json_files)} .json/.jsonl files to process ({len(json_files)} .json, {len(jsonl_files)} .jsonl)")
         
+        # Determine file pattern for loading
+        date_suffix = get_date_suffix(args.use_yesterday) if not args.no_date_suffix else ""
+        load_pattern = f"*_{date_suffix}.json*" if date_suffix else "*.json*"
+        logger.info(f"Using file pattern for data loading: {load_pattern}")
+
         # Clean database
         if not args.dry_run:
             if not args.no_clean_db:
@@ -537,7 +551,8 @@ def main():
                 data_dir=args.data_dir,
                 user_file=args.user_file,
                 locations_file=args.locations_file,
-                db_path=args.db_path
+                db_path=args.db_path,
+                file_pattern=load_pattern
             )
             
             if not success:

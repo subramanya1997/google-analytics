@@ -3,21 +3,18 @@
         "branch_name": "Downtown Branch",
         "email": "john.doe@company.com",
         "name": "John Doe",
-        "cc": "manager1@company.com",
         "enabled": true
     },
     "D02": {
         "branch_name": "Uptown Branch", 
         "email": "jane.smith@company.com",
         "name": "Jane Smith",
-        "cc": "",
         "enabled": true
     },
     "D03": {
         "branch_name": "West Side Branch",
         "email": "bob.johnson@company.com",
         "name": "Bob Johnson",
-        "cc": "manager2@company.com,regional@company.com",
         "enabled": true
     },
     "D04": {

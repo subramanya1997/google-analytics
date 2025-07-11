@@ -6,7 +6,7 @@ import { DashboardProvider } from "@/contexts/dashboard-context"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "impaqx Analytics Dashboard",
+  title: "Impaqx Analytics Dashboard",
   description: "E-commerce analytics and customer engagement platform",
 }
 

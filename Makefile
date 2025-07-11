@@ -1,4 +1,4 @@
-.PHONY: all load_data export_report generate_report clean clean-all run_dashboard sftp_sync install
+.PHONY: all load_data export_report generate_report clean clean-all run_dashboard sftp_sync install install_dashboard build_dashboard start_dashboard
 
 # Variables
 PYTHON = python
@@ -47,6 +47,18 @@ generate_report:
 run_dashboard:
 	@echo "Starting the dashboard development server..."
 	cd $(DASHBOARD_DIR) && npm run dev
+
+install_dashboard:
+	@echo "Installing dashboard dependencies..."
+	cd $(DASHBOARD_DIR) && npm install
+
+build_dashboard:
+	@echo "Building dashboard for production..."
+	cd $(DASHBOARD_DIR) && npm run build -- --no-lint
+
+start_dashboard:
+	@echo "Starting dashboard production server..."
+	cd $(DASHBOARD_DIR) && npm start
 
 clean:
 	@echo "Basic cleanup of generated files..."

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 import subprocess
 import glob
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -42,28 +43,31 @@ class SFTPDataSyncer:
             self.ssh = paramiko.SSHClient()
             self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             
+            connect_params = {
+                "hostname": self.host,
+                "port": self.port,
+                "username": self.username,
+                "look_for_keys": False,
+                "allow_agent": False,
+                "timeout": 30
+            }
+            
             # Connect with password or key
             if self.key_path:
                 logger.info(f"Connecting to {self.host}:{self.port} with SSH key")
                 private_key = paramiko.RSAKey.from_private_key_file(self.key_path)
-                self.ssh.connect(
-                    hostname=self.host,
-                    port=self.port,
-                    username=self.username,
-                    pkey=private_key,
-                    look_for_keys=False,
-                    allow_agent=False
-                )
+                connect_params["pkey"] = private_key
             else:
                 logger.info(f"Connecting to {self.host}:{self.port} with password")
-                self.ssh.connect(
-                    hostname=self.host,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
-                    look_for_keys=False,
-                    allow_agent=False
-                )
+                connect_params["password"] = self.password
+            
+            self.ssh.connect(**connect_params)
+            
+            # Set keepalive and socket timeout to prevent hangs
+            transport = self.ssh.get_transport()
+            if transport and transport.is_active():
+                transport.sock.settimeout(60)
+                transport.set_keepalive(30)
             
             self.sftp = self.ssh.open_sftp()
             logger.info("SFTP connection established successfully")
@@ -95,9 +99,10 @@ class SFTPDataSyncer:
             return []
     
     def download_file(self, remote_file: str, local_file: str, remote_path: str = '.') -> bool:
-        """Download a single file from SFTP server with automatic reconnection"""
-        max_retries = 3
+        """Download a single file from SFTP server with automatic reconnection and resume support"""
+        max_retries = 5
         retry_count = 0
+        chunk_size = 32768
         
         while retry_count < max_retries:
             try:
@@ -114,31 +119,63 @@ class SFTPDataSyncer:
                 remote_full_path = f"{remote_path}/{remote_file}" if remote_path != '.' else remote_file
                 logger.info(f"Downloading {remote_full_path} to {local_file}")
                 
-                # Download the file
-                self.sftp.get(remote_full_path, local_file)
+                # Get remote file size
+                remote_stat = self.sftp.stat(remote_full_path)
+                remote_size = remote_stat.st_size
+                
+                # Get current local size for resume
+                local_size = 0
+                if os.path.exists(local_file):
+                    local_size = os.path.getsize(local_file)
+                    if local_size == remote_size:
+                        logger.info(f"File already completely downloaded: {remote_file} ({remote_size:,} bytes)")
+                        return True
+                    elif local_size > remote_size:
+                        logger.warning(f"Local file larger than remote, restarting download: {local_file}")
+                        os.remove(local_file)
+                        local_size = 0
+                
+                # Open local file in append mode if resuming
+                with open(local_file, 'ab' if local_size > 0 else 'wb') as local_f:
+                    if local_size > 0:
+                        logger.info(f"Resuming download from byte {local_size:,}")
+                    
+                    with self.sftp.open(remote_full_path, 'rb') as remote_f:
+                        if local_size > 0:
+                            remote_f.seek(local_size)
+                        
+                        with tqdm(
+                            total=remote_size,
+                            initial=local_size,
+                            unit='B',
+                            unit_scale=True,
+                            desc=remote_file,
+                            miniters=1,
+                            ncols=80
+                        ) as pbar:
+                            while True:
+                                data = remote_f.read(chunk_size)
+                                if not data:
+                                    break
+                                local_f.write(data)
+                                pbar.update(len(data))
                 
                 # Verify file size
-                remote_stat = self.sftp.stat(remote_full_path)
-                local_stat = os.stat(local_file)
-                
-                if remote_stat.st_size == local_stat.st_size:
-                    logger.info(f"Successfully downloaded {remote_file} ({local_stat.st_size:,} bytes)")
+                final_local_size = os.path.getsize(local_file)
+                if final_local_size == remote_size:
+                    logger.info(f"Successfully downloaded {remote_file} ({remote_size:,} bytes)")
                     return True
                 else:
-                    logger.error(f"File size mismatch for {remote_file}")
-                    if os.path.exists(local_file):
-                        os.remove(local_file)
+                    logger.error(f"File size mismatch for {remote_file}: local {final_local_size:,} vs remote {remote_size:,}")
+                    # Don't delete partial file, allow future resume
                     return False
                     
             except Exception as e:
                 retry_count += 1
                 logger.error(f"Failed to download {remote_file} (attempt {retry_count}/{max_retries}): {e}")
-                
-                # Remove partial file if exists
-                if os.path.exists(local_file):
-                    os.remove(local_file)
-                
                 if retry_count < max_retries:
+                    import time
+                    time.sleep(5)
                     logger.info("Reconnecting for retry...")
                     self.disconnect()
                     if not self.connect():
@@ -404,6 +441,8 @@ def main():
     
     # Step 1: Download files from SFTP
     downloaded_files = []
+    successful_remote = []
+    
     if not args.load_only:
         syncer = SFTPDataSyncer(
             host=args.host,
@@ -451,15 +490,17 @@ def main():
                     if args.dry_run:
                         logger.info(f"[DRY RUN] Would download {remote_file} to {local_path}")
                         downloaded_files.append(local_path)
+                        successful_remote.append(remote_file)
                     else:
                         if syncer.download_file(remote_file, local_path, args.remote_path):
                             downloaded_files.append(local_path)
+                            successful_remote.append(remote_file)
                         else:
                             logger.error(f"Failed to download {remote_file}")
             
             logger.info(f"Successfully downloaded {len(downloaded_files)} out of {len(remote_files)} files")
             if len(downloaded_files) < len(remote_files):
-                failed_files = set(remote_files) - set(os.path.basename(p) for p in downloaded_files)
+                failed_files = set(remote_files) - set(successful_remote)
                 logger.warning(f"Failed to download the following files: {', '.join(failed_files)}")
         
         finally:

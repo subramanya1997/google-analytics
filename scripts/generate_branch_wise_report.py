@@ -20,8 +20,8 @@ HEAD_CONTENT = """
 <style>
     body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; background-color: #f8f9fa; color: #333; }
     .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; }
-    .header h1 { font-size: 24px; margin: 0; }
+    .header { display: flex; flex-direction: column; align-items: flex-start; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; }
+    .header h1 { font-size: 24px; margin: 0 0 5px 0; }
     .header p { font-size: 16px; margin: 0; color: #6c757d; }
     h2 { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
     h4 { font-size: 18px; margin-top: 20px; margin-bottom: 10px; }

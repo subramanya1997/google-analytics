@@ -419,6 +419,7 @@ def main():
         try:
             # List remote files
             remote_files = syncer.list_json_files(args.remote_path)
+            logger.info(f"Files to download: {', '.join(remote_files)}")
             
             if not remote_files:
                 logger.warning("No .json/.jsonl files found on remote server")
@@ -455,6 +456,11 @@ def main():
                             downloaded_files.append(local_path)
                         else:
                             logger.error(f"Failed to download {remote_file}")
+            
+            logger.info(f"Successfully downloaded {len(downloaded_files)} out of {len(remote_files)} files")
+            if len(downloaded_files) < len(remote_files):
+                failed_files = set(remote_files) - set(os.path.basename(p) for p in downloaded_files)
+                logger.warning(f"Failed to download the following files: {', '.join(failed_files)}")
         
         finally:
             syncer.disconnect()

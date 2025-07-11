@@ -55,7 +55,7 @@ def get_all_locations(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
     columns = [description[0] for description in cursor.description]
     return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-def fetch_purchase_tasks_by_location(conn: sqlite3.Connection, location_id: str) -> Dict[str, Any]:
+def fetch_purchase_tasks_by_location(conn: sqlite3.Connection, location_id: str, start_time: int, end_time: int) -> Dict[str, Any]:
     """Fetch all purchase follow-up tasks for a specific location"""
     query = """
     SELECT 
@@ -66,9 +66,10 @@ def fetch_purchase_tasks_by_location(conn: sqlite3.Connection, location_id: str)
     FROM purchase p
     WHERE p.param_transaction_id IS NOT NULL
     AND p.user_prop_default_branch_id = ?
+    AND p.event_timestamp BETWEEN ? AND ?
     """
     
-    result = conn.execute(query, (location_id,)).fetchone()
+    result = conn.execute(query, (location_id, start_time, end_time)).fetchone()
     
     # Get all purchase details for this location
     sample_query = """
@@ -95,10 +96,11 @@ def fetch_purchase_tasks_by_location(conn: sqlite3.Connection, location_id: str)
     LEFT JOIN task_tracking tt ON tt.task_id = ('purchase_' || p.param_transaction_id) AND tt.task_type = 'purchase'
     WHERE p.param_transaction_id IS NOT NULL
     AND p.user_prop_default_branch_id = ?
+    AND p.event_timestamp BETWEEN ? AND ?
     ORDER BY p.ecommerce_purchase_revenue DESC
     """
     
-    samples = conn.execute(sample_query, (location_id,)).fetchall()
+    samples = conn.execute(sample_query, (location_id, start_time, end_time)).fetchall()
     
     return {
         'total': result[0] or 0,
@@ -108,7 +110,7 @@ def fetch_purchase_tasks_by_location(conn: sqlite3.Connection, location_id: str)
         'samples': samples
     }
 
-def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_id: str) -> Dict[str, Any]:
+def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_id: str, start_time: int, end_time: int) -> Dict[str, Any]:
     """Fetch cart abandonment tasks for a specific location"""
     query = """
     WITH abandoned_carts AS (
@@ -122,6 +124,7 @@ def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_
             SELECT DISTINCT param_ga_session_id FROM purchase WHERE param_ga_session_id IS NOT NULL
         )
         AND ac.user_prop_default_branch_id = ?
+        AND ac.event_timestamp BETWEEN ? AND ?
         GROUP BY ac.param_ga_session_id, ac.user_prop_webuserid
     )
     SELECT 
@@ -132,7 +135,7 @@ def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_
     FROM abandoned_carts
     """
     
-    result = conn.execute(query, (location_id,)).fetchone()
+    result = conn.execute(query, (location_id, start_time, end_time)).fetchone()
     
     # Get sample abandoned carts with more details including items_json
     sample_query = """
@@ -157,12 +160,13 @@ def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_
         SELECT DISTINCT param_ga_session_id FROM purchase WHERE param_ga_session_id IS NOT NULL
     )
     AND ac.user_prop_default_branch_id = ?
+    AND ac.event_timestamp BETWEEN ? AND ?
     GROUP BY ac.param_ga_session_id, ac.user_prop_webuserid, u.name, u.email, u.customer_name, u.office_phone, u.cell_phone, tt.completed, tt.notes, ac.device_web_info_hostname
     ORDER BY cart_value DESC
     LIMIT 10
     """
     
-    samples = conn.execute(sample_query, (location_id,)).fetchall()
+    samples = conn.execute(sample_query, (location_id, start_time, end_time)).fetchall()
     
     return {
         'total': result[0] or 0,
@@ -172,7 +176,7 @@ def fetch_cart_abandonment_tasks_by_location(conn: sqlite3.Connection, location_
         'samples': samples
     }
 
-def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location_id: str) -> Dict[str, Any]:
+def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location_id: str, start_time: int, end_time: int) -> Dict[str, Any]:
     """Fetch search with no results tasks for a specific location"""
     query = """
     SELECT 
@@ -183,9 +187,10 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
     FROM no_search_results
     WHERE param_no_search_results_term IS NOT NULL
     AND user_prop_default_branch_id = ?
+    AND event_timestamp BETWEEN ? AND ?
     """
     
-    result = conn.execute(query, (location_id,)).fetchone()
+    result = conn.execute(query, (location_id, start_time, end_time)).fetchone()
     
     # Get failed searches grouped by term with user details
     sample_query = """
@@ -197,12 +202,13 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
     FROM no_search_results s
     LEFT JOIN users u ON CAST(s.user_prop_webuserid AS INTEGER) = u.user_id
     WHERE s.user_prop_default_branch_id = ? AND s.param_no_search_results_term IS NOT NULL
+    AND s.event_timestamp BETWEEN ? AND ?
     GROUP BY s.param_no_search_results_term
     ORDER BY total_searches DESC
     LIMIT 10
     """
     
-    samples = conn.execute(sample_query, (location_id,)).fetchall()
+    samples = conn.execute(sample_query, (location_id, start_time, end_time)).fetchall()
     
     return {
         'unique_terms': result[0] or 0,
@@ -212,7 +218,7 @@ def fetch_search_no_results_tasks_by_location(conn: sqlite3.Connection, location
         'samples': samples
     }
 
-def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id: str) -> Dict[str, Any]:
+def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id: str, start_time: int, end_time: int) -> Dict[str, Any]:
     """Fetch repeat visits without purchase tasks for a specific location"""
     query = """
     WITH repeat_visitors AS (
@@ -224,6 +230,7 @@ def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id:
             SELECT DISTINCT param_ga_session_id FROM purchase
         )
         AND pv.user_prop_default_branch_id = ?
+        AND pv.event_timestamp BETWEEN ? AND ?
         GROUP BY pv.param_ga_session_id
         HAVING pages_viewed >= 3
     )
@@ -233,7 +240,7 @@ def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id:
     FROM repeat_visitors
     """
     
-    result = conn.execute(query, (location_id,)).fetchone()
+    result = conn.execute(query, (location_id, start_time, end_time)).fetchone()
     
     # Get sample repeat visitors
     sample_query = """
@@ -255,19 +262,36 @@ def fetch_repeat_visits_tasks_by_location(conn: sqlite3.Connection, location_id:
     )
     AND pv.user_prop_webuserid IS NOT NULL
     AND pv.user_prop_default_branch_id = ?
+    AND pv.event_timestamp BETWEEN ? AND ?
     GROUP BY pv.param_ga_session_id, u.user_id, tt.completed, tt.notes
     HAVING pages_viewed >= 3
     ORDER BY pages_viewed DESC
     LIMIT 10
     """
     
-    samples = conn.execute(sample_query, (location_id,)).fetchall()
+    samples = conn.execute(sample_query, (location_id, start_time, end_time)).fetchall()
     
     return {
         'total': result[0] or 0,
         'avg_pages': result[1] or 0,
         'samples': samples
     }
+
+def get_unique_dates(conn: sqlite3.Connection) -> List[str]:
+    """Get all unique dates with events in the database"""
+    query = """
+    SELECT DISTINCT date(datetime(event_timestamp / 1000000, 'unixepoch')) as event_date
+    FROM (
+        SELECT event_timestamp FROM purchase
+        UNION SELECT event_timestamp FROM add_to_cart
+        UNION SELECT event_timestamp FROM no_search_results
+        UNION SELECT event_timestamp FROM page_view
+    ) t
+    WHERE event_timestamp IS NOT NULL
+    ORDER BY event_date
+    """
+    cursor = conn.execute(query)
+    return [row[0] for row in cursor.fetchall()]
 
 def parse_items_json(items_json: str) -> List[Dict]:
     """Parse items JSON and return list of products"""
@@ -627,14 +651,15 @@ def generate_location_section(location: Dict[str, Any], data: Dict[str, Any]) ->
     
     return html
 
-def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
+def generate_branch_wise_report(conn: sqlite3.Connection, report_date_str: str) -> str:
     """Generate HTML email report organized by branch/location"""
+    
+    report_date = datetime.strptime(report_date_str, '%Y-%m-%d')
+    start_time = int(report_date.timestamp() * 1000000)
+    end_time = int((report_date + timedelta(days=1)).timestamp() * 1000000) - 1
     
     # Get all locations
     locations = get_all_locations(conn)
-    
-    # Format date
-    report_date = datetime.now().strftime("%B %d, %Y")
     
     # Start HTML
     html = f"""
@@ -643,14 +668,14 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Branch-wise Sales Task Report - {report_date}</title>
+    <title>Branch-wise Sales Task Report - {report_date.strftime("%B %d, %Y")}</title>
     {HEAD_CONTENT}
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Branch-wise Sales Task Report</h1>
-            <p>Report Date: {report_date}</p>
+            <p>Report Date: {report_date.strftime("%B %d, %Y")}</p>
         </div>
     """
     
@@ -669,10 +694,10 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     for location in locations:
         # Fetch data for this location
         location_data = {
-            'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
-            'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code']),
-            'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code']),
-            'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
+            'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+            'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+            'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+            'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'], start_time, end_time)
         }
         
         # Update overall stats
@@ -691,7 +716,7 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
     # Add overall summary
     html += f"""
         <div>
-            <h2>Overall Summary - All Branches</h2>
+            <h2>Overall Summary - All Branches for {report_date.strftime("%Y-%m-%d")}</h2>
             <div>
                 <table class="table">
                     <thead>
@@ -737,6 +762,7 @@ def generate_branch_wise_report(conn: sqlite3.Connection) -> str:
         <div class="mt-5 pt-3 border-top text-muted">
             <p><strong>Report Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
             <p>This is an automated branch-wise report from the Impax Sales Intelligence System.</p>
+            <p>This report covers activity on {report_date.strftime("%Y-%m-%d")}.</p>
             <p><em>Click on rows with ▶ to expand and see detailed information.</em></p>
             <p><strong>Note:</strong> Status and notes functionality are for demonstration. Actual updates should be done through the dashboard.</p>
         </div>
@@ -761,54 +787,90 @@ def main():
     conn = create_connection(DB_PATH)
     if conn is not None:
         try:
-            # Generate and save the combined report
-            html_report = generate_branch_wise_report(conn)
-            report_filename = f"branch_reports/D_All_report_{datetime.now().strftime('%Y%m%d')}.html"
-            with open(report_filename, 'w', encoding='utf-8') as f:
-                f.write(html_report)
-            print(f"Branch-wise report generated: {report_filename}")
+            unique_dates = get_unique_dates(conn)
+            if not unique_dates:
+                print("No data dates found in database")
+                return
 
-            # Generate and save individual reports for each location
-            locations = get_all_locations(conn)
+            latest_date = max(unique_dates)
+            yesterday_str = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
 
-            for location in locations:
-                p = Pynliner()
-                location_data = {
-                    'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code']),
-                    'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code']),
-                    'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code']),
-                    'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'])
-                }
+            for date_str in unique_dates:
+                report_date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                report_fmt = report_date_obj.strftime('%Y%m%d')
 
-                # Skip if no data for this location
-                if not any(data.get('total', 0) > 0 for data in location_data.values()) and \
-                   location_data['search_no_results'].get('unique_terms', 0) == 0:
+                combined_filename = f"branch_reports/D_All_report_{report_fmt}.html"
+                if os.path.exists(combined_filename):
+                    print(f"Combined report already exists for {date_str}")
                     continue
 
-                individual_html_template = f"""
+                if date_str == latest_date and date_str != yesterday_str:
+                    print(f"Skipping generation for latest date {date_str} as it is not yesterday")
+                    continue
+
+                # Generate combined report
+                html_report = generate_branch_wise_report(conn, date_str)
+                with open(combined_filename, 'w', encoding='utf-8') as f:
+                    f.write(html_report)
+                print(f"Generated combined report for {date_str}: {combined_filename}")
+
+                # Generate individual reports
+                locations = get_all_locations(conn)
+                start_time = int(report_date_obj.timestamp() * 1000000)
+                end_time = int((report_date_obj + timedelta(days=1)).timestamp() * 1000000) - 1
+
+                for location in locations:
+                    location_data = {
+                        'purchases': fetch_purchase_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+                        'cart_abandonment': fetch_cart_abandonment_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+                        'search_no_results': fetch_search_no_results_tasks_by_location(conn, location['warehouse_code'], start_time, end_time),
+                        'repeat_visits': fetch_repeat_visits_tasks_by_location(conn, location['warehouse_code'], start_time, end_time)
+                    }
+
+                    # Skip if no data for this location
+                    if (location_data['purchases']['total'] == 0 and 
+                        location_data['cart_abandonment']['total'] == 0 and 
+                        location_data['search_no_results']['total_searches'] == 0 and 
+                        location_data['repeat_visits']['total'] == 0):
+                        continue
+
+                    individual_filename = f"branch_reports/{location['warehouse_code']}_report_{report_fmt}.html"
+                    if os.path.exists(individual_filename):
+                        print(f"Individual report already exists for {location['warehouse_code']} on {date_str}")
+                        continue
+
+                    p = Pynliner()
+                    individual_html_template = f"""
 <!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-    <meta charset=\"UTF-8\">
-    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-    <title>{location['warehouse_name']} Report - {datetime.now().strftime('%B %d, %Y')}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{location['warehouse_name']} Report - {report_date_obj.strftime('%B %d, %Y')}</title>
     {HEAD_CONTENT}
 </head>
 <body>
-    <div class=\"container\">
+    <div class="container">
+        <div class="header">
+            <h1>{location['warehouse_name']} - {location['city']}, {location['state']}</h1>
+            <p>Report for: {report_date_obj.strftime('%B %d, %Y')}</p>
+        </div>
         {generate_location_section(location, location_data)}
+        <div class="mt-5 pt-3 border-top text-muted">
+            <p><strong>Report Generated:</strong> {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+            <p>This report covers activity on {report_date_obj.strftime("%Y-%m-%d")}.</p>
+        </div>
     </div>
 </body>
 </html>
-                """
-                
-                inlined_html = p.from_string(individual_html_template).run()
-                minified_html = htmlmin.minify(inlined_html, remove_empty_space=True)
+                    """
+                    
+                    inlined_html = p.from_string(individual_html_template).run()
+                    minified_html = htmlmin.minify(inlined_html, remove_empty_space=True)
+                    with open(individual_filename, 'w', encoding='utf-8') as f:
+                        f.write(minified_html)
+                    print(f"Generated individual report for {location['warehouse_code']} on {date_str}: {individual_filename}")
 
-                individual_filename = f"branch_reports/{location['warehouse_code']}_report_{datetime.now().strftime('%Y%m%d')}.html"
-                with open(individual_filename, 'w', encoding='utf-8') as f:
-                    f.write(minified_html)
-                print(f"Generated report for {location['warehouse_code']}: {individual_filename}")
         finally:
             conn.close()
 

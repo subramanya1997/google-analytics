@@ -5,7 +5,7 @@
     "password": "your-password",
     "remote_path": "/path/to/jsonl/files",
     "data_dir": "data",
-    "user_file": "USER_LIST_FOR_AI1749843290493.xlsx",
+    "user_file": "UserReport.xlsx",
     "locations_file": "Locations_List1750281613134.xlsx",
     "db_path": "db/branch_wise_location.db",
     "use_yesterday": false,

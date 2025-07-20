@@ -380,7 +380,7 @@ def main():
     parser.add_argument("--no-date-suffix", action="store_true", help="Don't add date suffix to downloaded files")
     
     # Database parameters
-    parser.add_argument("--user-file", default="USER_LIST_FOR_AI1749843290493.xlsx", help="User Excel file name")
+    parser.add_argument("--user-file", default="UserReport.xlsx", help="User Excel file name")
     parser.add_argument("--locations-file", default="Locations_List1750281613134.xlsx", help="Locations Excel file name")
     parser.add_argument("--db-path", default="db/branch_wise_location.db", help="Database output path")
     parser.add_argument("--no-db-backup", action="store_true", help="Don't backup database before cleaning")
@@ -479,21 +479,8 @@ def main():
                 #     logger.info("[DRY RUN] Would clean data folder")
                 
                 # Download each file
-                date_suffix = get_date_suffix(args.use_yesterday) if not args.no_date_suffix else ""
-                
                 for remote_file in remote_files:
-                    # Determine local filename
-                    if date_suffix:
-                        # Handle both .json and .jsonl extensions
-                        if remote_file.endswith('.jsonl'):
-                            base_name = remote_file.replace('.jsonl', '')
-                            local_file = f"{base_name}_{date_suffix}.jsonl"
-                        else:  # .json
-                            base_name = remote_file.replace('.json', '')
-                            local_file = f"{base_name}_{date_suffix}.json"
-                    else:
-                        local_file = remote_file
-                    
+                    local_file = remote_file
                     local_path = os.path.join(args.data_dir, local_file)
                     
                     if args.dry_run:
@@ -529,8 +516,7 @@ def main():
         logger.info(f"Found {len(all_json_files)} .json/.jsonl files to process ({len(json_files)} .json, {len(jsonl_files)} .jsonl)")
         
         # Determine file pattern for loading
-        date_suffix = get_date_suffix(args.use_yesterday) if not args.no_date_suffix else ""
-        load_pattern = f"*_{date_suffix}.json*" if date_suffix else "*.json*"
+        load_pattern = "*.json*"
         logger.info(f"Using file pattern for data loading: {load_pattern}")
 
         # Clean database

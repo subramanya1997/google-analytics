@@ -3,7 +3,7 @@
 # Variables
 PYTHON = python
 DATA_DIR = data
-USER_FILE = USER_LIST_FOR_AI1749843290493.xlsx
+USER_FILE = UserReport.xlsx
 LOCATIONS_FILE = Locations_List1750281613134.xlsx
 DB_FILE = db/branch_wise_location.db
 EXPORT_DIR = branch_reports

@@ -409,10 +409,25 @@ def main():
     # Process Users Excel first
     excel_path = os.path.join(data_dir, args.excel_file)
     print(f"Loading users from {excel_path}...")
-    df = pd.read_excel(excel_path)
-    if isinstance(df, dict):
-        df = next(iter(df.values()))
+    df = pd.read_excel(excel_path, sheet_name='User Report', skiprows=1)
+
+    # Combine name fields into single 'Name' column, handling nulls
+    df['Name'] = df[['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME']].fillna('').agg(' '.join, axis=1).str.strip().replace('', pd.NA)
+
+    # Rename columns to match old schema
+    rename_map = {
+        'CIMM_USER_ID': 'USER_ID',
+        'ROLE_NAME': 'USER_TYPE',
+        'BUYING_COMPANY_NAME': 'CUSTOMER_NAME',
+        'BUYING_COMPANY_ERP_ID': 'CUSTOMER_ERP_ID',
+        # Keep others as is
+    }
+    df = df.rename(columns=rename_map)
+
+    # Sanitize all column names
     df.columns = [sanitize_column(c) for c in df.columns]
+
+    # Load to database, appending if table exists
     df.to_sql("users", conn, if_exists="append", index=False)
     
     # Process Locations Excel

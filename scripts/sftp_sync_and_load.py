@@ -411,8 +411,25 @@ def main():
             
         if args.generate_reports:
             reports_dir = "branch_reports"
-            for file in os.listdir(reports_dir):
-                os.remove(os.path.join(reports_dir, file))
+            if os.path.exists(reports_dir):
+                # Get current date and calculate cutoff (2 days ago)
+                from datetime import datetime, timedelta
+                cutoff_date = datetime.now() - timedelta(days=2)
+                
+                for file in os.listdir(reports_dir):
+                    if file.endswith('.html') and '_report_' in file:
+                        # Extract date from filename (format: {branch_name}_report_{yyyymmdd}.html)
+                        try:
+                            date_part = file.split('_report_')[1].replace('.html', '')
+                            file_date = datetime.strptime(date_part, '%Y%m%d')
+                            
+                            # Only delete files from the last 2 days
+                            if file_date >= cutoff_date:
+                                os.remove(os.path.join(reports_dir, file))
+                                logger.info(f"Deleted recent report file: {file}")
+                        except (ValueError, IndexError):
+                            # Skip files that don't match the expected format
+                            continue
             
             if not run_generate_reports(args.db_path):
                 logger.error("Report generation failed")

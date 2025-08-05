@@ -410,6 +410,10 @@ def main():
             return 1
             
         if args.generate_reports:
+            reports_dir = "branch_reports"
+            for file in os.listdir(reports_dir):
+                os.remove(os.path.join(reports_dir, file))
+            
             if not run_generate_reports(args.db_path):
                 logger.error("Report generation failed")
                 return 1

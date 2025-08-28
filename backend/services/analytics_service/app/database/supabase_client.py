@@ -323,406 +323,126 @@ class AnalyticsSupabaseClient:
     def get_cart_abandonment_tasks(self, tenant_id: str, page: int, limit: int, 
                                  query: Optional[str] = None, location_id: Optional[str] = None, 
                                  start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
-        """Get cart abandonment tasks with pagination and filtering."""
+        """Get cart abandonment tasks using the RPC function."""
         try:
-            # Date filtering for subqueries
-            date_filter = ""
-            if start_date and end_date:
-                start_formatted = start_date.replace('-', '')
-                end_formatted = end_date.replace('-', '')
-                date_filter = f"AND event_date BETWEEN '{start_formatted}' AND '{end_formatted}'"
-
-            # Step 1: Find sessions that have added to cart but not purchased
             rpc_params = {
                 'p_tenant_id': tenant_id,
+                'p_page': page,
+                'p_limit': limit,
+                'p_query': query,
                 'p_location_id': location_id,
                 'p_start_date': start_date,
-                'p_end_date': end_date,
-                'p_limit': limit,
-                'p_offset': (page - 1) * limit
+                'p_end_date': end_date
             }
             
-            # Since the RPC function doesn't exist, we'll implement the logic here
-            # First, get all sessions with cart activity in the date range
-            cart_sessions_query = self.client.table('add_to_cart').select('param_ga_session_id').eq('tenant_id', tenant_id)
-            if location_id:
-                cart_sessions_query = cart_sessions_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                cart_sessions_query = cart_sessions_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                cart_sessions_query = cart_sessions_query.lte('event_date', end_date.replace('-', ''))
+            result = self.client.rpc('get_cart_abandonment_tasks', rpc_params).execute()
             
-            cart_sessions_result = cart_sessions_query.execute()
-            cart_sessions = {item['param_ga_session_id'] for item in cart_sessions_result.data}
-
-            # Then, get all sessions with purchases in the same range
-            purchase_sessions_query = self.client.table('purchase').select('param_ga_session_id').eq('tenant_id', tenant_id)
-            if location_id:
-                purchase_sessions_query = purchase_sessions_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                purchase_sessions_query = purchase_sessions_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                purchase_sessions_query = purchase_sessions_query.lte('event_date', end_date.replace('-', ''))
-            
-            purchase_sessions_result = purchase_sessions_query.execute()
-            purchase_sessions = {item['param_ga_session_id'] for item in purchase_sessions_result.data}
-
-            abandoned_session_ids = list(cart_sessions - purchase_sessions)
-            
-            total_count = len(abandoned_session_ids)
-            
-            # Paginate the abandoned session IDs
-            offset = (page - 1) * limit
-            paginated_session_ids = abandoned_session_ids[offset : offset + limit]
-
-            if not paginated_session_ids:
-                return {'data': [], 'total': 0, 'page': page, 'limit': limit, 'has_more': False}
-
-            # Step 2: For the abandoned sessions, get the cart details
-            abandoned_carts_query = self.client.table('add_to_cart').select(
-                '*'
-            ).eq('tenant_id', tenant_id).in_('param_ga_session_id', paginated_session_ids)
-            
-            abandoned_carts_result = abandoned_carts_query.execute()
-
-            # Group cart items by session ID
-            session_data = {}
-            for item in abandoned_carts_result.data:
-                session_id = item['param_ga_session_id']
-                if session_id not in session_data:
-                    session_data[session_id] = {
-                        'items': [],
-                        'last_activity': '0',
-                        'web_user_id': item.get('user_prop_webuserid'),
-                        'event_date': self._format_event_date(item.get('event_timestamp'))
-                    }
-                session_data[session_id]['items'].append(item)
-                if item['event_timestamp'] > session_data[session_id]['last_activity']:
-                    session_data[session_id]['last_activity'] = item['event_timestamp']
-
-            # Step 3: Format the data into tasks
-            tasks = []
-            for session_id, data in session_data.items():
-                user = self._get_user_details(tenant_id, data['web_user_id'])
-                
-                total_value = sum(
-                    float(i.get('first_item_price', 0) or 0) * int(i.get('first_item_quantity', 0) or 0)
-                    for i in data['items']
-                )
-
-                tasks.append({
-                    'session_id': session_id,
-                    'event_date': data['event_date'],
-                    'last_activity': self._format_event_date(data['last_activity']),
-                    'items_count': len(data['items']),
-                    'total_value': total_value,
-                    'user_id': user.get('user_id'),
-                    'customer_name': user.get('customer_name'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'products': self._parse_cart_items(data['items']),
-                    'completed': self._get_task_completion_status(tenant_id, session_id, 'cart_abandonment')
-                })
-            
-            return {
-                'data': tasks,
-                'total': total_count,
-                'page': page,
-                'limit': limit,
-                'has_more': (page * limit) < total_count
-            }
+            return result.data
 
         except Exception as e:
-            logger.error(f"Error fetching cart abandonment tasks: {e}")
+            logger.error(f"Error fetching cart abandonment tasks via RPC: {e}")
             raise
 
     def get_search_analysis_tasks(self, tenant_id: str, page: int, limit: int, 
                                   query: Optional[str] = None, location_id: Optional[str] = None, 
                                   start_date: Optional[str] = None, end_date: Optional[str] = None,
                                   include_converted: bool = False) -> Dict[str, Any]:
-        """Get search analysis tasks with pagination and filtering."""
+        """Get search analysis tasks using the RPC function."""
         try:
-            # Step 1: Get failed searches
-            failed_searches_query = self.client.table('no_search_results').select(
-                'param_ga_session_id, param_no_search_results_term, event_timestamp, user_prop_webuserid',
-                count='exact'
-            ).eq('tenant_id', tenant_id)
-
-            if location_id:
-                failed_searches_query = failed_searches_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                failed_searches_query = failed_searches_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                failed_searches_query = failed_searches_query.lte('event_date', end_date.replace('-', ''))
-            if query:
-                failed_searches_query = failed_searches_query.ilike('param_no_search_results_term', f'%{query}%')
-
-            failed_searches_result = failed_searches_query.execute()
-            
-            # Step 2: Get unconverted searches
-            # This is a complex query, and this implementation is a simplified version.
-            # A more performant version would use a database function (RPC).
-            
-            # First, get all sessions with search activity
-            search_sessions_query = self.client.table('view_search_results').select(
-                'param_ga_session_id, user_prop_webuserid, param_search_term, event_timestamp'
-            ).eq('tenant_id', tenant_id)
-
-            if location_id:
-                search_sessions_query = search_sessions_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                search_sessions_query = search_sessions_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                search_sessions_query = search_sessions_query.lte('event_date', end_date.replace('-', ''))
-            
-            search_sessions_result = search_sessions_query.execute()
-
-            # Group by session and count searches
-            sessions = {}
-            for search in search_sessions_result.data:
-                session_id = search.get('param_ga_session_id')
-                if session_id:
-                    if session_id not in sessions:
-                        sessions[session_id] = {'searches': [], 'user_id': search.get('user_prop_webuserid')}
-                    sessions[session_id]['searches'].append(search)
-            
-            # Filter for sessions with > 2 searches
-            multi_search_sessions = {sid: data for sid, data in sessions.items() if len(data['searches']) > 2}
-
-            # Get purchase sessions to filter out converted sessions
-            if not include_converted:
-                purchase_sessions_query = self.client.table('purchase').select('param_ga_session_id').eq('tenant_id', tenant_id)
-                if location_id:
-                    purchase_sessions_query = purchase_sessions_query.eq('user_prop_default_branch_id', location_id)
-                if start_date:
-                    purchase_sessions_query = purchase_sessions_query.gte('event_date', start_date.replace('-', ''))
-                if end_date:
-                    purchase_sessions_query = purchase_sessions_query.lte('event_date', end_date.replace('-', ''))
-                
-                purchase_sessions_result = purchase_sessions_query.execute()
-                purchase_sessions = {item['param_ga_session_id'] for item in purchase_sessions_result.data}
-                
-                unconverted_sessions = {sid: data for sid, data in multi_search_sessions.items() if sid not in purchase_sessions}
-            else:
-                unconverted_sessions = multi_search_sessions
-
-            # Step 3: Combine, format, and paginate
-            tasks = []
-            # Add failed searches
-            for item in failed_searches_result.data:
-                user = self._get_user_details(tenant_id, item.get('user_prop_webuserid'))
-                tasks.append({
-                    'session_id': item.get('param_ga_session_id'),
-                    'event_date': self._format_event_date(item.get('event_timestamp')),
-                    'search_term': item.get('param_no_search_results_term'),
-                    'search_type': 'no_results',
-                    'search_count': 1,
-                    'user_id': user.get('user_id'),
-                    'customer_name': user.get('customer_name'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'completed': self._get_task_completion_status(tenant_id, item.get('param_ga_session_id'), 'search_analysis_failed')
-                })
-
-            # Add unconverted searches
-            for session_id, data in unconverted_sessions.items():
-                user = self._get_user_details(tenant_id, data['user_id'])
-                search_terms = [s.get('param_search_term') for s in data['searches']]
-                tasks.append({
-                    'session_id': session_id,
-                    'event_date': self._format_event_date(data['searches'][0].get('event_timestamp')),
-                    'search_term': ", ".join(set(search_terms)),
-                    'search_type': 'no_conversion',
-                    'search_count': len(search_terms),
-                    'user_id': user.get('user_id'),
-                    'customer_name': user.get('customer_name'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'completed': self._get_task_completion_status(tenant_id, session_id, 'search_analysis_unconverted')
-                })
-
-            total_count = len(tasks)
-            offset = (page - 1) * limit
-            paginated_tasks = tasks[offset : offset + limit]
-
-            return {
-                'data': paginated_tasks,
-                'total': total_count,
-                'page': page,
-                'limit': limit,
-                'has_more': (page * limit) < total_count
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_page': page,
+                'p_limit': limit,
+                'p_query': query,
+                'p_location_id': location_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_include_converted': include_converted
             }
+            
+            result = self.client.rpc('get_search_analysis_tasks', rpc_params).execute()
+            
+            return result.data
 
         except Exception as e:
-            logger.error(f"Error fetching search analysis tasks: {e}")
+            logger.error(f"Error fetching search analysis tasks via RPC: {e}")
             raise
 
     def get_repeat_visit_tasks(self, tenant_id: str, page: int, limit: int, 
-                               query: Optional[str] = None, location_id: Optional[str] = None, 
-                               start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
-        """Get repeat visit tasks with pagination and filtering."""
+                                 query: Optional[str] = None, location_id: Optional[str] = None, 
+                                 start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+        """Get repeat visit tasks using the RPC function."""
         try:
-            # Step 1: Find sessions with more than 3 page views
-            base_query = self.client.table('page_view').select(
-                'param_ga_session_id, user_prop_webuserid, param_page_title, param_page_location, event_timestamp'
-            ).eq('tenant_id', tenant_id)
-
-            if location_id:
-                base_query = base_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                base_query = base_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                base_query = base_query.lte('event_date', end_date.replace('-', ''))
-            
-            # Fetch all page views for the given filters
-            page_views_result = base_query.execute()
-
-            # Group by session and count unique pages
-            session_page_counts = {}
-            for pv in page_views_result.data:
-                session_id = pv.get('param_ga_session_id')
-                if session_id:
-                    if session_id not in session_page_counts:
-                        session_page_counts[session_id] = {
-                            'pages': set(),
-                            'user_id': pv.get('user_prop_webuserid'),
-                            'last_visit': pv.get('event_timestamp'),
-                            'page_titles': set()
-                        }
-                    session_page_counts[session_id]['pages'].add(pv.get('param_page_location'))
-                    session_page_counts[session_id]['page_titles'].add(pv.get('param_page_title'))
-
-            # Filter for sessions with >= 3 unique page views
-            repeat_visit_sessions = {
-                session_id: data for session_id, data in session_page_counts.items() if len(data['pages']) >= 3
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_page': page,
+                'p_limit': limit,
+                'p_query': query,
+                'p_location_id': location_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date
             }
             
-            total_count = len(repeat_visit_sessions)
+            result = self.client.rpc('get_repeat_visit_tasks', rpc_params).execute()
             
-            # Paginate the session IDs
-            session_ids = list(repeat_visit_sessions.keys())
-            offset = (page - 1) * limit
-            paginated_session_ids = session_ids[offset : offset + limit]
-
-            # Step 2: Format into tasks
-            tasks = []
-            for session_id in paginated_session_ids:
-                session_data = repeat_visit_sessions[session_id]
-                user = self._get_user_details(tenant_id, session_data['user_id'])
-
-                tasks.append({
-                    'product_url': list(session_data['pages'])[0] if session_data['pages'] else '',
-                    'session_count': len(session_data['pages']),
-                    'last_view_date': self._format_event_date(session_data['last_visit']),
-                    'total_views': len(session_data['pages']),
-                    'user_id': user.get('user_id'),
-                    'customer_name': user.get('customer_name'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'completed': self._get_task_completion_status(tenant_id, session_id, 'repeat_visit')
-                })
-
-            return {
-                'data': tasks,
-                'total': total_count,
-                'page': page,
-                'limit': limit,
-                'has_more': (page * limit) < total_count
-            }
+            return result.data
 
         except Exception as e:
-            logger.error(f"Error fetching repeat visit tasks: {e}")
+            logger.error(f"Error fetching repeat visit tasks via RPC: {e}")
             raise
 
-    def get_performance_tasks(self, tenant_id: str, page: int, limit: int, 
-                              query: Optional[str] = None, location_id: Optional[str] = None, 
-                              start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
-        """Get performance tasks with pagination and filtering."""
+    def get_performance_tasks(self, tenant_id: str, page: int, limit: int,
+                               location_id: Optional[str] = None, 
+                               start_date: Optional[str] = None, end_date: Optional[str] = None) -> Dict[str, Any]:
+        """Get performance tasks using the RPC function."""
         try:
-            # Step 1: Find sessions with only one page view (bounces)
-            base_query = self.client.table('page_view').select(
-                'param_ga_session_id, user_prop_webuserid, param_page_title, param_page_location, event_timestamp'
-            ).eq('tenant_id', tenant_id)
-
-            if location_id:
-                base_query = base_query.eq('user_prop_default_branch_id', location_id)
-            if start_date:
-                base_query = base_query.gte('event_date', start_date.replace('-', ''))
-            if end_date:
-                base_query = base_query.lte('event_date', end_date.replace('-', ''))
-            
-            page_views_result = base_query.execute()
-
-            # Group by session
-            sessions = {}
-            for pv in page_views_result.data:
-                session_id = pv.get('param_ga_session_id')
-                if session_id:
-                    if session_id not in sessions:
-                        sessions[session_id] = []
-                    sessions[session_id].append(pv)
-            
-            bounce_sessions = {sid: pvs for sid, pvs in sessions.items() if len(pvs) == 1}
-            
-            # Step 2: Identify frequently bounced pages
-            page_bounces = {}
-            for session_id, page_views in bounce_sessions.items():
-                page_location = page_views[0].get('param_page_location')
-                if page_location:
-                    if page_location not in page_bounces:
-                        page_bounces[page_location] = {'count': 0, 'page_title': page_views[0].get('param_page_title')}
-                    page_bounces[page_location]['count'] += 1
-            
-            frequently_bounced_pages = {loc: data for loc, data in page_bounces.items() if data['count'] > 2}
-
-            # Step 3: Format into tasks
-            tasks = []
-            # Add individual bounce sessions
-            for session_id, page_views in bounce_sessions.items():
-                page_view = page_views[0]
-                user = self._get_user_details(tenant_id, page_view.get('user_prop_webuserid'))
-                tasks.append({
-                    'session_id': session_id,
-                    'event_date': self._format_event_date(page_view.get('event_timestamp')),
-                    'bounce_type': 'single_page',
-                    'page_views': 1,
-                    'session_duration': 0,
-                    'user_id': user.get('user_id'),
-                    'customer_name': user.get('customer_name'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'completed': self._get_task_completion_status(tenant_id, session_id, 'performance_bounce')
-                })
-
-            # Add frequently bounced pages
-            for page_location, data in frequently_bounced_pages.items():
-                tasks.append({
-                    'session_id': None,
-                    'event_date': None,
-                    'bounce_type': 'frequent_page_bounce',
-                    'page_views': data['count'],
-                    'session_duration': None,
-                    'user_id': None,
-                    'customer_name': 'System Alert',
-                    'email': None,
-                    'phone': None,
-                    'completed': self._get_task_completion_status(tenant_id, page_location, 'performance_page_bounce')
-                })
-            
-            total_count = len(tasks)
-            offset = (page - 1) * limit
-            paginated_tasks = tasks[offset : offset + limit]
-
-            return {
-                'data': paginated_tasks,
-                'total': total_count,
-                'page': page,
-                'limit': limit,
-                'has_more': (page * limit) < total_count
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_page': page,
+                'p_limit': limit,
+                'p_location_id': location_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date
             }
+            
+            result = self.client.rpc('get_performance_tasks', rpc_params).execute()
+            
+            return result.data
 
         except Exception as e:
-            logger.error(f"Error fetching performance tasks: {e}")
+            logger.error(f"Error fetching performance tasks via RPC: {e}")
+            raise
+
+    def get_session_history(self, tenant_id: str, session_id: str) -> List[Dict[str, Any]]:
+        """Get the event history for a specific session using the RPC function."""
+        try:
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_session_id': session_id
+            }
+            
+            result = self.client.rpc('get_session_history', rpc_params).execute()
+            
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error fetching session history for session {session_id}: {e}")
+            raise
+
+    def get_user_history(self, tenant_id: str, user_id: str) -> List[Dict[str, Any]]:
+        """Get the event history for a specific user using the RPC function."""
+        try:
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_user_id': user_id
+            }
+            
+            result = self.client.rpc('get_user_history', rpc_params).execute()
+            
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error fetching user history for user {user_id}: {e}")
             raise
 
     def _parse_cart_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -800,3 +520,16 @@ class AnalyticsSupabaseClient:
             return status.get('completed', False)
         except Exception:
             return False
+
+    def apply_sql_file(self, file_path: str):
+        """Apply a SQL file to the database."""
+        try:
+            with open(file_path, 'r') as f:
+                sql = f.read()
+            # The Supabase client doesn't have a direct way to execute raw SQL,
+            # so we would typically use a standard PostgreSQL driver here.
+            # For now, we'll assume this is handled by a migration tool.
+            logger.info(f"SQL file at {file_path} should be applied via a migration tool.")
+        except Exception as e:
+            logger.error(f"Error applying SQL file {file_path}: {e}")
+            raise

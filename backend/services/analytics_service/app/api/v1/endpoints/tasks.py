@@ -185,7 +185,6 @@ async def get_performance_tasks(
     tenant_id: str = Query(default=settings.DEFAULT_TENANT_ID, description="Tenant ID"),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(default=settings.DEFAULT_PAGE_SIZE, ge=1, le=settings.MAX_PAGE_SIZE, description="Items per page"),
-    query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
     end_date: Optional[str] = Query(default=None, description="End date filter")
@@ -201,13 +200,12 @@ async def get_performance_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
-            query=query,
             location_id=location_id,
             start_date=start_date,
             end_date=end_date
         )
         
-        logger.info(f"Retrieved {len(result['data'])} performance tasks for tenant {tenant_id}")
+        logger.info(f"Retrieved performance tasks for tenant {tenant_id}")
         
         return result
         

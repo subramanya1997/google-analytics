@@ -119,7 +119,7 @@ export function TaskCard({ task }: TaskCardProps) {
                 <div key={i} className="flex justify-between items-center text-sm">
                   <span className="flex-1 truncate pr-2">{product.name}</span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {product.quantity} × ${product.price.toFixed(2)}
+                    {product.quantity || 0} × ${(product.price || 0).toFixed(2)}
                   </span>
                 </div>
               ))}

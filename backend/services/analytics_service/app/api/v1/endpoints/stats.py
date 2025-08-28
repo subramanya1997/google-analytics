@@ -38,21 +38,31 @@ async def get_dashboard_stats(
         supabase_config = settings.get_supabase_client_config()
         db_client = AnalyticsSupabaseClient(supabase_config)
         
-        # Get dashboard statistics
-        stats = db_client.get_dashboard_stats(
-            tenant_id=tenant_id,
-            location_id=location_id,
-            start_date=start_date,
-            end_date=end_date,
-            granularity=granularity
-        )
-        
-        # For now, return basic structure - we'll enhance this with chart data
-        response = {
-            "metrics": stats,
-            "chartData": [],  # Will implement time-series data
-            "locationStats": []  # Will implement location breakdown
-        }
+        # Use single optimized call if we have date range
+        if start_date and end_date:
+            response = db_client.get_complete_dashboard_data(
+                tenant_id=tenant_id,
+                start_date=start_date,
+                end_date=end_date,
+                granularity=granularity,
+                location_id=location_id
+            )
+        else:
+            # Fallback for no date range
+            response = {
+                "metrics": {
+                    'totalRevenue': 0,
+                    'totalPurchases': 0,
+                    'totalVisitors': 0,
+                    'uniqueUsers': 0,
+                    'abandonedCarts': 0,
+                    'totalSearches': 0,
+                    'failedSearches': 0,
+                    'conversionRate': 0
+                },
+                "chartData": [],
+                "locationStats": []
+            }
         
         logger.info(f"Retrieved dashboard stats for tenant {tenant_id}")
         
@@ -73,78 +83,18 @@ async def get_stats(
     timezone_offset: int = Query(default=0, description="Timezone offset in minutes")
 ):
     """
+    DEPRECATED: Use /dashboard instead.
     Get statistics - comprehensive endpoint that matches frontend expectations.
     
     This endpoint replicates the functionality of the frontend /api/stats route.
     """
-    try:
-        # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
-        
-        # Get basic dashboard statistics
-        stats = db_client.get_dashboard_stats(
-            tenant_id=tenant_id,
-            location_id=location_id,
-            start_date=start_date,
-            end_date=end_date,
-            granularity=granularity
-        )
-        
-        # Get location-based statistics
-        locations = db_client.get_locations(tenant_id)
-        location_stats = []
-        
-        for location in locations:
-            loc_stats = db_client.get_dashboard_stats(
-                tenant_id=tenant_id,
-                location_id=location['locationId'],
-                start_date=start_date,
-                end_date=end_date,
-                granularity=granularity
-            )
-            
-            # Extract revenue value (remove $ and commas)
-            revenue_str = loc_stats.get('totalRevenue', '$0.00')
-            revenue = float(revenue_str.replace('$', '').replace(',', ''))
-            
-            location_stats.append({
-                'locationId': location['locationId'],
-                'locationName': location['locationName'],
-                'revenue': revenue,
-                'purchases': loc_stats.get('purchases', 0),
-                'visitors': loc_stats.get('totalVisitors', 0),
-                'abandonedCarts': loc_stats.get('abandonedCarts', 0),
-                'repeatVisits': loc_stats.get('repeatVisits', 0)
-            })
-        
-        # Sort by revenue descending
-        location_stats.sort(key=lambda x: x['revenue'], reverse=True)
-        
-        # Create chart data (simplified for now)
-        chart_data = []
-        if start_date and end_date:
-            # For now, create a simple data point
-            revenue_str = stats.get('totalRevenue', '$0.00')
-            revenue = float(revenue_str.replace('$', '').replace(',', ''))
-            
-            chart_data.append({
-                'date': end_date,
-                'revenue': revenue,
-                'purchases': stats.get('purchases', 0),
-                'visitors': stats.get('totalVisitors', 0)
-            })
-        
-        response = {
-            'metrics': stats,
-            'locationStats': location_stats,
-            'chartData': chart_data
-        }
-        
-        logger.info(f"Retrieved comprehensive stats for tenant {tenant_id}")
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error fetching comprehensive stats: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch statistics: {str(e)}")
+    # This endpoint is deprecated and will be removed.
+    # For now, it can just call the new dashboard endpoint.
+    return await get_dashboard_stats(
+        tenant_id=tenant_id,
+        location_id=location_id,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
+        timezone_offset=timezone_offset
+    )

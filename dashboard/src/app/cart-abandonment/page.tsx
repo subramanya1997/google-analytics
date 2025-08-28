@@ -24,11 +24,54 @@ export default function CartAbandonmentPage() {
       setLoading(true)
       
       const queryParams = buildApiQueryParams(selectedLocation, dateRange)
-      const url = `/api/tasks/cart-abandonment${queryParams}`
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/cart-abandonment${queryParams}`
         
       const response = await fetch(url)
       const data = await response.json()
-      setTasks(data.tasks || [])
+
+      const transformedTasks: Task[] = (data.data || []).map((task: any) => {
+        // Calculate priority based on cart value and time
+        const cartValue = task.total_value || 0;
+        const eventDate = new Date(task.event_date);
+        const hoursSinceAbandonment = Math.floor((Date.now() - eventDate.getTime()) / (1000 * 60 * 60));
+        
+        let priority: 'high' | 'medium' | 'low' = 'medium';
+        if (cartValue > 500 || (cartValue > 200 && hoursSinceAbandonment < 24)) {
+          priority = 'high';
+        } else if (cartValue < 50 || hoursSinceAbandonment > 72) {
+          priority = 'low';
+        }
+
+        return {
+          id: task.session_id,
+          type: 'cart',
+          priority,
+          title: `Abandoned Cart: ${task.session_id}`,
+          description: `${task.items_count} items worth $${task.total_value.toFixed(2)}`,
+        customer: {
+          id: task.user_id,
+          name: task.customer_name || 'Unknown User',
+          email: task.email,
+          phone: task.phone,
+        },
+        productDetails: (task.products || []).map((p: any) => ({
+          name: p.item_name,
+          quantity: p.quantity,
+          price: p.price,
+          sku: p.item_id
+        })),
+        metadata: {
+          cartValue: task.total_value,
+          products: task.products?.map((p: any) => p.item_name) || []
+        },
+        createdAt: task.event_date,
+        userId: task.user_id,
+        sessionId: task.session_id,
+      };
+      });
+
+      setTasks(transformedTasks)
     } catch (error) {
       console.error('Error fetching cart tasks:', error)
     } finally {

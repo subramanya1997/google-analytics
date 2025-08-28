@@ -1,6 +1,5 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import {
   Select,
   SelectContent,
@@ -9,13 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { MapPin } from "lucide-react"
-
-interface Location {
-  locationId: string
-  locationName: string
-  city: string
-  state: string
-}
+import { useDashboard } from "@/contexts/dashboard-context"
 
 interface LocationSelectorProps {
   selectedLocation: string | null
@@ -24,24 +17,7 @@ interface LocationSelectorProps {
 }
 
 export function LocationSelector({ selectedLocation, onLocationChange, className }: LocationSelectorProps) {
-  const [locations, setLocations] = useState<Location[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    fetchLocations()
-  }, [])
-
-  const fetchLocations = async () => {
-    try {
-      const response = await fetch('/api/locations')
-      const data = await response.json()
-      setLocations(data.locations)
-    } catch (error) {
-      console.error('Error fetching locations:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { locations, loadingLocations } = useDashboard()
 
   const getLocationDisplay = () => {
     if (selectedLocation === null || selectedLocation === "all") {
@@ -52,6 +28,19 @@ export function LocationSelector({ selectedLocation, onLocationChange, className
       return `${location.locationName} - ${location.city}, ${location.state}`
     }
     return "Select location"
+  }
+
+  if (loadingLocations) {
+    return (
+      <Select disabled>
+        <SelectTrigger className={`w-full sm:w-[250px] ${className || ''}`}>
+          <div className="flex items-center gap-2 truncate">
+            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="truncate">Loading locations...</span>
+          </div>
+        </SelectTrigger>
+      </Select>
+    )
   }
 
   return (

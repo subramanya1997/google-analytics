@@ -68,14 +68,70 @@ export default function PerformancePage() {
   const fetchPerformanceTasks = async () => {
     try {
       setLoading(true)
-      const qParam = debouncedSearchQuery ? `&q=${encodeURIComponent(debouncedSearchQuery)}` : ''
-      const locationParam = selectedLocation ? `&locationId=${selectedLocation}` : ''
-      const url = `/api/tasks/performance?page=${currentPage}&limit=${itemsPerPage}${qParam}${locationParam}`
+      
+      const additionalParams = {
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        query: debouncedSearchQuery
+      }
+
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/performance${queryParams}`
+      
       const response = await fetch(url)
       const data = await response.json()
-      setTasks(data.tasks || [])
-      setTotalPages(data.totalPages || 1)
+      
+      // Transform the new data structure to the old one
+      const bouncedSessions = data.data.bounced_sessions || []
+      const frequentlyBouncedPages = data.data.frequently_bounced_pages || []
+      
+      const transformedTasks: Task[] = [
+        ...bouncedSessions.map((session: any) => ({
+          id: session.session_id,
+          title: `Bounced Session: ${session.session_id}`,
+          description: `User session with a single page view. Entry page: ${session.entry_page}`,
+          priority: 'high', // Bounced sessions are high priority
+          status: 'pending',
+          customer: {
+            id: session.user_id,
+            name: session.customer_name || 'Unknown',
+            email: session.email,
+            phone: session.phone,
+          },
+          metadata: {
+            issueType: 'high_bounce',
+            pageUrl: session.entry_page,
+            pageTitle: session.entry_page, // Assuming title is same as URL for now
+            location: session.location_id
+          },
+          userId: session.user_id,
+          sessionId: session.session_id
+        })),
+        ...frequentlyBouncedPages.map((page: any) => ({
+          id: page.entry_page,
+          title: `Frequently Bounced Page: ${page.entry_page}`,
+          description: `This page has a high bounce rate with ${page.bounce_count} bounces.`,
+          priority: 'high',
+          status: 'pending',
+          customer: {
+            id: 'system',
+            name: 'System',
+            email: null,
+            phone: null,
+          },
+          metadata: {
+            issueType: 'page_bounce_issue',
+            pageUrl: page.entry_page,
+            pageTitle: page.entry_page,
+            bounceCount: page.bounce_count
+          }
+        }))
+      ]
+
+      setTasks(transformedTasks)
       setTotalCount(data.total || 0)
+      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
       console.error('Error fetching performance tasks:', error)
     } finally {

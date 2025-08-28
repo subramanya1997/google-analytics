@@ -117,7 +117,7 @@ def run_service():
             'poetry', 'run', 'uvicorn', 
             'app.main:app', 
             '--host', '0.0.0.0',
-            '--port', '8002',
+            '--port', '8005',
             '--reload'
         ], check=True)
     except subprocess.CalledProcessError as e:

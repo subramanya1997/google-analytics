@@ -14,7 +14,21 @@ import httpx
 class AnalyticsSupabaseClient:
     """Supabase client for analytics operations."""
     
-    def __init__(self, supabase_config: Dict[str, Any]):
+    _instance = None
+    _client = None
+    
+    def __new__(cls, supabase_config: Dict[str, Any]):
+        """Singleton pattern to reuse client instance."""
+        config_key = f"{supabase_config['project_url']}_{supabase_config['service_role_key'][:10]}"
+        
+        if cls._instance is None or getattr(cls._instance, '_config_key', None) != config_key:
+            cls._instance = super(AnalyticsSupabaseClient, cls).__new__(cls)
+            cls._instance._config_key = config_key
+            cls._instance._initialize_client(supabase_config)
+        
+        return cls._instance
+    
+    def _initialize_client(self, supabase_config: Dict[str, Any]):
         """Initialize Supabase client."""
         self.project_url = supabase_config['project_url']
         self.service_role_key = supabase_config['service_role_key']
@@ -90,12 +104,29 @@ class AnalyticsSupabaseClient:
     def get_dashboard_stats(self, tenant_id: str, location_id: Optional[str] = None, 
                            start_date: Optional[str] = None, end_date: Optional[str] = None,
                            granularity: str = 'daily') -> Dict[str, Any]:
-        """Get dashboard statistics."""
+        """Get dashboard statistics using optimized RPC function."""
         try:
-            # Since RPC functions don't exist, use fallback calculation
-            return self._calculate_dashboard_stats_fallback(
-                tenant_id, location_id, start_date, end_date
-            )
+            if not start_date or not end_date:
+                # Return empty stats if no date range provided
+                return {
+                    'totalRevenue': 0,
+                    'totalPurchases': 0,
+                    'totalVisitors': 0,
+                    'uniqueUsers': 0,
+                    'abandonedCarts': 0,
+                    'totalSearches': 0,
+                    'failedSearches': 0,
+                    'conversionRate': 0
+                }
+            
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_location_id': location_id
+            }
+            result = self.client.rpc('get_dashboard_overview_stats', rpc_params).execute()
+            return result.data or {}
             
         except Exception as e:
             logger.error(f"Error fetching dashboard stats: {e}")
@@ -443,6 +474,67 @@ class AnalyticsSupabaseClient:
 
         except Exception as e:
             logger.error(f"Error fetching user history for user {user_id}: {e}")
+            raise
+
+    def get_location_stats_bulk(self, tenant_id: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        """Get bulk statistics for all locations using the RPC function."""
+        try:
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date
+            }
+            
+            result = self.client.rpc('get_location_stats_bulk', rpc_params).execute()
+            
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error fetching bulk location stats: {e}")
+            raise
+
+    def get_chart_data(self, tenant_id: str, start_date: str, end_date: str, 
+                       granularity: str, location_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get time-series chart data using the RPC function."""
+        try:
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_granularity': granularity,
+                'p_location_id': location_id
+            }
+            
+            result = self.client.rpc('get_chart_data', rpc_params).execute()
+            
+            return result.data
+
+        except Exception as e:
+            logger.error(f"Error fetching chart data: {e}")
+            raise
+
+    def get_complete_dashboard_data(self, tenant_id: str, start_date: str, end_date: str,
+                                   granularity: str = 'daily', location_id: Optional[str] = None) -> Dict[str, Any]:
+        """Get complete dashboard data in a single optimized call."""
+        try:
+            rpc_params = {
+                'p_tenant_id': tenant_id,
+                'p_start_date': start_date,
+                'p_end_date': end_date,
+                'p_granularity': granularity,
+                'p_location_id': location_id
+            }
+            
+            result = self.client.rpc('get_complete_dashboard_data', rpc_params).execute()
+            
+            return result.data or {
+                'metrics': {},
+                'chartData': [],
+                'locationStats': []
+            }
+
+        except Exception as e:
+            logger.error(f"Error fetching complete dashboard data: {e}")
             raise
 
     def _parse_cart_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

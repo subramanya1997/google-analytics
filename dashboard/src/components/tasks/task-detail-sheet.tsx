@@ -123,7 +123,10 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   // Fetch task status
   const fetchTaskStatus = async () => {
     try {
-      const response = await fetch(`/api/tasks/status?taskId=${actualTask.id}&taskType=${actualTask.type}`)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
+      const url = `${baseUrl}/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}&tenant_id=${tenantId}`
+      const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
         setCompleted(data.completed || false)
@@ -140,14 +143,17 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const saveTaskStatus = async () => {
     setSavingStatus(true)
     try {
-      const response = await fetch('/api/tasks/status', {
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/status`
+      const response = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          taskId: actualTask.id,
-          taskType: actualTask.type,
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000', // Example tenant_id
+          task_id: actualTask.id,
+          task_type: actualTask.type,
           completed,
           notes,
           completedBy: 'Current User'
@@ -181,35 +187,121 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     
     let sessionId = actualTask.sessionId || null
     
+    console.log('Fetching history for:', { 
+      userId, 
+      sessionId, 
+      taskType: actualTask.type, 
+      taskId: actualTask.id,
+      customer: actualTask.customer 
+    })
+    
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
+      let url = ''
+      
       // First try to fetch by userId if available
       if (userId) {
-        const response = await fetch(`/api/users/${userId}/history`)
-        if (response.ok) {
-          const data = await response.json()
-          setUserHistory({
-            user: data.user,
-            purchaseHistory: data.purchaseHistory || [],
-            searchHistory: data.searchHistory || [],
-            cartHistory: data.cartHistory || [],
-            viewedProductsHistory: data.viewedProductsHistory || []
-          })
-          setLoading(false)
-          return
-        }
+        url = `${baseUrl}/users/${userId}/history?tenant_id=${tenantId}`
+      } else if (sessionId) {
+        // If no userId or failed, try by sessionId
+        url = `${baseUrl}/sessions/${sessionId}/history?tenant_id=${tenantId}`
       }
-      
-      // If no userId or failed, try by sessionId
-      if (sessionId) {
-        const sessionResponse = await fetch(`/api/sessions/${sessionId}/history`)
-        if (sessionResponse.ok) {
-          const data = await sessionResponse.json()
+
+      console.log('History API URL:', url)
+
+      if (url) {
+        const response = await fetch(url)
+        if (response.ok) {
+          const historyEvents = await response.json()
+          
+          console.log('History events response:', historyEvents)
+          
+          // Process the flat event list into categorized history
+          const purchaseHistory: any[] = []
+          const searchHistory: any[] = []
+          const cartHistory: any[] = []
+          const viewedProductsHistory: any[] = [] // This might not be available directly
+
+          // Handle both array and single object response
+          const eventsArray = Array.isArray(historyEvents) ? historyEvents : (historyEvents.data || [])
+          
+          console.log('Events array length:', eventsArray.length)
+          
+          eventsArray.forEach((event: any) => {
+            switch (event.event_type) {
+              case 'purchase':
+                purchaseHistory.push({
+                  transaction_id: event.details.transaction_id,
+                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_timestamp: event.event_timestamp,
+                  order_value: event.details.revenue,
+                  items: JSON.parse(event.details.items || '[]')
+                })
+                break
+              case 'add_to_cart':
+                cartHistory.push({
+                  session_id: event.param_ga_session_id,
+                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_timestamp: event.event_timestamp,
+                  cart_value: (event.details.price || 0) * (event.details.quantity || 0),
+                  items: [{
+                    name: event.details.item_name,
+                    sku: event.details.item_id,
+                    quantity: event.details.quantity || 0,
+                    price: event.details.price || 0
+                  }]
+                })
+                break
+              case 'view_search_results':
+                searchHistory.push({
+                  term: event.details.search_term,
+                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  results: 1 // Placeholder
+                })
+                break
+              case 'no_search_results':
+                searchHistory.push({
+                  term: event.details.search_term,
+                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  results: 0
+                })
+                break
+                             case 'page_view':
+                 // Add to viewed products if it's a product page
+                 if (event.details.page_location && event.details.page_location.includes('/product/')) {
+                   viewedProductsHistory.push({
+                     sku: event.details.page_location.split('/').pop() || 'unknown',
+                     name: event.details.page_title || 'Unknown Product',
+                     category: 'Product',
+                     price: 0,
+                     view_count: 1,
+                     last_viewed_timestamp: event.event_timestamp,
+                     last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                   })
+                 }
+                 break
+               case 'view_item':
+                 // Add product views from view_item events
+                 viewedProductsHistory.push({
+                   sku: event.details.item_id || 'unknown',
+                   name: event.details.item_name || 'Unknown Product',
+                   category: event.details.category || 'Product',
+                   price: event.details.price || 0,
+                   view_count: 1,
+                   last_viewed_timestamp: event.event_timestamp,
+                   last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                 })
+                 break
+            }
+          })
+
           setUserHistory({
-            user: data.user,
-            purchaseHistory: data.purchaseHistory || [],
-            searchHistory: data.searchHistory || [],
-            cartHistory: data.cartHistory || [],
-            viewedProductsHistory: data.viewedProductsHistory || []
+            user: null, // User info is not in this response
+            purchaseHistory,
+            searchHistory,
+            cartHistory, // This will be empty for now
+            viewedProductsHistory
           })
         }
       }
@@ -540,8 +632,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm">{product.quantity} × ${product.price.toFixed(2)}</p>
-                      <p className="text-xs font-medium">${(product.quantity * product.price).toFixed(2)}</p>
+                      <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
+                      <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
@@ -582,14 +674,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm">{product.quantity} × ${product.price.toFixed(2)}</p>
-                      <p className="text-xs font-medium">${(product.quantity * product.price).toFixed(2)}</p>
+                      <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
+                      <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
                 <div className="pt-2 mt-2 border-t flex justify-between">
                   <span className="font-semibold">Cart Total</span>
-                  <span className="font-semibold">${actualTask.customer.orderValue?.toFixed(2)}</span>
+                  <span className="font-semibold">${(actualTask.metadata?.cartValue || actualTask.customer.orderValue || 0).toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -637,7 +729,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <p className="text-xs text-muted-foreground">
-                                  {new Date(
+                                  {purchase.event_date ? new Date(
                                     purchase.event_date.slice(0, 4) + '-' + 
                                     purchase.event_date.slice(4, 6) + '-' + 
                                     purchase.event_date.slice(6, 8)
@@ -645,7 +737,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                     month: 'short', 
                                     day: 'numeric',
                                     year: 'numeric'
-                                  })}
+                                  }) : 'Unknown date'}
                                 </p>
                                 <p className="text-xs text-muted-foreground">Order #{purchase.transaction_id}</p>
                               </div>
@@ -659,7 +751,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                       <p className="font-medium">{item.name}</p>
                                     </div>
                                     <div className="text-right">
-                                      <p className="text-xs">{item.quantity} × ${item.price.toFixed(2)}</p>
+                                      <p className="text-xs">{item.quantity} × ${(item.price || 0).toFixed(2)}</p>
                                     </div>
                                   </div>
                                 ))
@@ -700,7 +792,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                               <div className="flex-1">
                                 <p className="text-sm font-medium">{search.term}</p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {new Date(
+                                  {search.date ? new Date(
                                     search.date.slice(0, 4) + '-' + 
                                     search.date.slice(4, 6) + '-' + 
                                     search.date.slice(6, 8)
@@ -708,7 +800,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                     month: 'short', 
                                     day: 'numeric',
                                     year: 'numeric'
-                                  })}
+                                  }) : 'Unknown date'}
                                 </p>
                               </div>
                               <Badge 
@@ -744,7 +836,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                           <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
                             <div className="flex justify-between items-start mb-2">
                               <p className="text-xs text-muted-foreground">
-                                {new Date(
+                                {cart.event_date ? new Date(
                                   cart.event_date.slice(0, 4) + '-' + 
                                   cart.event_date.slice(4, 6) + '-' + 
                                   cart.event_date.slice(6, 8)
@@ -752,7 +844,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                   month: 'short', 
                                   day: 'numeric',
                                   year: 'numeric'
-                                })}
+                                }) : 'Unknown date'}
                               </p>
                               <span className="text-sm font-semibold">${(cart.cart_value || 0).toFixed(2)}</span>
                             </div>
@@ -764,8 +856,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                       <p className="font-medium">{item.name}</p>
                                     </div>
                                     <div className="text-right">
-                                      <p>{item.quantity} × ${item.price.toFixed(2)}</p>
-                                      <p className="text-xs text-muted-foreground">${(item.quantity * item.price).toFixed(2)}</p>
+                                      <p>{item.quantity} × ${(item.price || 0).toFixed(2)}</p>
+                                      <p className="text-xs text-muted-foreground">${((item.quantity || 0) * (item.price || 0)).toFixed(2)}</p>
                                     </div>
                                   </div>
                                 ))
@@ -808,21 +900,21 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                 {product.view_count} view{product.view_count !== 1 ? 's' : ''}
                               </Badge>
                               {product.price > 0 && (
-                                <p className="text-xs text-muted-foreground mt-1">${product.price.toFixed(2)}</p>
+                                <p className="text-xs text-muted-foreground mt-1">${(product.price || 0).toFixed(2)}</p>
                               )}
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Last viewed: {new Date(
-                              product.last_viewed_date.slice(0, 4) + '-' + 
-                              product.last_viewed_date.slice(4, 6) + '-' + 
-                              product.last_viewed_date.slice(6, 8)
-                            ).toLocaleDateString('en-US', { 
-                              year: 'numeric', 
-                              month: 'short', 
-                              day: 'numeric' 
-                            })}
-                          </p>
+                                                     <p className="text-xs text-muted-foreground mt-2">
+                             Last viewed: {product.last_viewed_date ? new Date(
+                               product.last_viewed_date.slice(0, 4) + '-' + 
+                               product.last_viewed_date.slice(4, 6) + '-' + 
+                               product.last_viewed_date.slice(6, 8)
+                             ).toLocaleDateString('en-US', { 
+                               year: 'numeric', 
+                               month: 'short', 
+                               day: 'numeric' 
+                             }) : 'Unknown date'}
+                           </p>
                         </div>
                       ))}
                     </div>

@@ -12,7 +12,7 @@ from app.core.config import settings
 router = APIRouter()
 
 
-@router.get("/", response_model=List[LocationResponse])
+@router.get("", response_model=List[LocationResponse])
 async def get_locations(
     tenant_id: str = Query(default=settings.DEFAULT_TENANT_ID, description="Tenant ID")
 ):

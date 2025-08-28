@@ -43,19 +43,22 @@ export default function DashboardPage() {
       
       // Build URL with location and date filters
       const params = new URLSearchParams()
+      // Add tenant_id
+      params.append('tenant_id', '550e8400-e29b-41d4-a716-446655440000') // Example tenant_id
       if (selectedLocation) {
-        params.append('locationId', selectedLocation)
+        params.append('location_id', selectedLocation)
       }
       if (dateRange?.from) {
-        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        params.append('start_date', format(dateRange.from, 'yyyy-MM-dd'))
       }
       if (dateRange?.to) {
-        params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+        params.append('end_date', format(dateRange.to, 'yyyy-MM-dd'))
       }
       params.append('granularity', timeGranularity)
-      params.append('timezoneOffset', (-timezoneOffset).toString()) // Negative because getTimezoneOffset returns opposite sign
+      params.append('timezone_offset', (-timezoneOffset).toString()) // Negative because getTimezoneOffset returns opposite sign
       
-      const url = `/api/stats${params.toString() ? `?${params.toString()}` : ''}`
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/stats/dashboard?${params.toString()}`
         
       // Fetch stats
       const statsResponse = await fetch(url)
@@ -145,8 +148,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Location Breakdown - Only show when no location is selected */}
-        {!selectedLocation && (
+        {/* Location Breakdown - Always show */}
           <div className="space-y-4">
             <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
               <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -160,17 +162,18 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                {locationStats.map((location) => (
-                  <LocationStatsCard
-                    key={location.locationId}
-                    stats={location}
-                    onClick={() => setSelectedLocation(location.locationId)}
-                  />
-                ))}
+                {locationStats
+                  .filter(location => !selectedLocation || location.locationId === selectedLocation)
+                  .map((location) => (
+                    <LocationStatsCard
+                      key={location.locationId}
+                      stats={location}
+                      onClick={() => setSelectedLocation(location.locationId)}
+                    />
+                  ))}
               </div>
             )}
           </div>
-        )}
       </div>
     </DashboardLayout>
   )

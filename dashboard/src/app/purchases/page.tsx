@@ -27,12 +27,53 @@ export default function PurchasesPage() {
 
   const fetchPurchaseTasks = async () => {
     try {
+      setLoading(true)
       const queryParams = buildApiQueryParams(selectedLocation, dateRange)
-      const url = `/api/tasks/purchases${queryParams}`
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/purchases${queryParams}`
         
       const response = await fetch(url)
       const data = await response.json()
-      setTasks(data.tasks || [])
+      
+      const transformedTasks: Task[] = (data.data || []).map((task: any) => {
+        // Calculate priority based on order value and recency
+        const orderValue = task.order_value || 0;
+        const eventDate = new Date(task.event_date);
+        const hoursSincePurchase = Math.floor((Date.now() - eventDate.getTime()) / (1000 * 60 * 60));
+        
+        let priority: 'high' | 'medium' | 'low' = 'medium';
+        if (orderValue > 1000 || (orderValue > 500 && hoursSincePurchase < 24)) {
+          priority = 'high';
+        } else if (orderValue < 100 || hoursSincePurchase > 168) { // 1 week
+          priority = 'low';
+        }
+
+        return {
+          id: task.transaction_id,
+          type: 'purchase',
+          priority,
+          title: `Purchase #${task.transaction_id}`,
+          description: `Order value: $${task.order_value.toFixed(2)}`,
+        customer: {
+          id: task.user_id,
+          name: task.customer_name || 'Unknown User',
+          email: task.email,
+          phone: task.phone,
+          orderValue: task.order_value,
+        },
+        productDetails: (task.products || []).map((p: any) => ({
+          name: p.item_name,
+          quantity: p.quantity,
+          price: p.price,
+          sku: p.item_id
+        })),
+        createdAt: task.event_date,
+        userId: task.user_id,
+        sessionId: task.session_id,
+      };
+      });
+
+      setTasks(transformedTasks)
     } catch (error) {
       console.error('Error fetching purchase tasks:', error)
       setError(error instanceof Error ? error.message : 'An error occurred')

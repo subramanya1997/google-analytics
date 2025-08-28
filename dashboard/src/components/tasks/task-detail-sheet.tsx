@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-// Temporarily removed textarea import due to TypeScript cache issue
 import { 
   User, 
   Mail, 
@@ -21,8 +20,40 @@ import {
   Check,
   Loader2
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { cn } from "@/lib/utils"
+
+// Skeleton loading components
+const TabSkeleton = () => (
+  <div className="space-y-3">
+    {[...Array(3)].map((_, i) => (
+      <div key={i} className="p-4 rounded-lg bg-muted/30 animate-pulse">
+        <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+        <div className="h-3 bg-muted rounded w-1/2"></div>
+      </div>
+    ))}
+  </div>
+)
+
+const PurchaseSkeleton = () => (
+  <div className="space-y-3">
+    {[...Array(3)].map((_, i) => (
+      <div key={i} className="p-4 rounded-lg bg-muted/30 animate-pulse">
+        <div className="flex justify-between items-start mb-2">
+          <div className="space-y-2">
+            <div className="h-3 bg-muted rounded w-20"></div>
+            <div className="h-3 bg-muted rounded w-24"></div>
+          </div>
+          <div className="h-4 bg-muted rounded w-16"></div>
+        </div>
+        <div className="space-y-2">
+          <div className="h-3 bg-muted rounded w-full"></div>
+          <div className="h-3 bg-muted rounded w-3/4"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+)
 
 // Actual task structure that includes purchase and cart types
 interface ActualTask {
@@ -117,6 +148,11 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const [hasStatusChanges, setHasStatusChanges] = useState(false)
   const [initialStatusLoaded, setInitialStatusLoaded] = useState(false)
   
+  // Add lazy loading state for tabs
+  const [activeTab, setActiveTab] = useState<string>('')
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set())
+  const [tabLoadingStates, setTabLoadingStates] = useState<Record<string, boolean>>({})
+  
   // Cast task to actual structure
   const actualTask = task as unknown as ActualTask
 
@@ -173,6 +209,12 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   }
 
   const fetchUserHistory = async () => {
+    // Check if we already have data cached
+    if (userHistory.user || userHistory.purchaseHistory.length > 0) {
+      console.log('Using cached user history data')
+      return
+    }
+    
     setLoading(true)
     
     let userId = null
@@ -312,9 +354,30 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     setLoading(false)
   }
 
+  // Handle tab change with lazy loading
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    
+    // If this tab hasn't been loaded yet, mark it as loading
+    if (!loadedTabs.has(tab)) {
+      setTabLoadingStates(prev => ({ ...prev, [tab]: true }))
+      
+      // Simulate loading delay for better UX
+      setTimeout(() => {
+        setLoadedTabs(prev => new Set([...prev, tab]))
+        setTabLoadingStates(prev => ({ ...prev, [tab]: false }))
+      }, 100)
+    }
+  }
+
   // Handle open change
   const handleOpenChange = (open: boolean) => {
     if (open) {
+      // Set initial active tab based on task type
+      const initialTab = actualTask.type === 'cart' ? 'purchases' : 'searches'
+      setActiveTab(initialTab)
+      setLoadedTabs(new Set([initialTab]))
+      
       fetchUserHistory()
       fetchTaskStatus()
     }
@@ -344,6 +407,23 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   }
 
   const TaskIcon = getTaskIcon()
+
+  // Memoize processed data to avoid recalculating on every render
+  const processedPurchaseHistory = useMemo(() => {
+    return userHistory.purchaseHistory.slice(0, 5)
+  }, [userHistory.purchaseHistory])
+
+  const processedCartHistory = useMemo(() => {
+    return userHistory.cartHistory.slice(0, 5)
+  }, [userHistory.cartHistory])
+
+  const processedSearchHistory = useMemo(() => {
+    return userHistory.searchHistory.slice(0, 10)
+  }, [userHistory.searchHistory])
+
+  const processedViewedProducts = useMemo(() => {
+    return userHistory.viewedProductsHistory.slice(0, 10)
+  }, [userHistory.viewedProductsHistory])
 
   return (
     <Sheet onOpenChange={handleOpenChange}>
@@ -689,11 +769,19 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
           {/* Customer History - Real data only */}
           <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Customer Activity History</h3>
-              <p className="text-xs text-muted-foreground mt-1">Showing activity for {actualTask.customer.name}</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Customer Activity History</h3>
+                <p className="text-xs text-muted-foreground mt-1">Showing activity for {actualTask.customer.name}</p>
+              </div>
+              {loading && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading data...
+                </div>
+              )}
             </div>
-            <Tabs defaultValue={actualTask.type === 'cart' ? 'purchases' : 'searches'} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className={cn(
                 "grid w-full h-9",
                 actualTask.type === 'purchase' && "grid-cols-3",
@@ -718,13 +806,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               <div className="mt-4 min-h-[200px]">
                 {actualTask.type === 'cart' && (
                   <TabsContent value="purchases" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('purchases') || tabLoadingStates['purchases'] ? (
+                      <PurchaseSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.purchaseHistory.length > 0 ? (
+                    ) : processedPurchaseHistory.length > 0 ? (
                       <div className="space-y-3">
-                        {userHistory.purchaseHistory.slice(0, 5).map((purchase, i) => (
+                        {processedPurchaseHistory.map((purchase, i) => (
                           <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
                             <div className="flex justify-between items-start mb-2">
                               <div>
@@ -780,13 +870,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
                 {(actualTask.type === 'purchase' || actualTask.type === 'cart') && (
                   <TabsContent value="searches" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('searches') || tabLoadingStates['searches'] ? (
+                      <TabSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.searchHistory.length > 0 ? (
+                    ) : processedSearchHistory.length > 0 ? (
                       <div className="space-y-2">
-                        {userHistory.searchHistory.map((search, i) => (
+                        {processedSearchHistory.map((search, i) => (
                           <div key={i} className="p-3 rounded-lg bg-muted/30">
                             <div className="flex justify-between items-center gap-3">
                               <div className="flex-1">
@@ -826,13 +918,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
                 {actualTask.type === 'purchase' && (
                   <TabsContent value="carts" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('carts') || tabLoadingStates['carts'] ? (
+                      <PurchaseSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.cartHistory.length > 0 ? (
+                    ) : processedCartHistory.length > 0 ? (
                       <div className="space-y-3">
-                        {userHistory.cartHistory.map((cart, i) => (
+                        {processedCartHistory.map((cart, i) => (
                           <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
                             <div className="flex justify-between items-start mb-2">
                               <p className="text-xs text-muted-foreground">
@@ -877,13 +971,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 )}
 
                 <TabsContent value="products" className="mt-0">
-                  {loading ? (
+                  {!loadedTabs.has('products') || tabLoadingStates['products'] ? (
+                    <TabSkeleton />
+                  ) : loading ? (
                     <div className="text-center py-8">
                       <p className="text-sm text-muted-foreground">Loading...</p>
                     </div>
-                  ) : userHistory.viewedProductsHistory.length > 0 ? (
+                  ) : processedViewedProducts.length > 0 ? (
                     <div className="space-y-2">
-                      {userHistory.viewedProductsHistory.map((product, i) => (
+                      {processedViewedProducts.map((product, i) => (
                         <div key={i} className="p-3 rounded-lg bg-muted/30">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">

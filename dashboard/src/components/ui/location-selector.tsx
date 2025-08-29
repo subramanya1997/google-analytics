@@ -5,7 +5,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import { MapPin } from "lucide-react"
 import { useDashboard } from "@/contexts/dashboard-context"

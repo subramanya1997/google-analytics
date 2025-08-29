@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo, useCallback } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
@@ -25,8 +24,26 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
-import { format } from "date-fns"
+
 import { buildApiQueryParams } from "@/lib/api-utils"
+
+interface SearchAnalysisApiTask {
+  session_id: string
+  user_id: string
+  customer_name?: string
+  email?: string
+  phone?: string
+  search_term: string
+  search_count: number
+  search_type: string
+  event_date: string
+  location_id?: string
+}
+
+interface SearchAnalysisApiResponse {
+  data: SearchAnalysisApiTask[]
+  total?: number
+}
 
 type SortField = 'searchTerms' | 'customer' | 'type' | 'attempts' | 'priority'
 type SortOrder = 'asc' | 'desc'
@@ -61,13 +78,7 @@ export default function SearchAnalysisPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchSearchTasks()
-    }
-  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
-
-  const fetchSearchTasks = async () => {
+  const fetchSearchTasks = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -83,9 +94,9 @@ export default function SearchAnalysisPage() {
       const url = `${baseUrl}/tasks/search-analysis${queryParams}`
 
       const response = await fetch(url)
-      const data = await response.json()
+      const data: SearchAnalysisApiResponse = await response.json()
 
-      const transformedTasks: Task[] = (data.data || []).map((task: any) => {
+      const transformedTasks: Task[] = (data.data || []).map((task: SearchAnalysisApiTask) => {
         // Calculate priority based on search count and type
         const searchCount = task.search_count || 0;
         const searchType = task.search_type || '';
@@ -138,7 +149,13 @@ export default function SearchAnalysisPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchSearchTasks()
+    }
+  }, [dateRange, fetchSearchTasks])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -222,13 +239,10 @@ export default function SearchAnalysisPage() {
       : <ChevronDown className="h-4 w-4" />
   }
 
-  const subtitle = selectedLocation 
-    ? `Follow up with customers who searched but didn't find what they needed (Filtered by location)`
-    : "Follow up with customers who searched but didn't find what they needed"
+
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
 
         {/* Filters */}
         <div className="space-y-4">
@@ -292,7 +306,7 @@ export default function SearchAnalysisPage() {
               Include active searches from sessions that resulted in purchases
             </label>
             <span className="text-xs text-muted-foreground">
-              (All "no results" searches are always shown)
+              (All &quot;no results&quot; searches are always shown)
             </span>
           </div>
         </div>
@@ -521,6 +535,5 @@ export default function SearchAnalysisPage() {
           </>
         )}
       </div>
-    </DashboardLayout>
   )
 } 

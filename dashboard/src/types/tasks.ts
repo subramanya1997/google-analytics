@@ -19,7 +19,7 @@ export interface Task {
   description: string
   customer: {
     name: string
-    email: string
+    email?: string
     phone?: string
     company?: string
     orderValue?: number
@@ -54,5 +54,33 @@ export interface Task {
   createdAt: string
   status?: 'pending' | 'in_progress' | 'completed'
   userId?: string | number
+  sessionId?: string
+}
+
+export interface PurchaseCartTask {
+  id: string
+  type: 'purchase' | 'cart'
+  priority: 'high' | 'medium' | 'low'
+  title: string
+  description: string
+  customer: {
+    name: string
+    email?: string
+    phone?: string
+    company?: string
+    orderValue?: number
+    lastOrder?: string
+  }
+  productDetails?: ProductDetail[]
+  metadata?: {
+    products?: string[]
+    cartValue?: number
+    visitCount?: number
+    location?: string
+    branchId?: string
+  }
+  createdAt: string
+  status?: 'pending' | 'in_progress' | 'completed'
+  userId?: string
   sessionId?: string
 } 

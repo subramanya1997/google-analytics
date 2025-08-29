@@ -20,7 +20,7 @@ import {
   Check,
   Loader2
 } from "lucide-react"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
 
 // Skeleton loading components
@@ -107,9 +107,13 @@ interface PurchaseHistoryItem {
 }
 
 interface UserHistory {
-  user: any
+  user: unknown
   purchaseHistory: PurchaseHistoryItem[]
-  searchHistory: any[]
+  searchHistory: Array<{
+    term: string
+    date: string
+    results: number
+  }>
   cartHistory: Array<{
     session_id: string
     event_date: string
@@ -146,7 +150,6 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const [notes, setNotes] = useState('')
   const [savingStatus, setSavingStatus] = useState(false)
   const [hasStatusChanges, setHasStatusChanges] = useState(false)
-  const [initialStatusLoaded, setInitialStatusLoaded] = useState(false)
   
   // Add lazy loading state for tabs
   const [activeTab, setActiveTab] = useState<string>('')
@@ -171,7 +174,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     } catch (error) {
       console.error('Error fetching task status:', error)
     } finally {
-      setInitialStatusLoaded(true)
+      // Status loading completed
     }
   }
 
@@ -227,7 +230,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       }
     }
     
-    let sessionId = actualTask.sessionId || null
+    const sessionId = actualTask.sessionId || null
     
     console.log('Fetching history for:', { 
       userId, 
@@ -260,36 +263,76 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
           console.log('History events response:', historyEvents)
           
           // Process the flat event list into categorized history
-          const purchaseHistory: any[] = []
-          const searchHistory: any[] = []
-          const cartHistory: any[] = []
-          const viewedProductsHistory: any[] = [] // This might not be available directly
+          const purchaseHistory: PurchaseHistoryItem[] = []
+          const searchHistory: Array<{
+            term: string
+            date: string
+            results: number
+          }> = []
+          const cartHistory: Array<{
+            session_id: string
+            event_date: string
+            event_timestamp: string
+            cart_value: number
+            items: Array<{
+              name: string
+              sku: string
+              quantity: number
+              price: number
+            }>
+          }> = []
+          const viewedProductsHistory: Array<{
+            sku: string
+            name: string
+            category: string
+            price: number
+            view_count: number
+            last_viewed_date: string
+            last_viewed_timestamp: string
+          }> = []
 
           // Handle both array and single object response
           const eventsArray = Array.isArray(historyEvents) ? historyEvents : (historyEvents.data || [])
-          
+
           console.log('Events array length:', eventsArray.length)
-          
-          eventsArray.forEach((event: any) => {
+
+          eventsArray.forEach((event: {
+            event_type: string
+            param_ga_session_id?: string
+            event_timestamp: number
+            details: {
+              transaction_id?: string
+              revenue?: string
+              items?: string
+              search_term?: string
+              page_location?: string
+              page_title?: string
+              item_name?: string
+              item_id?: string
+              category?: string
+              price?: number
+              quantity?: number
+            }
+          }) => {
             switch (event.event_type) {
               case 'purchase':
                 purchaseHistory.push({
-                  transaction_id: event.details.transaction_id,
+                  transaction_id: event.details.transaction_id || 'unknown',
                   event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
-                  event_timestamp: event.event_timestamp,
-                  order_value: event.details.revenue,
+                  event_timestamp: event.event_timestamp.toString(),
+                  order_value: event.details.revenue || '0',
                   items: JSON.parse(event.details.items || '[]')
                 })
                 break
               case 'add_to_cart':
                 cartHistory.push({
-                  session_id: event.param_ga_session_id,
+                  session_id: event.param_ga_session_id || 'unknown',
                   event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
-                  event_timestamp: event.event_timestamp,
+                  event_timestamp: event.event_timestamp.toString(),
                   cart_value: (event.details.price || 0) * (event.details.quantity || 0),
                   items: [{
-                    name: event.details.item_name,
-                    sku: event.details.item_id,
+                    name: event.details.item_name || 'Unknown Item',
+                    sku: event.details.item_id || 'unknown',
                     quantity: event.details.quantity || 0,
                     price: event.details.price || 0
                   }]
@@ -297,14 +340,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 break
               case 'view_search_results':
                 searchHistory.push({
-                  term: event.details.search_term,
+                  term: event.details.search_term || 'unknown',
                   date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
                   results: 1 // Placeholder
                 })
                 break
               case 'no_search_results':
                 searchHistory.push({
-                  term: event.details.search_term,
+                  term: event.details.search_term || 'unknown',
                   date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
                   results: 0
                 })
@@ -318,7 +361,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                      category: 'Product',
                      price: 0,
                      view_count: 1,
-                     last_viewed_timestamp: event.event_timestamp,
+                     last_viewed_timestamp: event.event_timestamp.toString(),
                      last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
                    })
                  }
@@ -331,7 +374,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                    category: event.details.category || 'Product',
                    price: event.details.price || 0,
                    view_count: 1,
-                   last_viewed_timestamp: event.event_timestamp,
+                   last_viewed_timestamp: event.event_timestamp.toString(),
                    last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
                  })
                  break
@@ -628,7 +671,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg space-y-2">
                   <h4 className="font-medium text-sm">Search Optimization</h4>
                   <p className="text-sm text-muted-foreground">
-                    Improve search results by adding synonyms, related terms, and better product descriptions to help customers find what they're looking for.
+                    Improve search results by adding synonyms, related terms, and better product descriptions to help customers find what they&apos;re looking for.
                   </p>
                 </div>
                 
@@ -1001,15 +1044,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                             </div>
                           </div>
                                                      <p className="text-xs text-muted-foreground mt-2">
-                             Last viewed: {product.last_viewed_date ? new Date(
-                               product.last_viewed_date.slice(0, 4) + '-' + 
-                               product.last_viewed_date.slice(4, 6) + '-' + 
-                               product.last_viewed_date.slice(6, 8)
-                             ).toLocaleDateString('en-US', { 
-                               year: 'numeric', 
-                               month: 'short', 
-                               day: 'numeric' 
-                             }) : 'Unknown date'}
+                                             Last viewed: {product.last_viewed_date ? new Date(
+                  product.last_viewed_date.slice(0, 4) + '-' +
+                  product.last_viewed_date.slice(4, 6) + '-' +
+                  product.last_viewed_date.slice(6, 8)
+                ).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                }) : 'Unknown date'}
                            </p>
                         </div>
                       ))}

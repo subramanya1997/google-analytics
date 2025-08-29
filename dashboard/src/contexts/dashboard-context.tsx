@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { DateRange } from 'react-day-picker'
 import { startOfDay, subDays } from 'date-fns'
 
@@ -38,7 +38,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   })
   
   // Fetch locations with caching (5 minutes TTL)
-  const fetchLocations = async () => {
+  const fetchLocations = useCallback(async () => {
     const now = Date.now()
     const cacheTTL = 5 * 60 * 1000 // 5 minutes in milliseconds
     
@@ -65,7 +65,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoadingLocations(false)
     }
-  }
+  }, [locations.length, locationsCacheTime, loadingLocations])
 
   // Refresh locations (force fetch)
   const refreshLocations = async () => {
@@ -77,7 +77,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // Fetch locations on mount
   useEffect(() => {
     fetchLocations()
-  }, [])
+  }, [fetchLocations])
 
   return (
     <DashboardContext.Provider 

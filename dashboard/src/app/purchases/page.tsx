@@ -1,17 +1,38 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useEffect, useState, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { buildApiQueryParams } from "@/lib/api-utils"
 import { TaskCard } from "@/components/tasks/task-card"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Filter } from "lucide-react"
-import { Task } from "@/types/tasks"
+import { Task, PurchaseCartTask } from "@/types/tasks"
+
+interface PurchaseApiProduct {
+  item_name: string
+  quantity: number
+  price: number
+  item_id: string
+}
+
+interface PurchaseApiTask {
+  transaction_id: string
+  user_id: string
+  customer_name?: string
+  email?: string
+  phone?: string
+  order_value: number
+  products: PurchaseApiProduct[]
+  event_date: string
+  session_id: string
+}
+
+interface PurchaseApiResponse {
+  data: PurchaseApiTask[]
+}
 
 export default function PurchasesPage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -19,13 +40,7 @@ export default function PurchasesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchPurchaseTasks()
-    }
-  }, [selectedLocation, dateRange])
-
-  const fetchPurchaseTasks = async () => {
+  const fetchPurchaseTasks = useCallback(async () => {
     try {
       setLoading(true)
       const queryParams = buildApiQueryParams(selectedLocation, dateRange)
@@ -33,9 +48,9 @@ export default function PurchasesPage() {
       const url = `${baseUrl}/tasks/purchases${queryParams}`
         
       const response = await fetch(url)
-      const data = await response.json()
-      
-      const transformedTasks: Task[] = (data.data || []).map((task: any) => {
+      const data: PurchaseApiResponse = await response.json()
+
+      const transformedTasks: Task[] = (data.data || []).map((task: PurchaseApiTask) => {
         // Calculate priority based on order value and recency
         const orderValue = task.order_value || 0;
         const eventDate = new Date(task.event_date);
@@ -60,8 +75,8 @@ export default function PurchasesPage() {
           email: task.email,
           phone: task.phone,
           orderValue: task.order_value,
-        },
-        productDetails: (task.products || []).map((p: any) => ({
+        } as const,
+        productDetails: (task.products || []).map((p: PurchaseApiProduct) => ({
           name: p.item_name,
           quantity: p.quantity,
           price: p.price,
@@ -80,11 +95,16 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedLocation, dateRange])
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchPurchaseTasks()
+    }
+  }, [dateRange, fetchPurchaseTasks])
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6">
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
@@ -145,7 +165,7 @@ export default function PurchasesPage() {
             {tasks.map((task) => (
               <TaskCard
                 key={task.id}
-                task={task as any}
+                task={task as PurchaseCartTask}
               />
             ))}
           </div>
@@ -159,13 +179,13 @@ export default function PurchasesPage() {
               <div>
                 <p className="text-xs sm:text-sm text-muted-foreground">Total Value</p>
                 <p className="text-xl sm:text-2xl font-bold">
-                  ${tasks.reduce((sum, task) => sum + ((task.customer as any).orderValue || 0), 0).toFixed(2)}
+                  ${tasks.reduce((sum, task) => sum + (task.customer.orderValue || 0), 0).toFixed(2)}
                 </p>
               </div>
               <div>
                 <p className="text-xs sm:text-sm text-muted-foreground">Avg Order Value</p>
                 <p className="text-xl sm:text-2xl font-bold">
-                  ${(tasks.reduce((sum, task) => sum + ((task.customer as any).orderValue || 0), 0) / tasks.length).toFixed(2)}
+                  ${(tasks.reduce((sum, task) => sum + (task.customer.orderValue || 0), 0) / tasks.length).toFixed(2)}
                 </p>
               </div>
               <div>
@@ -182,6 +202,5 @@ export default function PurchasesPage() {
           </div>
         )}
       </div>
-    </DashboardLayout>
   )
 } 

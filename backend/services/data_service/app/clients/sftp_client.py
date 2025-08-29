@@ -200,34 +200,72 @@ class SFTPClient:
                 
                 # Process data similar to original load_data.py
                 if 'FIRST_NAME' in df.columns:
-                    df['Name'] = df[['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME']].fillna('').agg(' '.join, axis=1).str.strip()
+                    df['user_name'] = df[['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME']].fillna('').agg(' '.join, axis=1).str.strip()
                 
                 # Rename columns to match database schema
                 rename_map = {
                     'CIMM_USER_ID': 'user_id',
-                    'ROLE_NAME': 'user_type',
-                    'BUYING_COMPANY_NAME': 'customer_name',
-                    'BUYING_COMPANY_ERP_ID': 'customer_erp_id',
-                    'Name': 'name',
+                    'USER_ID': 'user_id',  # Alternative name
+                    'USER_ERP_ID': 'user_erp_id',
+                    'FIRST_NAME': 'first_name',
+                    'MIDDLE_NAME': 'middle_name',
+                    'LAST_NAME': 'last_name',
+                    'JOB_TITLE': 'job_title',
+                    'ROLE_NAME': 'role_name',
+                    'BUYING_COMPANY_NAME': 'buying_company_name',
+                    'BUYING_COMPANY_ERP_ID': 'buying_company_erp_id',
+                    'CIMM_BUYING_COMPANY_ID': 'cimm_buying_company_id',
                     'EMAIL_ADDRESS': 'email',
-                    'PHONE_NUMBER': 'phone',
-                    'DEFAULT_BRANCH_ID': 'branch_id'
+                    'EMAIL': 'email',  # Alternative name
+                    'PHONE_NUMBER': 'office_phone',
+                    'OFFICE_PHONE': 'office_phone',
+                    'CELL_PHONE': 'cell_phone',
+                    'MOBILE_PHONE': 'cell_phone',
+                    'FAX': 'fax',
+                    'ADDRESS1': 'address1',
+                    'ADDRESS2': 'address2',
+                    'ADDRESS3': 'address3',
+                    'CITY': 'city',
+                    'STATE': 'state',
+                    'COUNTRY': 'country',
+                    'ZIP': 'zip',
+                    'POSTAL_CODE': 'zip',
+                    'DEFAULT_BRANCH_ID': 'warehouse_code',
+                    'WAREHOUSE_CODE': 'warehouse_code',
+                    'REGISTERED_DATE': 'registered_date',
+                    'LAST_LOGIN_DATE': 'last_login_date',
+                    'SITE_NAME': 'site_name'
                 }
                 
-                df = df.rename(columns=rename_map)
+                # Apply only the rename mappings that match existing columns
+                rename_dict = {}
+                for old_col, new_col in rename_map.items():
+                    if old_col in df.columns:
+                        rename_dict[old_col] = new_col
                 
-                # Select only required columns that exist
-                required_columns = ['user_id', 'name', 'email', 'phone', 'customer_name', 
-                                  'customer_erp_id', 'user_type', 'branch_id']
-                existing_columns = [col for col in required_columns if col in df.columns]
+                df = df.rename(columns=rename_dict)
+                
+                # Keep all columns that match the database schema
+                # These are the actual columns from the Users model
+                db_columns = ['user_id', 'user_name', 'first_name', 'middle_name', 'last_name',
+                             'job_title', 'user_erp_id', 'fax', 'address1', 'address2', 'address3',
+                             'city', 'state', 'country', 'office_phone', 'cell_phone', 'email',
+                             'registered_date', 'zip', 'warehouse_code', 'last_login_date',
+                             'cimm_buying_company_id', 'buying_company_name', 'buying_company_erp_id',
+                             'role_name', 'site_name']
+                
+                existing_columns = [col for col in db_columns if col in df.columns]
                 df = df[existing_columns]
                 
-                # Ensure user_id is present and numeric
+                # Ensure user_id is present and convert to string (it's String(100) in DB)
                 if 'user_id' not in df.columns:
                     raise ValueError("user_id column not found in user data")
                 
-                df['user_id'] = pd.to_numeric(df['user_id'], errors='coerce')
+                # Convert user_id to string and clean it
+                df['user_id'] = df['user_id'].astype(str)
                 df = df.dropna(subset=['user_id'])
+                df = df[df['user_id'].str.strip() != '']
+                df = df[df['user_id'] != 'nan']  # Remove 'nan' strings from conversion
                 
                 logger.info(f"Processed {len(df)} users from {self.user_file}")
                 return df
@@ -264,12 +302,12 @@ class SFTPClient:
                 
                 # Rename columns to match database schema - try different possible column names
                 rename_map = {
-                    'warehouse_code': 'location_id',
-                    'warehouse_name': 'name',
-                    'location_code': 'location_id',
-                    'location_name': 'name',
-                    'branch_code': 'location_id',
-                    'branch_name': 'name',
+                    'warehouse_code': 'warehouse_id',
+                    'warehouse_name': 'warehouse_name',
+                    'location_code': 'warehouse_id',
+                    'location_name': 'warehouse_name',
+                    'branch_code': 'warehouse_id',
+                    'branch_name': 'warehouse_name',
                     'city': 'city',
                     'state': 'state',
                     'country': 'country'
@@ -280,18 +318,18 @@ class SFTPClient:
                 df = df.rename(columns=existing_renames)
                 
                 # Select only required columns that exist
-                required_columns = ['location_id', 'name', 'city', 'state', 'country']
+                required_columns = ['warehouse_id', 'warehouse_name', 'city', 'state', 'country']
                 existing_columns = [col for col in required_columns if col in df.columns]
                 df = df[existing_columns]
                 
-                # Ensure location_id is present
-                if 'location_id' not in df.columns:
-                    raise ValueError("location_id column not found in locations data")
+                # Ensure warehouse_id is present
+                if 'warehouse_id' not in df.columns:
+                    raise ValueError("warehouse_id column not found in locations data")
                 
-                # Convert location_id to string and remove null values
-                df['location_id'] = df['location_id'].astype(str)
-                df = df.dropna(subset=['location_id'])
-                df = df[df['location_id'].str.strip() != '']
+                # Convert warehouse_id to string and remove null values
+                df['warehouse_id'] = df['warehouse_id'].astype(str)
+                df = df.dropna(subset=['warehouse_id'])
+                df = df[df['warehouse_id'].str.strip() != '']
                 
                 logger.info(f"Processed {len(df)} locations from {self.locations_file}")
                 return df

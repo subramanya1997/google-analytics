@@ -195,28 +195,70 @@ class AzureSFTPClient:
             
             # Process data similar to original implementation
             if 'FIRST_NAME' in df.columns:
-                df['Name'] = df[['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME']].fillna('').agg(' '.join, axis=1).str.strip()
+                df['user_name'] = df[['FIRST_NAME', 'MIDDLE_NAME', 'LAST_NAME']].fillna('').agg(' '.join, axis=1).str.strip()
             
             # Rename columns to match database schema
             rename_map = {
                 'CIMM_USER_ID': 'user_id',
-                'ROLE_NAME': 'user_type',
-                'BUYING_COMPANY_NAME': 'customer_name',
-                'BUYING_COMPANY_ERP_ID': 'customer_erp_id',
-                'Name': 'name',
+                'USER_ID': 'user_id',  # Alternative name
+                'USER_ERP_ID': 'user_erp_id',
+                'FIRST_NAME': 'first_name',
+                'MIDDLE_NAME': 'middle_name',
+                'LAST_NAME': 'last_name',
+                'JOB_TITLE': 'job_title',
+                'ROLE_NAME': 'role_name',
+                'BUYING_COMPANY_NAME': 'buying_company_name',
+                'BUYING_COMPANY_ERP_ID': 'buying_company_erp_id',
+                'CIMM_BUYING_COMPANY_ID': 'cimm_buying_company_id',
                 'EMAIL_ADDRESS': 'email',
-                'PHONE_NUMBER': 'phone',
-                'DEFAULT_BRANCH_ID': 'branch_id'
+                'EMAIL': 'email',  # Alternative name
+                'PHONE_NUMBER': 'office_phone',
+                'OFFICE_PHONE': 'office_phone',
+                'CELL_PHONE': 'cell_phone',
+                'MOBILE_PHONE': 'cell_phone',
+                'FAX': 'fax',
+                'ADDRESS1': 'address1',
+                'ADDRESS2': 'address2',
+                'ADDRESS3': 'address3',
+                'CITY': 'city',
+                'STATE': 'state',
+                'COUNTRY': 'country',
+                'ZIP': 'zip',
+                'POSTAL_CODE': 'zip',
+                'DEFAULT_BRANCH_ID': 'warehouse_code',
+                'WAREHOUSE_CODE': 'warehouse_code',
+                'REGISTERED_DATE': 'registered_date',
+                'LAST_LOGIN_DATE': 'last_login_date',
+                'SITE_NAME': 'site_name'
             }
             
-            df = df.rename(columns=rename_map)
+            # Apply only the rename mappings that match existing columns
+            rename_dict = {}
+            for old_col, new_col in rename_map.items():
+                if old_col in df.columns:
+                    rename_dict[old_col] = new_col
             
-            # Select only required columns that exist
-            required_cols = ['user_id', 'user_type', 'customer_name', 'customer_erp_id', 'name', 'email', 'phone', 'branch_id']
-            available_cols = [col for col in required_cols if col in df.columns]
+            df = df.rename(columns=rename_dict)
+            
+            # Keep all columns that match the database schema
+            db_columns = ['user_id', 'user_name', 'first_name', 'middle_name', 'last_name',
+                         'job_title', 'user_erp_id', 'fax', 'address1', 'address2', 'address3',
+                         'city', 'state', 'country', 'office_phone', 'cell_phone', 'email',
+                         'registered_date', 'zip', 'warehouse_code', 'last_login_date',
+                         'cimm_buying_company_id', 'buying_company_name', 'buying_company_erp_id',
+                         'role_name', 'site_name']
+            
+            available_cols = [col for col in db_columns if col in df.columns]
             
             if available_cols:
                 df = df[available_cols]
+            
+            # Ensure user_id is present and convert to string
+            if 'user_id' in df.columns:
+                df['user_id'] = df['user_id'].astype(str)
+                df = df.dropna(subset=['user_id'])
+                df = df[df['user_id'].str.strip() != '']
+                df = df[df['user_id'] != 'nan']  # Remove 'nan' strings
             
             logger.info(f"Successfully processed {len(df)} users with columns: {list(df.columns)}")
             return df

@@ -52,15 +52,15 @@ BEGIN
             pp.param_page_location,
             pp.event_date,
             u.user_id,
-            u.customer_name,
+            u.buying_company_name as customer_name,
             u.email,
-            u.phone,
+            u.cell_phone as phone,
             CASE 
                 WHEN tt.completed IS NOT NULL THEN tt.completed 
                 ELSE false 
             END as completed
         FROM paginated_purchases pp
-        LEFT JOIN users u ON u.user_id = CAST(pp.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+        LEFT JOIN users u ON u.user_id = pp.user_prop_webuserid AND u.tenant_id = p_tenant_id
         LEFT JOIN task_tracking tt ON tt.tenant_id = p_tenant_id 
             AND tt.task_id = pp.param_transaction_id 
             AND tt.task_type = 'purchase'
@@ -159,14 +159,14 @@ BEGIN
                     'items_count', sd.items_count,
                     'total_value', sd.total_value,
                     'user_id', u.user_id,
-                    'customer_name', u.customer_name,
+                    'customer_name', u.buying_company_name,
                     'email', u.email,
-                    'phone', u.phone,
+                    'phone', u.cell_phone,
                     'products', sd.products
                 )
             )
             FROM session_details sd
-            LEFT JOIN users u ON u.user_id = CAST(sd.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+            LEFT JOIN users u ON u.user_id = sd.user_prop_webuserid AND u.tenant_id = p_tenant_id
         ),
         'total', (SELECT COUNT(*) FROM abandoned_sessions),
         'page', p_page,
@@ -253,13 +253,13 @@ BEGIN
                     'search_type', ps.search_type,
                     'search_count', ps.search_count,
                     'user_id', u.user_id,
-                    'customer_name', u.customer_name,
+                    'customer_name', u.buying_company_name,
                     'email', u.email,
-                    'phone', u.phone
+                    'phone', u.cell_phone
                 )
             )
             FROM paginated_searches ps
-            LEFT JOIN users u ON u.user_id = CAST(ps.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+            LEFT JOIN users u ON u.user_id = ps.user_prop_webuserid AND u.tenant_id = p_tenant_id
         ),
         'total', (SELECT COUNT(*) FROM all_searches),
         'page', p_page,
@@ -356,15 +356,15 @@ BEGIN
                     'products_viewed', COALESCE(spv.products_viewed, 0),
                     'products_details', COALESCE(spv.products_details, '[]'::jsonb),
                     'user_id', u.user_id,
-                    'customer_name', u.customer_name,
+                    'customer_name', u.buying_company_name,
                     'email', u.email,
-                    'phone', u.phone
+                    'phone', u.cell_phone
                 )
             ), '[]'::jsonb)
             FROM paginated_sessions ps
-            LEFT JOIN users u ON u.user_id = CAST(ps.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+            LEFT JOIN users u ON u.user_id = ps.user_prop_webuserid AND u.tenant_id = p_tenant_id
             LEFT JOIN session_product_views spv ON spv.param_ga_session_id = ps.param_ga_session_id
-            WHERE p_query IS NULL OR u.customer_name ILIKE ('%' || p_query || '%') OR u.email ILIKE ('%' || p_query || '%')
+            WHERE p_query IS NULL OR u.buying_company_name ILIKE ('%' || p_query || '%') OR u.email ILIKE ('%' || p_query || '%')
         ),
         'total', (SELECT COUNT(*) FROM repeat_visitor_sessions),
         'page', p_page,
@@ -433,13 +433,13 @@ BEGIN
                         'event_date', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
                         'entry_page', ps.entry_page,
                         'user_id', u.user_id,
-                        'customer_name', u.customer_name,
+                        'customer_name', u.buying_company_name,
                         'email', u.email,
-                        'phone', u.phone
+                        'phone', u.cell_phone
                     )
                 ), '[]'::jsonb)
                 FROM paginated_sessions ps
-                LEFT JOIN users u ON u.user_id = CAST(ps.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+                LEFT JOIN users u ON u.user_id = ps.user_prop_webuserid AND u.tenant_id = p_tenant_id
             ),
             'frequently_bounced_pages', (
                 SELECT COALESCE(jsonb_agg(fbp), '[]'::jsonb)

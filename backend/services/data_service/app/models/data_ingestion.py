@@ -1,7 +1,6 @@
 from pydantic import BaseModel, validator
 from datetime import datetime, date
 from typing import List, Optional
-from uuid import UUID
 
 
 class DataIngestionRequest(BaseModel):

@@ -25,6 +25,19 @@ from app.models.orm.dimensions import Users, Locations
 from app.models.orm.control import ProcessingJobs
 
 
+def ensure_uuid_string(tenant_id: str) -> str:
+    """Convert tenant_id to a consistent UUID string format."""
+    try:
+        # Validate and convert to UUID string
+        uuid_obj = uuid.UUID(tenant_id)
+        return str(uuid_obj)
+    except ValueError:
+        # If not a valid UUID, generate one from the string using MD5 hash
+        import hashlib
+        tenant_uuid = uuid.UUID(bytes=hashlib.md5(tenant_id.encode()).digest()[:16])
+        return str(tenant_uuid)
+
+
 EVENT_TABLES: Dict[str, Any] = {
     "purchase": Purchase.__table__,
     "add_to_cart": AddToCart.__table__,
@@ -44,6 +57,10 @@ class SqlAlchemyRepository:
     # ---------- Job operations ----------
     def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         with Session(self.engine) as session:
+            # Ensure tenant_id is properly formatted for UUID column
+            if 'tenant_id' in job_data:
+                job_data['tenant_id'] = ensure_uuid_string(job_data['tenant_id'])
+            
             stmt = (
                 insert(ProcessingJobs.__table__)
                 .values(job_data)
@@ -85,10 +102,11 @@ class SqlAlchemyRepository:
         events_data: List[Dict[str, Any]],
     ) -> int:
         table = EVENT_TABLES[event_type]
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
         with Session(self.engine) as session:
             # delete date range
             del_stmt = delete(table).where(
-                table.c.tenant_id == func.cast(tenant_id, table.c.tenant_id.type),
+                table.c.tenant_id == tenant_uuid_str,
                 table.c.event_date.between(start_date, end_date),
             )
             delete_result = session.execute(del_stmt)
@@ -132,7 +150,8 @@ class SqlAlchemyRepository:
                     ev_copy["event_date"] = date(
                         int(ev_date[:4]), int(ev_date[4:6]), int(ev_date[6:8])
                     )
-                ev_copy["tenant_id"] = tenant_id
+                # Ensure tenant_id is properly formatted as UUID string
+                ev_copy["tenant_id"] = tenant_uuid_str
                 normalized.append(ev_copy)
 
             batch_size = 1000
@@ -164,10 +183,7 @@ class SqlAlchemyRepository:
             for u in users_data:
                 r = dict(u)
                 # ensure UUID type for tenant_id
-                try:
-                    r["tenant_id"] = uuid.UUID(tenant_id)
-                except Exception:
-                    r["tenant_id"] = tenant_id
+                r["tenant_id"] = ensure_uuid_string(tenant_id)
                 rows.append(r)
 
             for i in range(0, len(rows), batch_size):
@@ -205,13 +221,10 @@ class SqlAlchemyRepository:
             for loc in locations_data:
                 r = dict(loc)
                 # ensure UUID type for tenant_id
-                try:
-                    r["tenant_id"] = uuid.UUID(tenant_id)
-                except Exception:
-                    r["tenant_id"] = tenant_id
-                # ensure location_id is string
-                if "location_id" in r and r["location_id"] is not None:
-                    r["location_id"] = str(r["location_id"])
+                r["tenant_id"] = ensure_uuid_string(tenant_id)
+                # ensure warehouse_id is string (it's the unique field in the model)
+                if "warehouse_id" in r and r["warehouse_id"] is not None:
+                    r["warehouse_id"] = str(r["warehouse_id"])
                 rows.append(r)
 
             for i in range(0, len(rows), batch_size):
@@ -221,11 +234,11 @@ class SqlAlchemyRepository:
                 update_map = {
                     c.name: getattr(excluded, c.name)
                     for c in table.c
-                    if c.name not in ("id", "tenant_id", "location_id", "created_at")
+                    if c.name not in ("id", "tenant_id", "warehouse_id", "created_at")
                 }
                 update_map["updated_at"] = func.now()
                 upsert_stmt = stmt.on_conflict_do_update(
-                    index_elements=[table.c.tenant_id, table.c.location_id], set_=update_map
+                    index_elements=[table.c.tenant_id, table.c.warehouse_id], set_=update_map
                 )
                 result = session.execute(upsert_stmt)
                 batch_count = result.rowcount or 0
@@ -240,9 +253,13 @@ class SqlAlchemyRepository:
         self, tenant_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None
     ) -> Dict[str, int]:
         summary: Dict[str, int] = {}
+        
+        # Convert tenant_id to proper UUID string
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
         with Session(self.engine) as session:
             for key, table in EVENT_TABLES.items():
-                conds = [table.c.tenant_id == tenant_id]
+                conds = [table.c.tenant_id == tenant_uuid_str]
                 if start_date and end_date:
                     conds.append(table.c.event_date.between(start_date, end_date))
                 count_stmt = select(func.count()).select_from(table).where(*conds)
@@ -251,13 +268,13 @@ class SqlAlchemyRepository:
             # users
             u = Users.__table__
             summary["users"] = session.execute(
-                select(func.count()).select_from(u).where(u.c.tenant_id == tenant_id)
+                select(func.count()).select_from(u).where(u.c.tenant_id == tenant_uuid_str)
             ).scalar_one()
 
             # locations
             l = Locations.__table__
             summary["locations"] = session.execute(
-                select(func.count()).select_from(l).where(l.c.tenant_id == tenant_id)
+                select(func.count()).select_from(l).where(l.c.tenant_id == tenant_uuid_str)
             ).scalar_one()
 
         return summary

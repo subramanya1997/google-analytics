@@ -4,7 +4,7 @@ Comprehensive data processing service for complete analytics pipeline
 import json
 from datetime import datetime, date
 from typing import Dict, Any, List
-from uuid import uuid4
+from uuid import uuid4, UUID
 from loguru import logger
 import pandas as pd
 
@@ -26,12 +26,12 @@ class ComprehensiveDataProcessingService:
         try:
             job_data = {
                 'job_id': job_id,
-                'tenant_id': request.tenant_id,
+                'tenant_id': request.tenant_id,  # Repository will handle UUID conversion
                 'status': 'queued',
                 'data_types': request.data_types,
-                'start_date': request.start_date.isoformat(),
-                'end_date': request.end_date.isoformat(),
-                'created_at': datetime.now().isoformat()
+                'start_date': request.start_date,  # Pass as date object, not string
+                'end_date': request.end_date,      # Pass as date object, not string
+                'created_at': datetime.now()       # Pass as datetime object, not string
             }
             
             job = self.repo.create_processing_job(job_data)
@@ -46,7 +46,7 @@ class ComprehensiveDataProcessingService:
         """Process comprehensive data ingestion request."""
         try:
             # Update job status to processing
-            self.repo.update_job_status(job_id, 'processing', started_at=datetime.now().isoformat())
+            self.repo.update_job_status(job_id, 'processing', started_at=datetime.now())
             
             results = {
                 'purchase': 0,
@@ -96,7 +96,7 @@ class ComprehensiveDataProcessingService:
             self.repo.update_job_status(
                 job_id, 
                 'completed', 
-                completed_at=datetime.now().isoformat(),
+                completed_at=datetime.now(),
                 records_processed=results
             )
             
@@ -108,7 +108,7 @@ class ComprehensiveDataProcessingService:
             self.repo.update_job_status(
                 job_id, 
                 'failed', 
-                completed_at=datetime.now().isoformat(),
+                completed_at=datetime.now(),
                 error_message=str(e)
             )
             logger.error(f"Failed processing job {job_id}: {e}")
@@ -219,15 +219,14 @@ class ComprehensiveDataProcessingService:
                     locations_data = locations_data.replace({np.nan: None})
                     
                     # Map Excel columns to database columns (only include columns that exist in DB schema)
-                    # Database schema: location_id, warehouse_code, warehouse_name, name, city, state, country
+                    # Database schema: warehouse_id, warehouse_code, warehouse_name, city, state, country
                     column_mapping = {
-                        'WAREHOUSE_ID': 'location_id',      # Maps to location_id in DB
+                        'WAREHOUSE_ID': 'warehouse_id',      # Maps to warehouse_id in DB
                         'WAREHOUSE_CODE': 'warehouse_code',  # Maps to warehouse_code in DB
                         'WAREHOUSE_NAME': 'warehouse_name',  # Maps to warehouse_name in DB
                         'CITY': 'city',                     # Maps to city in DB
                         'STATE': 'state',                   # Maps to state in DB
                         'COUNTRY': 'country'                # Maps to country in DB
-                        # Note: name field will be set to warehouse_name
                     }
                     
                     # Filter columns to only include those that exist in our mapping AND in the Excel file
@@ -236,10 +235,6 @@ class ComprehensiveDataProcessingService:
                     
                     # Rename columns to match database schema
                     filtered_data = filtered_data.rename(columns=column_mapping)
-                    
-                    # Add name field (use warehouse_name as name)
-                    if 'warehouse_name' in filtered_data.columns:
-                        filtered_data['name'] = filtered_data['warehouse_name']
                     
                     # Convert DataFrame to list of dictionaries
                     locations_list = filtered_data.to_dict('records')

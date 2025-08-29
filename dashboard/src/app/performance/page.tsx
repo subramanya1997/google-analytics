@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { buildApiQueryParams } from "@/lib/api-utils"
 import { Task } from "@/types/tasks"
@@ -24,11 +23,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet"
-import { Mail, Phone, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
+import { Mail, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
 
 type SortField = 'customer' | 'type' | 'metric' | 'priority'
 type SortOrder = 'asc' | 'desc'
+
+interface PerformanceApiTask {
+  session_id: string
+  user_id: string
+  customer_name?: string
+  email?: string
+  phone?: string
+  entry_page: string
+  location_id?: string
+  event_date: string
+}
+
+type BouncedSession = PerformanceApiTask
+
+interface FrequentlyBouncedPage {
+  entry_page: string
+  bounce_count: number
+}
+
+interface PerformanceApiResponse {
+  data: {
+    bounced_sessions: BouncedSession[]
+    frequently_bounced_pages: FrequentlyBouncedPage[]
+  }
+  total?: number
+}
 
 export default function PerformancePage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -59,35 +83,91 @@ export default function PerformancePage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchPerformanceTasks()
-    }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
-
-  const fetchPerformanceTasks = async () => {
+  const fetchPerformanceTasks = useCallback(async () => {
     try {
       setLoading(true)
-      const qParam = debouncedSearchQuery ? `&q=${encodeURIComponent(debouncedSearchQuery)}` : ''
-      const locationParam = selectedLocation ? `&locationId=${selectedLocation}` : ''
-      const url = `/api/tasks/performance?page=${currentPage}&limit=${itemsPerPage}${qParam}${locationParam}`
+      
+      const additionalParams = {
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        query: debouncedSearchQuery
+      }
+
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/performance${queryParams}`
+      
       const response = await fetch(url)
-      const data = await response.json()
-      setTasks(data.tasks || [])
-      setTotalPages(data.totalPages || 1)
+      const data: PerformanceApiResponse = await response.json()
+
+      // Transform the new data structure to the old one
+      const bouncedSessions = data.data.bounced_sessions || []
+      const frequentlyBouncedPages = data.data.frequently_bounced_pages || []
+
+      const transformedTasks: Task[] = [
+        ...bouncedSessions.map((session: BouncedSession) => ({
+          id: session.session_id,
+          type: 'performance' as const,
+          title: `Bounced Session: ${session.session_id}`,
+          description: `User session with a single page view. Entry page: ${session.entry_page}`,
+          priority: 'high' as const, // Bounced sessions are high priority
+          status: 'pending' as const,
+          customer: {
+            id: session.user_id,
+            name: session.customer_name || 'Unknown',
+            email: session.email,
+            phone: session.phone,
+          },
+          metadata: {
+            issueType: 'high_bounce',
+            pageUrl: session.entry_page,
+            pageTitle: session.entry_page, // Assuming title is same as URL for now
+            location: session.location_id
+          },
+          createdAt: session.event_date,
+          userId: session.user_id,
+          sessionId: session.session_id
+        })),
+        ...frequentlyBouncedPages.map((page: FrequentlyBouncedPage) => ({
+          id: page.entry_page,
+          type: 'performance' as const,
+          title: `Frequently Bounced Page: ${page.entry_page}`,
+          description: `This page has a high bounce rate with ${page.bounce_count} bounces.`,
+          priority: 'high' as const,
+          status: 'pending' as const,
+          customer: {
+            id: 'system',
+            name: 'System',
+            email: undefined,
+            phone: undefined,
+          },
+          metadata: {
+            issueType: 'page_bounce_issue',
+            pageUrl: page.entry_page,
+            pageTitle: page.entry_page,
+            bounceCount: page.bounce_count
+          },
+          createdAt: new Date().toISOString() // System-generated, use current date
+        }))
+      ]
+
+      setTasks(transformedTasks)
       setTotalCount(data.total || 0)
+      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
       console.error('Error fetching performance tasks:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
 
-  const handleCompleteTask = (taskId: string) => {
-    setTasks(prev => prev.map(task => 
-      task.id === taskId ? { ...task, status: 'completed' as const } : task
-    ))
-  }
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchPerformanceTasks()
+    }
+  }, [dateRange, fetchPerformanceTasks])
+
+
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -173,13 +253,10 @@ export default function PerformancePage() {
     }
   }
 
-  const subtitle = selectedLocation 
-    ? `Address technical issues affecting user experience and conversions (Filtered by location)`
-    : "Address technical issues affecting user experience and conversions"
+
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6">
 
         {/* Filters */}
         <div className="space-y-3">
@@ -471,6 +548,5 @@ export default function PerformancePage() {
           </>
         )}
       </div>
-    </DashboardLayout>
   )
 } 

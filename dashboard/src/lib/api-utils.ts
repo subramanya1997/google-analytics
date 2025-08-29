@@ -8,16 +8,19 @@ export function buildApiQueryParams(
 ): string {
   const params = new URLSearchParams()
   
+  // Example tenant_id
+  params.append('tenant_id', '550e8400-e29b-41d4-a716-446655440000')
+  
   if (selectedLocation) {
-    params.append('locationId', selectedLocation)
+    params.append('location_id', selectedLocation)
   }
   
   if (dateRange?.from) {
-    params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+    params.append('start_date', format(dateRange.from, 'yyyy-MM-dd'))
   }
   
   if (dateRange?.to) {
-    params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+    params.append('end_date', format(dateRange.to, 'yyyy-MM-dd'))
   }
   
   if (additionalParams) {

@@ -71,3 +71,4 @@ configs/smtp_config.json
 configs/branch_email_mapping.json
 configs/*.json
 !configs/*.json.example
+backend/services/analytics_service/config/supabase.json

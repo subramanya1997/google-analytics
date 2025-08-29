@@ -6,7 +6,7 @@ from typing import List
 from loguru import logger
 
 from app.models.analytics import LocationResponse
-from app.database.supabase_client import AnalyticsSupabaseClient
+from app.database.postgres_client import AnalyticsPostgresClient
 from app.core.config import settings
 
 router = APIRouter()
@@ -23,8 +23,7 @@ async def get_locations(
     """
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Get locations with activity
         locations = db_client.get_locations(tenant_id)

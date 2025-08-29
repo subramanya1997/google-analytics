@@ -12,7 +12,7 @@ from app.models.analytics import (
     TaskListRequest,
     PagedResponse
 )
-from app.database.supabase_client import AnalyticsSupabaseClient
+from app.database.postgres_client import AnalyticsPostgresClient
 from app.core.config import settings
 
 router = APIRouter()
@@ -27,8 +27,7 @@ async def get_task_status(
     """Get task completion status."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Get task status
         status = db_client.get_task_status(tenant_id, task_id, task_type)
@@ -47,8 +46,7 @@ async def update_task_status(request: TaskStatusUpdateRequest):
     """Update task completion status."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Update task status
         result = db_client.update_task_status(
@@ -83,8 +81,7 @@ async def get_purchase_tasks(
     """Get purchase analysis tasks."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Fetch purchase tasks
         result = db_client.get_purchase_tasks(
@@ -119,8 +116,7 @@ async def get_cart_abandonment_tasks(
     """Get cart abandonment analysis tasks."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Fetch cart abandonment tasks
         result = db_client.get_cart_abandonment_tasks(
@@ -156,8 +152,7 @@ async def get_search_analysis_tasks(
     """Get search analysis tasks."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Fetch search analysis tasks
         result = db_client.get_search_analysis_tasks(
@@ -192,8 +187,7 @@ async def get_performance_tasks(
     """Get performance analysis tasks."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Fetch performance tasks
         result = db_client.get_performance_tasks(
@@ -227,8 +221,7 @@ async def get_repeat_visit_tasks(
     """Get repeat visit analysis tasks."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Fetch repeat visit tasks
         result = db_client.get_repeat_visit_tasks(

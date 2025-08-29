@@ -18,7 +18,6 @@ A FastAPI-based microservice for providing analytics and reporting capabilities 
 - Python 3.9+
 - Poetry
 - PostgreSQL database (shared with data service)
-- Supabase configuration
 
 ### Installation
 
@@ -38,7 +37,7 @@ cp env.example .env
 
 # Ensure config files are set up
 # Copy from data service if needed:
-# cp ../data_service/config/supabase.json config/supabase.json
+# cp ../data_service/config/postgres.json config/postgres.json
 
 # Start the service
 poetry run uvicorn app.main:app --reload --port 8002
@@ -71,13 +70,17 @@ poetry run uvicorn app.main:app --reload --port 8002
 
 ## Configuration
 
-The service uses the same PostgreSQL database as the data service. Configure the connection in `config/supabase.json`:
+The service uses the same PostgreSQL database as the data service. Configure the connection in `config/postgres.json`:
 
 ```json
 {
-  "project_url": "your-supabase-url",
-  "service_role_key": "your-service-role-key",
-  "connection_string": "postgresql://..."
+  "host": "your-postgres-host",
+  "port": 5432,
+  "user": "postgres",
+  "password": "your-password",
+  "database": "postgres",
+  "connect_timeout_seconds": 10,
+  "sslmode": "require"
 }
 ```
 

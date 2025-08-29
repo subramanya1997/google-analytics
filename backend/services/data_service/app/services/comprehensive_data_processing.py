@@ -8,7 +8,7 @@ from uuid import uuid4
 from loguru import logger
 import pandas as pd
 
-from app.database.enhanced_supabase_client import EnhancedSupabaseClient
+from app.database.sqlalchemy_repository import SqlAlchemyRepository
 from app.models.data_ingestion import DataIngestionRequest
 from app.clients.enhanced_bigquery_client import EnhancedBigQueryClient
 from app.clients.azure_sftp_client import AzureSFTPClient
@@ -19,8 +19,7 @@ class ComprehensiveDataProcessingService:
     """Comprehensive service for handling all analytics data processing."""
     
     def __init__(self):
-        supabase_config = settings.get_supabase_client_config()
-        self.supabase = EnhancedSupabaseClient(supabase_config)
+        self.repo = SqlAlchemyRepository()
     
     def create_processing_job(self, job_id: str, request: DataIngestionRequest) -> Dict[str, Any]:
         """Create a new processing job."""
@@ -35,7 +34,7 @@ class ComprehensiveDataProcessingService:
                 'created_at': datetime.now().isoformat()
             }
             
-            job = self.supabase.create_processing_job(job_data)
+            job = self.repo.create_processing_job(job_data)
             logger.info(f"Created processing job {job_id}")
             return job
             
@@ -47,7 +46,7 @@ class ComprehensiveDataProcessingService:
         """Process comprehensive data ingestion request."""
         try:
             # Update job status to processing
-            self.supabase.update_job_status(job_id, 'processing', started_at=datetime.now().isoformat())
+            self.repo.update_job_status(job_id, 'processing', started_at=datetime.now().isoformat())
             
             results = {
                 'purchase': 0,
@@ -94,7 +93,7 @@ class ComprehensiveDataProcessingService:
                     raise
             
             # Update job status to completed
-            self.supabase.update_job_status(
+            self.repo.update_job_status(
                 job_id, 
                 'completed', 
                 completed_at=datetime.now().isoformat(),
@@ -106,7 +105,7 @@ class ComprehensiveDataProcessingService:
             
         except Exception as e:
             # Update job status to failed
-            self.supabase.update_job_status(
+            self.repo.update_job_status(
                 job_id, 
                 'failed', 
                 completed_at=datetime.now().isoformat(),
@@ -134,7 +133,7 @@ class ComprehensiveDataProcessingService:
             for event_type, events_data in events_by_type.items():
                 try:
                     if events_data:
-                        count = self.supabase.replace_event_data(
+                        count = self.repo.replace_event_data(
                             request.tenant_id,
                             event_type,
                             request.start_date,
@@ -187,7 +186,7 @@ class ComprehensiveDataProcessingService:
                             cleaned_record[key] = value
                     cleaned_users.append(cleaned_record)
                 
-                count = self.supabase.upsert_users(tenant_id, cleaned_users)
+                count = self.repo.upsert_users(tenant_id, cleaned_users)
                 logger.info(f"Processed {count} users from SFTP")
                 return count
             else:
@@ -260,7 +259,7 @@ class ComprehensiveDataProcessingService:
                     final_columns = list(filtered_data.columns)
                     logger.info(f"Mapped locations data from {len(available_columns)} Excel columns to {len(final_columns)} DB columns")
                     logger.info(f"Final DB columns: {final_columns}")
-                    count = self.supabase.upsert_locations(tenant_id, cleaned_locations)
+                    count = self.repo.upsert_locations(tenant_id, cleaned_locations)
                     logger.info(f"Processed {count} locations from local file")
                     return count
                 else:
@@ -269,25 +268,6 @@ class ComprehensiveDataProcessingService:
             else:
                 logger.warning(f"Local locations file not found: {locations_file}")
                 return 0
-            
-            # COMMENTED: SFTP code for future use when file is available on server
-            """
-            # SFTP version (commented for future use)
-            sftp_config = settings.get_sftp_config()
-            sftp_client = SFTPClient(sftp_config)
-            
-            locations_data = await sftp_client.get_latest_locations_data()
-            
-            if locations_data is not None and len(locations_data) > 0:
-                # Convert DataFrame to list of dictionaries
-                locations_list = locations_data.to_dict('records')
-                count = self.supabase.upsert_locations(tenant_id, locations_list)
-                logger.info(f"Processed {count} locations from SFTP")
-                return count
-            else:
-                logger.info("No locations data found on SFTP")
-                return 0
-            """
                 
         except Exception as e:
             logger.error(f"Error processing locations: {e}")
@@ -295,11 +275,11 @@ class ComprehensiveDataProcessingService:
     
     def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """Get job status."""
-        job = self.supabase.get_job_by_id(job_id)
+        job = self.repo.get_job_by_id(job_id)
         if not job:
             raise Exception(f"Job {job_id} not found")
         return job
     
     def get_analytics_summary(self, tenant_id: str, start_date: date = None, end_date: date = None) -> Dict[str, Any]:
         """Get analytics summary for a tenant."""
-        return self.supabase.get_analytics_summary(tenant_id, start_date, end_date)
+        return self.repo.get_analytics_summary(tenant_id, start_date, end_date)

@@ -6,7 +6,6 @@ import { AppSidebar } from "@/components/app-sidebar"
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
 } from "@/components/ui/sidebar"
 import {
   Breadcrumb,
@@ -15,14 +14,13 @@ import {
 } from "@/components/ui/breadcrumb"
 import { LocationSelector } from "@/components/ui/location-selector"
 import { DateRangeSelector } from "@/components/ui/date-range-selector"
-import { Separator } from "@/components/ui/separator"
 import { getPageInfo } from "@/lib/page-config"
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { selectedLocation, setSelectedLocation, dateRange, setDateRange } = useDashboard()
 
-  const { title, subtitle } = getPageInfo(pathname)
+  const { subtitle } = getPageInfo(pathname)
 
   return (
     <SidebarProvider>

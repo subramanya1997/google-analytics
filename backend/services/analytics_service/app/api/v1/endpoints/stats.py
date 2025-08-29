@@ -10,7 +10,7 @@ from app.models.analytics import (
     ChartDataPoint, 
     LocationStatsResponse
 )
-from app.database.supabase_client import AnalyticsSupabaseClient
+from app.database.postgres_client import AnalyticsPostgresClient
 from app.core.config import settings
 
 router = APIRouter()
@@ -35,8 +35,7 @@ async def get_dashboard_stats(
     """
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Use single optimized call if we have date range
         if start_date and end_date:

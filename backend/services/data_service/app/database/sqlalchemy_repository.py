@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
+from loguru import logger
 
 from app.database.sqlalchemy_session import get_engine
 from app.models.orm.events import (
@@ -90,7 +91,9 @@ class SqlAlchemyRepository:
                 table.c.tenant_id == func.cast(tenant_id, table.c.tenant_id.type),
                 table.c.event_date.between(start_date, end_date),
             )
-            session.execute(del_stmt)
+            delete_result = session.execute(del_stmt)
+            deleted_count = delete_result.rowcount or 0
+            logger.info(f"Deleted {deleted_count} existing {event_type} events for tenant {tenant_id} from {start_date} to {end_date}")
 
             if not events_data:
                 session.commit()
@@ -134,13 +137,17 @@ class SqlAlchemyRepository:
 
             batch_size = 1000
             total = 0
+            logger.info(f"Inserting {len(normalized)} new {event_type} events in batches of {batch_size}")
             for i in range(0, len(normalized), batch_size):
                 batch = normalized[i : i + batch_size]
                 ins = table.insert().values(batch)
                 result = session.execute(ins)
-                total += result.rowcount or 0
+                batch_count = result.rowcount or 0
+                total += batch_count
+                logger.debug(f"Inserted batch {i//batch_size + 1}: {batch_count} {event_type} events")
 
             session.commit()
+            logger.info(f"Successfully inserted {total} new {event_type} events for tenant {tenant_id}")
             return total
 
     # ---------- Dimensions ----------
@@ -150,6 +157,7 @@ class SqlAlchemyRepository:
         table = Users.__table__
         total = 0
         batch_size = 500
+        logger.info(f"Upserting {len(users_data)} users for tenant {tenant_id}")
         with Session(self.engine) as session:
             # add tenant_id to each
             rows = []
@@ -178,8 +186,11 @@ class SqlAlchemyRepository:
                     index_elements=[table.c.tenant_id, table.c.user_id], set_=update_map
                 )
                 result = session.execute(upsert_stmt)
-                total += result.rowcount or 0
+                batch_count = result.rowcount or 0
+                total += batch_count
+                logger.debug(f"Upserted batch {i//batch_size + 1}: {batch_count} users")
             session.commit()
+            logger.info(f"Successfully upserted {total} users for tenant {tenant_id}")
             return total
 
     def upsert_locations(self, tenant_id: str, locations_data: List[Dict[str, Any]]) -> int:
@@ -188,6 +199,7 @@ class SqlAlchemyRepository:
         table = Locations.__table__
         total = 0
         batch_size = 500
+        logger.info(f"Upserting {len(locations_data)} locations for tenant {tenant_id}")
         with Session(self.engine) as session:
             rows = []
             for loc in locations_data:
@@ -216,8 +228,11 @@ class SqlAlchemyRepository:
                     index_elements=[table.c.tenant_id, table.c.location_id], set_=update_map
                 )
                 result = session.execute(upsert_stmt)
-                total += result.rowcount or 0
+                batch_count = result.rowcount or 0
+                total += batch_count
+                logger.debug(f"Upserted batch {i//batch_size + 1}: {batch_count} locations")
             session.commit()
+            logger.info(f"Successfully upserted {total} locations for tenant {tenant_id}")
             return total
 
     # ---------- Analytics helpers ----------

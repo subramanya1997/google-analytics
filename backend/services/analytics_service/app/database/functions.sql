@@ -1,5 +1,99 @@
 -- SQL functions for the analytics service
 
+-- Function to get purchase tasks
+CREATE OR REPLACE FUNCTION get_purchase_tasks(
+    p_tenant_id UUID,
+    p_page INT,
+    p_limit INT,
+    p_query TEXT DEFAULT NULL,
+    p_location_id TEXT DEFAULT NULL,
+    p_start_date TEXT DEFAULT NULL,
+    p_end_date TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    result JSONB;
+BEGIN
+    WITH filtered_purchases AS (
+        SELECT 
+            p.param_transaction_id,
+            p.event_timestamp,
+            p.ecommerce_purchase_revenue,
+            p.param_ga_session_id,
+            p.user_prop_webuserid,
+            p.items_json,
+            p.param_page_location,
+            p.event_date
+        FROM purchase p
+        WHERE p.tenant_id = p_tenant_id
+          AND (p_location_id IS NULL OR p.user_prop_default_branch_id = p_location_id)
+          AND (p_start_date IS NULL OR p.event_date >= TO_DATE(p_start_date, 'YYYY-MM-DD'))
+          AND (p_end_date IS NULL OR p.event_date <= TO_DATE(p_end_date, 'YYYY-MM-DD'))
+          AND (p_query IS NULL OR p.items_json::text ILIKE '%' || p_query || '%')
+        ORDER BY p.event_timestamp DESC
+    ),
+    total_count AS (
+        SELECT COUNT(*) as total FROM filtered_purchases
+    ),
+    paginated_purchases AS (
+        SELECT *
+        FROM filtered_purchases
+        LIMIT p_limit
+        OFFSET (p_page - 1) * p_limit
+    ),
+    purchase_details AS (
+        SELECT
+            pp.param_transaction_id,
+            pp.event_timestamp,
+            pp.ecommerce_purchase_revenue,
+            pp.param_ga_session_id,
+            pp.user_prop_webuserid,
+            pp.items_json,
+            pp.param_page_location,
+            pp.event_date,
+            u.user_id,
+            u.customer_name,
+            u.email,
+            u.phone,
+            CASE 
+                WHEN tt.completed IS NOT NULL THEN tt.completed 
+                ELSE false 
+            END as completed
+        FROM paginated_purchases pp
+        LEFT JOIN users u ON u.user_id = CAST(pp.user_prop_webuserid AS INTEGER) AND u.tenant_id = p_tenant_id
+        LEFT JOIN task_tracking tt ON tt.tenant_id = p_tenant_id 
+            AND tt.task_id = pp.param_transaction_id 
+            AND tt.task_type = 'purchase'
+    )
+    SELECT jsonb_build_object(
+        'data', (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'transaction_id', pd.param_transaction_id,
+                    'event_date', TO_CHAR(TO_TIMESTAMP(CAST(pd.event_timestamp AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                    'order_value', COALESCE(pd.ecommerce_purchase_revenue, 0),
+                    'page_location', COALESCE(pd.param_page_location, ''),
+                    'ga_session_id', pd.param_ga_session_id,
+                    'user_id', pd.user_id,
+                    'customer_name', pd.customer_name,
+                    'email', pd.email,
+                    'phone', pd.phone,
+                    'products', COALESCE(pd.items_json, '[]'::jsonb),
+                    'completed', pd.completed
+                )
+            )
+            FROM purchase_details pd
+        ),
+        'total', (SELECT total FROM total_count),
+        'page', p_page,
+        'limit', p_limit,
+        'has_more', (p_page * p_limit) < (SELECT total FROM total_count)
+    ) INTO result;
+
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Function to get cart abandonment tasks
 CREATE OR REPLACE FUNCTION get_cart_abandonment_tasks(
     p_tenant_id UUID,
@@ -407,7 +501,7 @@ BEGIN
             jsonb_build_object(
                 'transaction_id', param_transaction_id,
                 'revenue', ecommerce_purchase_revenue,
-                'items', items_json
+                'items', COALESCE(items_json::text, '[]')
             ) AS details
         FROM purchase
         WHERE tenant_id = p_tenant_id AND param_ga_session_id = p_session_id
@@ -498,7 +592,7 @@ BEGIN
             jsonb_build_object(
                 'transaction_id', param_transaction_id,
                 'revenue', ecommerce_purchase_revenue,
-                'items', items_json
+                'items', COALESCE(items_json::text, '[]')
             ) AS details
         FROM purchase
         WHERE tenant_id = p_tenant_id AND param_ga_session_id IN (SELECT param_ga_session_id FROM user_sessions)
@@ -589,11 +683,16 @@ BEGIN
     ),
     cart_stats AS (
         SELECT
-            COUNT(DISTINCT param_ga_session_id) as cart_sessions
-        FROM add_to_cart
-        WHERE tenant_id = p_tenant_id 
-          AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
-          AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
+            COUNT(DISTINCT ac.param_ga_session_id) as abandoned_cart_sessions
+        FROM add_to_cart ac
+        WHERE ac.tenant_id = p_tenant_id 
+          AND ac.event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+          AND (p_location_id IS NULL OR ac.user_prop_default_branch_id = p_location_id)
+          AND NOT EXISTS (
+              SELECT 1 FROM purchase p
+              WHERE p.param_ga_session_id = ac.param_ga_session_id
+                AND p.tenant_id = p_tenant_id
+          )
     ),
     search_stats AS (
         SELECT
@@ -631,7 +730,7 @@ BEGIN
         'purchases', COALESCE(ps.total_purchases, 0),
         'totalVisitors', COALESCE(vs.total_visitors, 0),
         'uniqueUsers', COALESCE(vs.unique_users, 0),
-        'abandonedCarts', COALESCE(cs.cart_sessions, 0) - COALESCE(ps.purchase_sessions, 0),
+        'abandonedCarts', COALESCE(cs.abandoned_cart_sessions, 0),
         'totalSearches', COALESCE(ss.total_searches, 0),
         'failedSearches', COALESCE(ss.failed_searches, 0),
         'repeatVisits', COALESCE(rvs.repeat_visitors, 0),

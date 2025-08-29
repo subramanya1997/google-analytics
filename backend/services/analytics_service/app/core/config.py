@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     PORT: int = 8002
     
     # Configuration Files
-    SUPABASE_CONFIG_FILE: str = "config/supabase.json"
+    POSTGRES_CONFIG_FILE: str = "config/postgres.json"
     
     # Database Configuration
     DATABASE_POOL_SIZE: int = 10
@@ -54,31 +54,17 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Ignore extra fields from environment
     
-    def get_supabase_config(self) -> Dict[str, Any]:
-        """Load Supabase configuration from JSON file."""
-        config_path = Path(self.SUPABASE_CONFIG_FILE)
+    def get_postgres_config(self) -> Dict[str, Any]:
+        """Get Postgres configuration from JSON file."""
+        config_path = Path(self.POSTGRES_CONFIG_FILE)
+        
         if not config_path.exists():
-            raise FileNotFoundError(f"Supabase config file not found: {config_path}")
+            raise FileNotFoundError(f"Postgres config file not found: {config_path}")
         
         with open(config_path, 'r') as f:
             return json.load(f)
-    
-    def get_database_url(self) -> str:
-        """Get database URL from Supabase config."""
-        try:
-            supabase_config = self.get_supabase_config()
-            return supabase_config.get('connection_string', '')
-        except FileNotFoundError:
-            # Fallback to environment variable if config file doesn't exist
-            return os.getenv('DATABASE_URL', '')
-    
-    def get_supabase_client_config(self) -> Dict[str, Any]:
-        """Get Supabase client configuration."""
-        try:
-            return self.get_supabase_config()
-        except FileNotFoundError:
-            raise FileNotFoundError("Supabase configuration not found. Please set up config/supabase.json")
 
 
 settings = Settings()

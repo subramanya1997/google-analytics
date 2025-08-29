@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { TaskCard } from "@/components/tasks/task-card"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Task, PurchaseCartTask } from "@/types/tasks"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { buildApiQueryParams } from "@/lib/api-utils"
@@ -28,18 +31,29 @@ interface CartApiTask {
 
 interface CartApiResponse {
   data: CartApiTask[]
+  total: number
+  page: number
+  limit: number
+  has_more: boolean
 }
 
 export default function CartAbandonmentPage() {
   const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
 
   const fetchCartTasks = useCallback(async () => {
     try {
       setLoading(true)
       
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange)
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange, {
+        page: currentPage,
+        limit: itemsPerPage
+      })
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/tasks/cart-abandonment${queryParams}`
         
@@ -88,18 +102,29 @@ export default function CartAbandonmentPage() {
       });
 
       setTasks(transformedTasks)
+      setTotalCount(data.total || 0)
+      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
       console.error('Error fetching cart tasks:', error)
     } finally {
       setLoading(false)
     }
-  }, [selectedLocation, dateRange])
+  }, [selectedLocation, dateRange, currentPage, itemsPerPage])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
       fetchCartTasks()
     }
   }, [dateRange, fetchCartTasks])
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handleItemsPerPageChange = (value: string) => {
+    setItemsPerPage(parseInt(value))
+    setCurrentPage(1) // Reset to first page when changing items per page
+  }
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -118,14 +143,85 @@ export default function CartAbandonmentPage() {
             </p>
           </div>
         ) : (
-          <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
-            {tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task as PurchaseCartTask}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
+              {tasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task as PurchaseCartTask}
+                />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center space-x-2">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} tasks
+                  </p>
+                  <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">per page</p>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      let pageNum
+                      if (totalPages <= 5) {
+                        pageNum = i + 1
+                      } else if (currentPage <= 3) {
+                        pageNum = i + 1
+                      } else if (currentPage >= totalPages - 2) {
+                        pageNum = totalPages - 4 + i
+                      } else {
+                        pageNum = currentPage - 2 + i
+                      }
+                      
+                      return (
+                        <Button
+                          key={i}
+                          variant={pageNum === currentPage ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handlePageChange(pageNum)}
+                          className="h-8 w-8 p-0"
+                        >
+                          {pageNum}
+                        </Button>
+                      )
+                    })}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
   )

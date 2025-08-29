@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Path
 from typing import List, Dict, Any
 from loguru import logger
 
-from app.database.supabase_client import AnalyticsSupabaseClient
+from app.database.postgres_client import AnalyticsPostgresClient
 from app.core.config import settings
 
 router = APIRouter()
@@ -19,8 +19,7 @@ async def get_user_history(
     """Get the event history for a specific user."""
     try:
         # Initialize database client
-        supabase_config = settings.get_supabase_client_config()
-        db_client = AnalyticsSupabaseClient(supabase_config)
+        db_client = AnalyticsPostgresClient()
         
         # Get user history
         history = db_client.get_user_history(tenant_id, user_id)

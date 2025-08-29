@@ -37,7 +37,7 @@ def check_poetry():
 def check_config_files():
     """Check if required configuration files exist."""
     config_dir = Path("config")
-    required_configs = ["supabase.json"]
+    required_configs = ["postgres.json"]
     
     missing_configs = []
     for config_file in required_configs:
@@ -56,24 +56,24 @@ def check_config_files():
     
     return True
 
-def validate_supabase_config():
-    """Validate Supabase configuration."""
+def validate_postgres_config():
+    """Validate PostgreSQL configuration."""
     try:
-        with open("config/supabase.json", 'r') as f:
+        with open("config/postgres.json", 'r') as f:
             config = json.load(f)
         
-        required_keys = ["project_url", "service_role_key"]
+        required_keys = ["host", "port", "user", "password", "database"]
         missing_keys = [key for key in required_keys if not config.get(key)]
         
         if missing_keys:
-            print(f"❌ Missing Supabase config keys: {', '.join(missing_keys)}")
+            print(f"❌ Missing PostgreSQL config keys: {', '.join(missing_keys)}")
             return False
         
-        print("✅ Supabase configuration is valid")
+        print("✅ PostgreSQL configuration is valid")
         return True
         
     except Exception as e:
-        print(f"❌ Error validating Supabase config: {e}")
+        print(f"❌ Error validating PostgreSQL config: {e}")
         return False
 
 def setup_environment():
@@ -145,7 +145,7 @@ def main():
     if not check_config_files():
         sys.exit(1)
     
-    if not validate_supabase_config():
+    if not validate_postgres_config():
         sys.exit(1)
     
     setup_environment()

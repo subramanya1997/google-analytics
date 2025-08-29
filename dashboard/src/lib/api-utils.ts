@@ -4,7 +4,7 @@ import { format } from "date-fns"
 export function buildApiQueryParams(
   selectedLocation: string | null,
   dateRange: DateRange | undefined,
-  additionalParams?: Record<string, string>
+  additionalParams?: Record<string, string | number>
 ): string {
   const params = new URLSearchParams()
   
@@ -25,7 +25,7 @@ export function buildApiQueryParams(
   
   if (additionalParams) {
     Object.entries(additionalParams).forEach(([key, value]) => {
-      params.append(key, value)
+      params.append(key, String(value))
     })
   }
   

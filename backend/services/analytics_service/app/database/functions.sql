@@ -683,11 +683,16 @@ BEGIN
     ),
     cart_stats AS (
         SELECT
-            COUNT(DISTINCT param_ga_session_id) as cart_sessions
-        FROM add_to_cart
-        WHERE tenant_id = p_tenant_id 
-          AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
-          AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
+            COUNT(DISTINCT ac.param_ga_session_id) as abandoned_cart_sessions
+        FROM add_to_cart ac
+        WHERE ac.tenant_id = p_tenant_id 
+          AND ac.event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+          AND (p_location_id IS NULL OR ac.user_prop_default_branch_id = p_location_id)
+          AND NOT EXISTS (
+              SELECT 1 FROM purchase p
+              WHERE p.param_ga_session_id = ac.param_ga_session_id
+                AND p.tenant_id = p_tenant_id
+          )
     ),
     search_stats AS (
         SELECT
@@ -725,7 +730,7 @@ BEGIN
         'purchases', COALESCE(ps.total_purchases, 0),
         'totalVisitors', COALESCE(vs.total_visitors, 0),
         'uniqueUsers', COALESCE(vs.unique_users, 0),
-        'abandonedCarts', COALESCE(cs.cart_sessions, 0) - COALESCE(ps.purchase_sessions, 0),
+        'abandonedCarts', COALESCE(cs.abandoned_cart_sessions, 0),
         'totalSearches', COALESCE(ss.total_searches, 0),
         'failedSearches', COALESCE(ss.failed_searches, 0),
         'repeatVisits', COALESCE(rvs.repeat_visitors, 0),

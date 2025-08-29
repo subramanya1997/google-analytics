@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import React, { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
@@ -24,10 +23,28 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Mail, Phone, Eye, ShoppingBag, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, Search } from "lucide-react"
-import React from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { TaskDetailSheet } from "@/components/tasks/task-detail-sheet"
-import { format } from "date-fns"
+
+import { buildApiQueryParams } from "@/lib/api-utils"
+
+interface RepeatVisitApiTask {
+  session_id: string
+  user_id: string
+  customer_name?: string
+  email?: string
+  phone?: string
+  page_views_count: number
+  products_viewed?: number
+  event_date: string
+  products_details?: Array<{
+    title: string
+    url?: string
+  }>
+}
+
+interface RepeatVisitApiResponse {
+  data: RepeatVisitApiTask[]
+  total?: number
+}
 
 type SortField = 'customer' | 'lastVisit' | 'visitCount' | 'products' | 'priority'
 type SortOrder = 'asc' | 'desc'
@@ -63,46 +80,80 @@ export default function RepeatVisitsPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchRepeatVisitTasks()
-    }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
-
-  const fetchRepeatVisitTasks = async () => {
+  const fetchRepeatVisitTasks = useCallback(async () => {
     try {
       setLoading(true)
-      const params = new URLSearchParams({
+      
+      const additionalParams = {
         page: currentPage.toString(),
-        limit: itemsPerPage.toString()
-      })
-      
-      if (debouncedSearchQuery) {
-        params.append('q', debouncedSearchQuery)
+        limit: itemsPerPage.toString(),
+        query: debouncedSearchQuery
       }
+
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/repeat-visits${queryParams}`
       
-      if (selectedLocation) {
-        params.append('locationId', selectedLocation)
-      }
-      
-      if (dateRange?.from && dateRange?.to) {
-        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
-        params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
-      }
-      
-      const response = await fetch(`/api/tasks/repeat-visits?${params}`)
-      const data = await response.json()
-      
-      setTasks(data.tasks || [])
-      setTotalPages(data.totalPages || 1)
+      const response = await fetch(url)
+      const data: RepeatVisitApiResponse = await response.json()
+
+      const transformedTasks: Task[] = (data.data || []).map((task: RepeatVisitApiTask) => {
+        // Calculate priority based on page views and product views
+        const pageViews = task.page_views_count || 0;
+        const productsViewed = task.products_viewed || 0;
+        const eventDate = new Date(task.event_date);
+        const daysSinceVisit = Math.floor((Date.now() - eventDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        let priority: 'high' | 'medium' | 'low' = 'low';
+        if ((pageViews > 10 && productsViewed > 5) || (pageViews > 15 && daysSinceVisit < 3)) {
+          priority = 'high';
+        } else if (pageViews > 5 || productsViewed > 2 || daysSinceVisit < 7) {
+          priority = 'medium';
+        }
+
+        return {
+          id: task.session_id,
+          type: 'repeat_visit',
+          priority,
+          title: `Repeat Visit by ${task.customer_name || 'Unknown User'}`,
+          description: `Viewed ${task.page_views_count} pages, ${task.products_viewed || 0} products.`,
+          customer: {
+            id: task.user_id,
+            name: task.customer_name || 'Unknown User',
+            email: task.email,
+            phone: task.phone,
+          },
+                  metadata: {
+          visitCount: task.page_views_count,
+          productsViewed: task.products_viewed || 0,
+          products: (task.products_details || []).map(product => ({
+            title: product.title,
+            url: product.url || null
+          })),
+          lastVisit: task.event_date,
+        },
+        createdAt: task.event_date,
+        userId: task.user_id,
+        sessionId: task.session_id,
+      };
+      });
+
+      setTasks(transformedTasks)
       setTotalCount(data.total || 0)
+      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
       console.error('Error fetching repeat visit tasks:', error)
       setTasks([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchRepeatVisitTasks()
+    }
+  }, [dateRange, fetchRepeatVisitTasks])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -200,13 +251,10 @@ export default function RepeatVisitsPage() {
     return `${days} days ago`
   }
 
-  const subtitle = selectedLocation 
-    ? `Engage with visitors who showed high interest but didn't purchase (Filtered by location)`
-    : "Engage with visitors who showed high interest but didn't purchase"
+
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
@@ -545,6 +593,5 @@ export default function RepeatVisitsPage() {
           </>
         )}
       </div>
-    </DashboardLayout>
   )
 } 

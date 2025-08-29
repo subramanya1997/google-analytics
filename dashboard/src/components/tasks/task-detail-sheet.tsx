@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-// Temporarily removed textarea import due to TypeScript cache issue
 import { 
   User, 
   Mail, 
@@ -21,8 +20,40 @@ import {
   Check,
   Loader2
 } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
+
+// Skeleton loading components
+const TabSkeleton = () => (
+  <div className="space-y-3">
+    {[...Array(3)].map((_, i) => (
+      <div key={i} className="p-4 rounded-lg bg-muted/30 animate-pulse">
+        <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
+        <div className="h-3 bg-muted rounded w-1/2"></div>
+      </div>
+    ))}
+  </div>
+)
+
+const PurchaseSkeleton = () => (
+  <div className="space-y-3">
+    {[...Array(3)].map((_, i) => (
+      <div key={i} className="p-4 rounded-lg bg-muted/30 animate-pulse">
+        <div className="flex justify-between items-start mb-2">
+          <div className="space-y-2">
+            <div className="h-3 bg-muted rounded w-20"></div>
+            <div className="h-3 bg-muted rounded w-24"></div>
+          </div>
+          <div className="h-4 bg-muted rounded w-16"></div>
+        </div>
+        <div className="space-y-2">
+          <div className="h-3 bg-muted rounded w-full"></div>
+          <div className="h-3 bg-muted rounded w-3/4"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+)
 
 // Actual task structure that includes purchase and cart types
 interface ActualTask {
@@ -76,9 +107,13 @@ interface PurchaseHistoryItem {
 }
 
 interface UserHistory {
-  user: any
+  user: unknown
   purchaseHistory: PurchaseHistoryItem[]
-  searchHistory: any[]
+  searchHistory: Array<{
+    term: string
+    date: string
+    results: number
+  }>
   cartHistory: Array<{
     session_id: string
     event_date: string
@@ -115,7 +150,11 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const [notes, setNotes] = useState('')
   const [savingStatus, setSavingStatus] = useState(false)
   const [hasStatusChanges, setHasStatusChanges] = useState(false)
-  const [initialStatusLoaded, setInitialStatusLoaded] = useState(false)
+  
+  // Add lazy loading state for tabs
+  const [activeTab, setActiveTab] = useState<string>('')
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set())
+  const [tabLoadingStates, setTabLoadingStates] = useState<Record<string, boolean>>({})
   
   // Cast task to actual structure
   const actualTask = task as unknown as ActualTask
@@ -123,7 +162,10 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   // Fetch task status
   const fetchTaskStatus = async () => {
     try {
-      const response = await fetch(`/api/tasks/status?taskId=${actualTask.id}&taskType=${actualTask.type}`)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
+      const url = `${baseUrl}/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}&tenant_id=${tenantId}`
+      const response = await fetch(url)
       if (response.ok) {
         const data = await response.json()
         setCompleted(data.completed || false)
@@ -132,7 +174,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     } catch (error) {
       console.error('Error fetching task status:', error)
     } finally {
-      setInitialStatusLoaded(true)
+      // Status loading completed
     }
   }
 
@@ -140,14 +182,17 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const saveTaskStatus = async () => {
     setSavingStatus(true)
     try {
-      const response = await fetch('/api/tasks/status', {
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/status`
+      const response = await fetch(url, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          taskId: actualTask.id,
-          taskType: actualTask.type,
+          tenant_id: '550e8400-e29b-41d4-a716-446655440000', // Example tenant_id
+          task_id: actualTask.id,
+          task_type: actualTask.type,
           completed,
           notes,
           completedBy: 'Current User'
@@ -167,6 +212,12 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   }
 
   const fetchUserHistory = async () => {
+    // Check if we already have data cached
+    if (userHistory.user || userHistory.purchaseHistory.length > 0) {
+      console.log('Using cached user history data')
+      return
+    }
+    
     setLoading(true)
     
     let userId = null
@@ -179,37 +230,163 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       }
     }
     
-    let sessionId = actualTask.sessionId || null
+    const sessionId = actualTask.sessionId || null
+    
+    console.log('Fetching history for:', { 
+      userId, 
+      sessionId, 
+      taskType: actualTask.type, 
+      taskId: actualTask.id,
+      customer: actualTask.customer 
+    })
     
     try {
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
+      let url = ''
+      
       // First try to fetch by userId if available
       if (userId) {
-        const response = await fetch(`/api/users/${userId}/history`)
-        if (response.ok) {
-          const data = await response.json()
-          setUserHistory({
-            user: data.user,
-            purchaseHistory: data.purchaseHistory || [],
-            searchHistory: data.searchHistory || [],
-            cartHistory: data.cartHistory || [],
-            viewedProductsHistory: data.viewedProductsHistory || []
-          })
-          setLoading(false)
-          return
-        }
+        url = `${baseUrl}/users/${userId}/history?tenant_id=${tenantId}`
+      } else if (sessionId) {
+        // If no userId or failed, try by sessionId
+        url = `${baseUrl}/sessions/${sessionId}/history?tenant_id=${tenantId}`
       }
-      
-      // If no userId or failed, try by sessionId
-      if (sessionId) {
-        const sessionResponse = await fetch(`/api/sessions/${sessionId}/history`)
-        if (sessionResponse.ok) {
-          const data = await sessionResponse.json()
+
+      console.log('History API URL:', url)
+
+      if (url) {
+        const response = await fetch(url)
+        if (response.ok) {
+          const historyEvents = await response.json()
+          
+          console.log('History events response:', historyEvents)
+          
+          // Process the flat event list into categorized history
+          const purchaseHistory: PurchaseHistoryItem[] = []
+          const searchHistory: Array<{
+            term: string
+            date: string
+            results: number
+          }> = []
+          const cartHistory: Array<{
+            session_id: string
+            event_date: string
+            event_timestamp: string
+            cart_value: number
+            items: Array<{
+              name: string
+              sku: string
+              quantity: number
+              price: number
+            }>
+          }> = []
+          const viewedProductsHistory: Array<{
+            sku: string
+            name: string
+            category: string
+            price: number
+            view_count: number
+            last_viewed_date: string
+            last_viewed_timestamp: string
+          }> = []
+
+          // Handle both array and single object response
+          const eventsArray = Array.isArray(historyEvents) ? historyEvents : (historyEvents.data || [])
+
+          console.log('Events array length:', eventsArray.length)
+
+          eventsArray.forEach((event: {
+            event_type: string
+            param_ga_session_id?: string
+            event_timestamp: number
+            details: {
+              transaction_id?: string
+              revenue?: string
+              items?: string
+              search_term?: string
+              page_location?: string
+              page_title?: string
+              item_name?: string
+              item_id?: string
+              category?: string
+              price?: number
+              quantity?: number
+            }
+          }) => {
+            switch (event.event_type) {
+              case 'purchase':
+                purchaseHistory.push({
+                  transaction_id: event.details.transaction_id || 'unknown',
+                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_timestamp: event.event_timestamp.toString(),
+                  order_value: event.details.revenue || '0',
+                  items: JSON.parse(event.details.items || '[]')
+                })
+                break
+              case 'add_to_cart':
+                cartHistory.push({
+                  session_id: event.param_ga_session_id || 'unknown',
+                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_timestamp: event.event_timestamp.toString(),
+                  cart_value: (event.details.price || 0) * (event.details.quantity || 0),
+                  items: [{
+                    name: event.details.item_name || 'Unknown Item',
+                    sku: event.details.item_id || 'unknown',
+                    quantity: event.details.quantity || 0,
+                    price: event.details.price || 0
+                  }]
+                })
+                break
+              case 'view_search_results':
+                searchHistory.push({
+                  term: event.details.search_term || 'unknown',
+                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  results: 1 // Placeholder
+                })
+                break
+              case 'no_search_results':
+                searchHistory.push({
+                  term: event.details.search_term || 'unknown',
+                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  results: 0
+                })
+                break
+                             case 'page_view':
+                 // Add to viewed products if it's a product page
+                 if (event.details.page_location && event.details.page_location.includes('/product/')) {
+                   viewedProductsHistory.push({
+                     sku: event.details.page_location.split('/').pop() || 'unknown',
+                     name: event.details.page_title || 'Unknown Product',
+                     category: 'Product',
+                     price: 0,
+                     view_count: 1,
+                     last_viewed_timestamp: event.event_timestamp.toString(),
+                     last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                   })
+                 }
+                 break
+               case 'view_item':
+                 // Add product views from view_item events
+                 viewedProductsHistory.push({
+                   sku: event.details.item_id || 'unknown',
+                   name: event.details.item_name || 'Unknown Product',
+                   category: event.details.category || 'Product',
+                   price: event.details.price || 0,
+                   view_count: 1,
+                   last_viewed_timestamp: event.event_timestamp.toString(),
+                   last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                 })
+                 break
+            }
+          })
+
           setUserHistory({
-            user: data.user,
-            purchaseHistory: data.purchaseHistory || [],
-            searchHistory: data.searchHistory || [],
-            cartHistory: data.cartHistory || [],
-            viewedProductsHistory: data.viewedProductsHistory || []
+            user: null, // User info is not in this response
+            purchaseHistory,
+            searchHistory,
+            cartHistory, // This will be empty for now
+            viewedProductsHistory
           })
         }
       }
@@ -220,9 +397,30 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     setLoading(false)
   }
 
+  // Handle tab change with lazy loading
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab)
+    
+    // If this tab hasn't been loaded yet, mark it as loading
+    if (!loadedTabs.has(tab)) {
+      setTabLoadingStates(prev => ({ ...prev, [tab]: true }))
+      
+      // Simulate loading delay for better UX
+      setTimeout(() => {
+        setLoadedTabs(prev => new Set([...prev, tab]))
+        setTabLoadingStates(prev => ({ ...prev, [tab]: false }))
+      }, 100)
+    }
+  }
+
   // Handle open change
   const handleOpenChange = (open: boolean) => {
     if (open) {
+      // Set initial active tab based on task type
+      const initialTab = actualTask.type === 'cart' ? 'purchases' : 'searches'
+      setActiveTab(initialTab)
+      setLoadedTabs(new Set([initialTab]))
+      
       fetchUserHistory()
       fetchTaskStatus()
     }
@@ -252,6 +450,23 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   }
 
   const TaskIcon = getTaskIcon()
+
+  // Memoize processed data to avoid recalculating on every render
+  const processedPurchaseHistory = useMemo(() => {
+    return userHistory.purchaseHistory.slice(0, 5)
+  }, [userHistory.purchaseHistory])
+
+  const processedCartHistory = useMemo(() => {
+    return userHistory.cartHistory.slice(0, 5)
+  }, [userHistory.cartHistory])
+
+  const processedSearchHistory = useMemo(() => {
+    return userHistory.searchHistory.slice(0, 10)
+  }, [userHistory.searchHistory])
+
+  const processedViewedProducts = useMemo(() => {
+    return userHistory.viewedProductsHistory.slice(0, 10)
+  }, [userHistory.viewedProductsHistory])
 
   return (
     <Sheet onOpenChange={handleOpenChange}>
@@ -456,7 +671,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg space-y-2">
                   <h4 className="font-medium text-sm">Search Optimization</h4>
                   <p className="text-sm text-muted-foreground">
-                    Improve search results by adding synonyms, related terms, and better product descriptions to help customers find what they're looking for.
+                    Improve search results by adding synonyms, related terms, and better product descriptions to help customers find what they&apos;re looking for.
                   </p>
                 </div>
                 
@@ -540,8 +755,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm">{product.quantity} × ${product.price.toFixed(2)}</p>
-                      <p className="text-xs font-medium">${(product.quantity * product.price).toFixed(2)}</p>
+                      <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
+                      <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
@@ -582,14 +797,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                       )}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm">{product.quantity} × ${product.price.toFixed(2)}</p>
-                      <p className="text-xs font-medium">${(product.quantity * product.price).toFixed(2)}</p>
+                      <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
+                      <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
                 <div className="pt-2 mt-2 border-t flex justify-between">
                   <span className="font-semibold">Cart Total</span>
-                  <span className="font-semibold">${actualTask.customer.orderValue?.toFixed(2)}</span>
+                  <span className="font-semibold">${(actualTask.metadata?.cartValue || actualTask.customer.orderValue || 0).toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -597,11 +812,19 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
           {/* Customer History - Real data only */}
           <div className="space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Customer Activity History</h3>
-              <p className="text-xs text-muted-foreground mt-1">Showing activity for {actualTask.customer.name}</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Customer Activity History</h3>
+                <p className="text-xs text-muted-foreground mt-1">Showing activity for {actualTask.customer.name}</p>
+              </div>
+              {loading && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Loading data...
+                </div>
+              )}
             </div>
-            <Tabs defaultValue={actualTask.type === 'cart' ? 'purchases' : 'searches'} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className={cn(
                 "grid w-full h-9",
                 actualTask.type === 'purchase' && "grid-cols-3",
@@ -626,18 +849,20 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               <div className="mt-4 min-h-[200px]">
                 {actualTask.type === 'cart' && (
                   <TabsContent value="purchases" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('purchases') || tabLoadingStates['purchases'] ? (
+                      <PurchaseSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.purchaseHistory.length > 0 ? (
+                    ) : processedPurchaseHistory.length > 0 ? (
                       <div className="space-y-3">
-                        {userHistory.purchaseHistory.slice(0, 5).map((purchase, i) => (
+                        {processedPurchaseHistory.map((purchase, i) => (
                           <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <p className="text-xs text-muted-foreground">
-                                  {new Date(
+                                  {purchase.event_date ? new Date(
                                     purchase.event_date.slice(0, 4) + '-' + 
                                     purchase.event_date.slice(4, 6) + '-' + 
                                     purchase.event_date.slice(6, 8)
@@ -645,7 +870,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                     month: 'short', 
                                     day: 'numeric',
                                     year: 'numeric'
-                                  })}
+                                  }) : 'Unknown date'}
                                 </p>
                                 <p className="text-xs text-muted-foreground">Order #{purchase.transaction_id}</p>
                               </div>
@@ -659,7 +884,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                       <p className="font-medium">{item.name}</p>
                                     </div>
                                     <div className="text-right">
-                                      <p className="text-xs">{item.quantity} × ${item.price.toFixed(2)}</p>
+                                      <p className="text-xs">{item.quantity} × ${(item.price || 0).toFixed(2)}</p>
                                     </div>
                                   </div>
                                 ))
@@ -688,19 +913,21 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
                 {(actualTask.type === 'purchase' || actualTask.type === 'cart') && (
                   <TabsContent value="searches" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('searches') || tabLoadingStates['searches'] ? (
+                      <TabSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.searchHistory.length > 0 ? (
+                    ) : processedSearchHistory.length > 0 ? (
                       <div className="space-y-2">
-                        {userHistory.searchHistory.map((search, i) => (
+                        {processedSearchHistory.map((search, i) => (
                           <div key={i} className="p-3 rounded-lg bg-muted/30">
                             <div className="flex justify-between items-center gap-3">
                               <div className="flex-1">
                                 <p className="text-sm font-medium">{search.term}</p>
                                 <p className="text-xs text-muted-foreground mt-1">
-                                  {new Date(
+                                  {search.date ? new Date(
                                     search.date.slice(0, 4) + '-' + 
                                     search.date.slice(4, 6) + '-' + 
                                     search.date.slice(6, 8)
@@ -708,7 +935,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                     month: 'short', 
                                     day: 'numeric',
                                     year: 'numeric'
-                                  })}
+                                  }) : 'Unknown date'}
                                 </p>
                               </div>
                               <Badge 
@@ -734,17 +961,19 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
 
                 {actualTask.type === 'purchase' && (
                   <TabsContent value="carts" className="mt-0">
-                    {loading ? (
+                    {!loadedTabs.has('carts') || tabLoadingStates['carts'] ? (
+                      <PurchaseSkeleton />
+                    ) : loading ? (
                       <div className="text-center py-8">
                         <p className="text-sm text-muted-foreground">Loading...</p>
                       </div>
-                    ) : userHistory.cartHistory.length > 0 ? (
+                    ) : processedCartHistory.length > 0 ? (
                       <div className="space-y-3">
-                        {userHistory.cartHistory.map((cart, i) => (
+                        {processedCartHistory.map((cart, i) => (
                           <div key={i} className="p-4 rounded-lg bg-muted/30 space-y-2">
                             <div className="flex justify-between items-start mb-2">
                               <p className="text-xs text-muted-foreground">
-                                {new Date(
+                                {cart.event_date ? new Date(
                                   cart.event_date.slice(0, 4) + '-' + 
                                   cart.event_date.slice(4, 6) + '-' + 
                                   cart.event_date.slice(6, 8)
@@ -752,7 +981,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                   month: 'short', 
                                   day: 'numeric',
                                   year: 'numeric'
-                                })}
+                                }) : 'Unknown date'}
                               </p>
                               <span className="text-sm font-semibold">${(cart.cart_value || 0).toFixed(2)}</span>
                             </div>
@@ -764,8 +993,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                       <p className="font-medium">{item.name}</p>
                                     </div>
                                     <div className="text-right">
-                                      <p>{item.quantity} × ${item.price.toFixed(2)}</p>
-                                      <p className="text-xs text-muted-foreground">${(item.quantity * item.price).toFixed(2)}</p>
+                                      <p>{item.quantity} × ${(item.price || 0).toFixed(2)}</p>
+                                      <p className="text-xs text-muted-foreground">${((item.quantity || 0) * (item.price || 0)).toFixed(2)}</p>
                                     </div>
                                   </div>
                                 ))
@@ -785,13 +1014,15 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 )}
 
                 <TabsContent value="products" className="mt-0">
-                  {loading ? (
+                  {!loadedTabs.has('products') || tabLoadingStates['products'] ? (
+                    <TabSkeleton />
+                  ) : loading ? (
                     <div className="text-center py-8">
                       <p className="text-sm text-muted-foreground">Loading...</p>
                     </div>
-                  ) : userHistory.viewedProductsHistory.length > 0 ? (
+                  ) : processedViewedProducts.length > 0 ? (
                     <div className="space-y-2">
-                      {userHistory.viewedProductsHistory.map((product, i) => (
+                      {processedViewedProducts.map((product, i) => (
                         <div key={i} className="p-3 rounded-lg bg-muted/30">
                           <div className="flex justify-between items-start">
                             <div className="flex-1">
@@ -808,21 +1039,21 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                                 {product.view_count} view{product.view_count !== 1 ? 's' : ''}
                               </Badge>
                               {product.price > 0 && (
-                                <p className="text-xs text-muted-foreground mt-1">${product.price.toFixed(2)}</p>
+                                <p className="text-xs text-muted-foreground mt-1">${(product.price || 0).toFixed(2)}</p>
                               )}
                             </div>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-2">
-                            Last viewed: {new Date(
-                              product.last_viewed_date.slice(0, 4) + '-' + 
-                              product.last_viewed_date.slice(4, 6) + '-' + 
-                              product.last_viewed_date.slice(6, 8)
-                            ).toLocaleDateString('en-US', { 
-                              year: 'numeric', 
-                              month: 'short', 
-                              day: 'numeric' 
-                            })}
-                          </p>
+                                                     <p className="text-xs text-muted-foreground mt-2">
+                                             Last viewed: {product.last_viewed_date ? new Date(
+                  product.last_viewed_date.slice(0, 4) + '-' +
+                  product.last_viewed_date.slice(4, 6) + '-' +
+                  product.last_viewed_date.slice(6, 8)
+                ).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric'
+                }) : 'Unknown date'}
+                           </p>
                         </div>
                       ))}
                     </div>

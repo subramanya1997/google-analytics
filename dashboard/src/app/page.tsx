@@ -1,7 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useEffect, useState, useCallback } from "react"
 import { MetricCard } from "@/components/charts/metric-card"
 import { OverviewChart } from "@/components/charts/overview-chart"
 import { LocationStatsCard } from "@/components/charts/location-stats-card"
@@ -9,10 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TimeGranularitySelector, TimeGranularity } from "@/components/ui/time-granularity-selector"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { format } from "date-fns"
-import { 
-  DollarSign, 
-  ShoppingCart, 
-  Search, 
+import {
+  DollarSign,
+  ShoppingCart,
+  Search,
   Users,
   TrendingUp,
   AlertCircle,
@@ -20,21 +19,50 @@ import {
   BarChart3
 } from "lucide-react"
 
+interface DashboardMetrics {
+  totalRevenue: string
+  purchases: number
+  abandonedCarts: number
+  failedSearches: number
+  totalVisitors: number
+  repeatVisits: number
+}
+
+interface LocationStats {
+  locationId: string
+  locationName: string
+  city: string
+  state: string
+  totalRevenue: string
+  purchases: number
+  abandonedCarts: number
+  failedSearches: number
+  totalVisitors: number
+  repeatVisits: number
+}
+
+interface ChartDataPoint {
+  time: string
+  purchases: number
+  carts: number
+  searches: number
+}
+
+interface DashboardApiResponse {
+  metrics: DashboardMetrics
+  locationStats: LocationStats[]
+  chartData: ChartDataPoint[]
+}
+
 export default function DashboardPage() {
   const { selectedLocation, setSelectedLocation, dateRange } = useDashboard()
-  const [metrics, setMetrics] = useState<any>(null)
-  const [locationStats, setLocationStats] = useState<any[]>([])
-  const [chartData, setChartData] = useState<any[]>([])
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
+  const [locationStats, setLocationStats] = useState<LocationStats[]>([])
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>("daily")
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchDashboardData()
-    }
-  }, [selectedLocation, dateRange, timeGranularity])
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true)
       
@@ -43,23 +71,26 @@ export default function DashboardPage() {
       
       // Build URL with location and date filters
       const params = new URLSearchParams()
+      // Add tenant_id
+      params.append('tenant_id', '550e8400-e29b-41d4-a716-446655440000') // Example tenant_id
       if (selectedLocation) {
-        params.append('locationId', selectedLocation)
+        params.append('location_id', selectedLocation)
       }
       if (dateRange?.from) {
-        params.append('startDate', format(dateRange.from, 'yyyy-MM-dd'))
+        params.append('start_date', format(dateRange.from, 'yyyy-MM-dd'))
       }
       if (dateRange?.to) {
-        params.append('endDate', format(dateRange.to, 'yyyy-MM-dd'))
+        params.append('end_date', format(dateRange.to, 'yyyy-MM-dd'))
       }
       params.append('granularity', timeGranularity)
-      params.append('timezoneOffset', (-timezoneOffset).toString()) // Negative because getTimezoneOffset returns opposite sign
+      params.append('timezone_offset', (-timezoneOffset).toString()) // Negative because getTimezoneOffset returns opposite sign
       
-      const url = `/api/stats${params.toString() ? `?${params.toString()}` : ''}`
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/stats/dashboard?${params.toString()}`
         
       // Fetch stats
       const statsResponse = await fetch(url)
-      const statsData = await statsResponse.json()
+      const statsData: DashboardApiResponse = await statsResponse.json()
       setMetrics(statsData.metrics)
       setLocationStats(statsData.locationStats || [])
       setChartData(statsData.chartData)
@@ -68,11 +99,16 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedLocation, dateRange, timeGranularity])
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchDashboardData()
+    }
+  }, [dateRange, fetchDashboardData])
 
   return (
-    <DashboardLayout>
-      <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-6">
         {/* Overall Metrics Grid */}
         {loading ? (
           <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -145,8 +181,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Location Breakdown - Only show when no location is selected */}
-        {!selectedLocation && (
+        {/* Location Breakdown - Always show */}
           <div className="space-y-4">
             <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
               <MapPin className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -160,18 +195,18 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="grid gap-3 sm:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-                {locationStats.map((location) => (
-                  <LocationStatsCard
-                    key={location.locationId}
-                    stats={location}
-                    onClick={() => setSelectedLocation(location.locationId)}
-                  />
-                ))}
+                {locationStats
+                  .filter(location => !selectedLocation || location.locationId === selectedLocation)
+                  .map((location) => (
+                    <LocationStatsCard
+                      key={location.locationId}
+                      stats={location}
+                      onClick={() => setSelectedLocation(location.locationId)}
+                    />
+                  ))}
               </div>
             )}
           </div>
-        )}
       </div>
-    </DashboardLayout>
   )
 }

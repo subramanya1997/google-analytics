@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo, useCallback } from "react"
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { Task } from "@/types/tasks"
 import { Badge } from "@/components/ui/badge"
@@ -25,7 +24,26 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
-import { format } from "date-fns"
+
+import { buildApiQueryParams } from "@/lib/api-utils"
+
+interface SearchAnalysisApiTask {
+  session_id: string
+  user_id: string
+  customer_name?: string
+  email?: string
+  phone?: string
+  search_term: string
+  search_count: number
+  search_type: string
+  event_date: string
+  location_id?: string
+}
+
+interface SearchAnalysisApiResponse {
+  data: SearchAnalysisApiTask[]
+  total?: number
+}
 
 type SortField = 'searchTerms' | 'customer' | 'type' | 'attempts' | 'priority'
 type SortOrder = 'asc' | 'desc'
@@ -60,32 +78,84 @@ export default function SearchAnalysisPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  useEffect(() => {
-    if (dateRange?.from && dateRange?.to) {
-      fetchSearchTasks()
-    }
-  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
-
-  const fetchSearchTasks = async () => {
+  const fetchSearchTasks = useCallback(async () => {
     try {
       setLoading(true)
-      const qParam = debouncedSearchQuery ? `&q=${encodeURIComponent(debouncedSearchQuery)}` : ''
-      const locationParam = selectedLocation ? `&locationId=${selectedLocation}` : ''
-      const dateParams = dateRange?.from && dateRange?.to 
-        ? `&startDate=${format(dateRange.from, 'yyyy-MM-dd')}&endDate=${format(dateRange.to, 'yyyy-MM-dd')}`
-        : ''
-      const url = `/api/tasks/search-analysis?page=${currentPage}&limit=${itemsPerPage}&includeConverted=${includeConverted}${qParam}${locationParam}${dateParams}`
+
+      const additionalParams = {
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        include_converted: includeConverted.toString(),
+        query: debouncedSearchQuery
+      }
+      
+      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
+      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const url = `${baseUrl}/tasks/search-analysis${queryParams}`
+
       const response = await fetch(url)
-      const data = await response.json()
-      setTasks(data.tasks || [])
-      setTotalPages(data.totalPages || 1)
+      const data: SearchAnalysisApiResponse = await response.json()
+
+      const transformedTasks: Task[] = (data.data || []).map((task: SearchAnalysisApiTask) => {
+        // Calculate priority based on search count and type
+        const searchCount = task.search_count || 0;
+        const searchType = task.search_type || '';
+        
+        let priority: 'high' | 'medium' | 'low' = 'medium';
+        
+        // No results searches are higher priority than unconverted searches
+        if (searchType === 'no_results') {
+          if (searchCount > 3) {
+            priority = 'high';
+          } else if (searchCount <= 1) {
+            priority = 'low';
+          }
+        } else { // no_conversion type
+          if (searchCount > 5) {
+            priority = 'high';
+          } else if (searchCount <= 2) {
+            priority = 'low';
+          }
+        }
+        
+        return {
+          id: `${task.session_id}-${task.search_term}`,
+          type: 'search',
+          priority,
+          title: `Search: ${task.search_term}`,
+          description: `User searched for "${task.search_term}" ${task.search_count} times`,
+          customer: {
+            id: task.user_id,
+            name: task.customer_name || 'Unknown User',
+            email: task.email,
+            phone: task.phone,
+          },
+          metadata: {
+            searchTerms: task.search_term.split(', '),
+            issueType: task.search_type,
+            visitCount: task.search_count,
+          },
+          createdAt: task.event_date,
+          userId: task.user_id,
+          sessionId: task.session_id,
+        };
+      });
+
+      setTasks(transformedTasks)
       setTotalCount(data.total || 0)
+      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
       console.error('Error fetching search tasks:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
+
+  useEffect(() => {
+    if (dateRange?.from && dateRange?.to) {
+      fetchSearchTasks()
+    }
+  }, [dateRange, fetchSearchTasks])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -169,13 +239,10 @@ export default function SearchAnalysisPage() {
       : <ChevronDown className="h-4 w-4" />
   }
 
-  const subtitle = selectedLocation 
-    ? `Follow up with customers who searched but didn't find what they needed (Filtered by location)`
-    : "Follow up with customers who searched but didn't find what they needed"
+
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
 
         {/* Filters */}
         <div className="space-y-4">
@@ -239,7 +306,7 @@ export default function SearchAnalysisPage() {
               Include active searches from sessions that resulted in purchases
             </label>
             <span className="text-xs text-muted-foreground">
-              (All "no results" searches are always shown)
+              (All &quot;no results&quot; searches are always shown)
             </span>
           </div>
         </div>
@@ -468,6 +535,5 @@ export default function SearchAnalysisPage() {
           </>
         )}
       </div>
-    </DashboardLayout>
   )
 } 

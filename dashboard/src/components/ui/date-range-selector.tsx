@@ -3,7 +3,7 @@
 import * as React from "react"
 import { CalendarIcon, X } from "lucide-react"
 import { DateRange } from "react-day-picker"
-import { format, subDays, isValid, startOfDay } from "date-fns"
+import { format, subDays, startOfDay } from "date-fns"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"

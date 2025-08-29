@@ -3,8 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TaskDetailSheet } from "./task-detail-sheet"
-import { 
-  ShoppingCart, 
+import {
+  ShoppingCart,
   TrendingUp,
   DollarSign,
   MapPin
@@ -25,7 +25,7 @@ interface PurchaseCartTask {
   description: string
   customer: {
     name: string
-    email: string
+    email?: string
     phone?: string
     company?: string
     orderValue?: number
@@ -40,7 +40,9 @@ interface PurchaseCartTask {
     branchId?: string
   }
   createdAt: string
-  status?: string
+  status?: 'pending' | 'in_progress' | 'completed'
+  userId?: string
+  sessionId?: string
 }
 
 interface TaskCardProps {
@@ -65,7 +67,7 @@ export function TaskCard({ task }: TaskCardProps) {
   const orderValue = task.customer?.orderValue || task.metadata?.cartValue || 0
   
   return (
-    <TaskDetailSheet task={task as any}>
+    <TaskDetailSheet task={task}>
       <Card className="hover:shadow-md transition-all duration-200 cursor-pointer group">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
@@ -119,7 +121,7 @@ export function TaskCard({ task }: TaskCardProps) {
                 <div key={i} className="flex justify-between items-center text-sm">
                   <span className="flex-1 truncate pr-2">{product.name}</span>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {product.quantity} × ${product.price.toFixed(2)}
+                    {product.quantity || 0} × ${(product.price || 0).toFixed(2)}
                   </span>
                 </div>
               ))}

@@ -28,16 +28,10 @@ def check_config_files():
     print("🔧 Checking configuration files...")
     
     config_dir = app_dir / 'config'
-    supabase_config = config_dir / 'supabase.json'
     bigquery_config = config_dir / 'bigquery.json'
     sftp_config = config_dir / 'sftp.json'
     
     missing_files = []
-    
-    if not supabase_config.exists():
-        missing_files.append('config/supabase.json')
-    else:
-        print("   ✅ Supabase configuration found")
     
     if not bigquery_config.exists():
         missing_files.append('config/bigquery.json')
@@ -57,39 +51,6 @@ def check_config_files():
         return False
     
     return True
-
-
-
-
-
-def test_supabase_connection():
-    """Test Supabase connection."""
-    print("🔄 Testing Supabase connection...")
-    
-    try:
-        # Import here to avoid circular imports
-        sys.path.insert(0, str(app_dir))
-        from app.core.config import settings
-        from app.database.supabase_client import SupabaseClient
-        
-        supabase_config = settings.get_supabase_client_config()
-        supabase_client = SupabaseClient(supabase_config)
-        
-        # Test connection
-        result = supabase_client.test_connection()
-        
-        if result['success']:
-            print("✅ Supabase connection successful!")
-            print(f"   Project URL: {supabase_client.project_url}")
-            print(f"   Connection test: {result['message']}")
-            return True
-        else:
-            print(f"❌ Supabase connection failed: {result['message']}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error testing Supabase connection: {e}")
-        return False
 
 
 def start_server():
@@ -134,11 +95,6 @@ def main():
     # Check configuration files
     if not check_config_files():
         print("\n💡 Please create the required configuration files and try again.")
-        return
-    
-    # Test Supabase connection
-    if not test_supabase_connection():
-        print("\n💡 Please fix the Supabase connection and try again.")
         return
     
     print("\n✅ All checks passed! Starting the server...")

@@ -72,3 +72,4 @@ configs/branch_email_mapping.json
 configs/*.json
 !configs/*.json.example
 backend/services/data_service/config/*.json
+backend/services/analytics_service/config/*.json

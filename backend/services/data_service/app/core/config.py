@@ -1,3 +1,4 @@
+
 # Import from common configuration
 from common.config import get_settings
 

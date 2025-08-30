@@ -1,9 +1,0 @@
-{
-  "host": "your-cloud-sql-ip-or-hostname",
-  "port": 5432,
-  "user": "postgres",
-  "password": "your-database-password",
-  "database": "postgres",
-  "connect_timeout_seconds": 10,
-  "sslmode": "require"
-}

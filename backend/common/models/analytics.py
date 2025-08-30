@@ -22,6 +22,7 @@ class Tenants(Base):
     bigquery_project_id: Mapped[Optional[str]] = mapped_column(String(255))
     bigquery_dataset_id: Mapped[Optional[str]] = mapped_column(String(255))
     bigquery_credentials: Mapped[Optional[dict]] = mapped_column(JSON)
+    postgres_config: Mapped[Optional[dict]] = mapped_column(JSON)
     sftp_config: Mapped[Optional[dict]] = mapped_column(JSON)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True))

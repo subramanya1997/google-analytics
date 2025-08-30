@@ -30,7 +30,7 @@ SERVICES = {
     },
     "auth": {
         "name": "auth-service",
-        "module": "services.auth_service.main:app",
+        "module": "services.auth_service.app.main:app",
         "port": 8003,
         "description": "Auth Service - Authentication and authorization"
     }
@@ -62,25 +62,10 @@ def check_poetry():
 
 def check_config_files():
     """Check if required configuration files exist."""
-    config_dir = Path("config")
-    required_configs = ["postgres.json", "bigquery.json", "sftp.json"]
-    
-    missing_configs = []
-    for config_file in required_configs:
-        config_path = config_dir / config_file
-        if not config_path.exists():
-            missing_configs.append(config_file)
-        else:
-            print(f"✅ Found {config_file}")
-    
-    if missing_configs:
-        print(f"❌ Missing configuration files: {', '.join(missing_configs)}")
-        print("💡 Please copy from examples:")
-        for config in missing_configs:
-            example_file = f"{config}.example"
-            print(f"   cp config/{example_file} config/{config}")
-        return False
-    
+    # Note: Configuration files are no longer needed as all configurations
+    # are now dynamically retrieved from the database via the authentication service
+    print("✅ Configuration files are now managed dynamically via database")
+    print("💡 Tenant-specific configurations are retrieved from the authentication service")
     return True
 
 

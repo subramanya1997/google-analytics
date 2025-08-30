@@ -48,15 +48,8 @@ class BaseServiceSettings(BaseSettings):
         case_sensitive = True
         extra = "ignore"
     
-    def get_postgres_config(self) -> Dict[str, Any]:
-        """Get Postgres configuration from JSON file."""
-        config_path = Path(self.CONFIG_DIR) / "postgres.json"
-        
-        if not config_path.exists():
-            raise FileNotFoundError(f"Postgres config file not found: {config_path}")
-        
-        with open(config_path, 'r') as f:
-            return json.load(f)
+    # Note: PostgreSQL configuration is now retrieved dynamically from the database
+    # via the tenant configuration system. See common.database.tenant_config module.
 
 
 class AnalyticsServiceSettings(BaseServiceSettings):
@@ -125,6 +118,13 @@ class AuthServiceSettings(BaseServiceSettings):
     SERVICE_NAME: str = "auth-service"
     SERVICE_VERSION: str = "0.1.0"
     PORT: int = 8003
+    
+    # External API Configuration
+    BASE_URL: str = "https://devenv-mturmyvlly.extremeb2b.com"
+    
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
 
 
 # Service setting instances - will be created when imported

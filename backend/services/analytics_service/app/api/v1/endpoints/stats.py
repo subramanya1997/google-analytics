@@ -5,13 +5,15 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
-from app.models.analytics import (
+from fastapi import Depends
+from services.analytics_service.app.models import (
     DashboardStatsResponse, 
     ChartDataPoint, 
     LocationStatsResponse
 )
-from app.database.postgres_client import AnalyticsPostgresClient
-from app.core.config import settings
+from services.analytics_service.app.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.app.database.dependencies import get_analytics_db_client
+from services.analytics_service.app.core.config import settings
 
 router = APIRouter()
 
@@ -23,7 +25,8 @@ async def get_dashboard_stats(
     start_date: Optional[str] = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query(default="daily", description="Time granularity (daily, weekly, monthly)"),
-    timezone_offset: int = Query(default=0, description="Timezone offset in minutes")
+    timezone_offset: int = Query(default=0, description="Timezone offset in minutes"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """
     Get comprehensive dashboard statistics.
@@ -34,8 +37,7 @@ async def get_dashboard_stats(
     - Location-based statistics
     """
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Use single optimized call if we have date range
         if start_date and end_date:
@@ -79,7 +81,8 @@ async def get_stats(
     start_date: Optional[str] = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query(default="daily", description="Time granularity"),
-    timezone_offset: int = Query(default=0, description="Timezone offset in minutes")
+    timezone_offset: int = Query(default=0, description="Timezone offset in minutes"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """
     DEPRECATED: Use /dashboard instead.
@@ -95,5 +98,6 @@ async def get_stats(
         start_date=start_date,
         end_date=end_date,
         granularity=granularity,
-        timezone_offset=timezone_offset
+        timezone_offset=timezone_offset,
+        db_client=db_client
     )

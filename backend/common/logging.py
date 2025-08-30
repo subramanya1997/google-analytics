@@ -1,10 +1,16 @@
+"""
+Common logging configuration for all backend services.
+"""
 import sys
+from pathlib import Path
 from loguru import logger
-from app.core.config import settings
+from common.config import get_settings
 
 
-def setup_logging() -> None:
+def setup_logging(service_name: str = None) -> None:
     """Configure logging for the application."""
+    
+    settings = get_settings(service_name)
     
     # Remove default handler
     logger.remove()
@@ -19,6 +25,10 @@ def setup_logging() -> None:
         level=settings.LOG_LEVEL,
         colorize=True,
     )
+    
+    # Create logs directory if it doesn't exist
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
     
     # Add file handler for errors
     logger.add(

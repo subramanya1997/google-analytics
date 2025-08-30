@@ -1,3 +1,6 @@
+"""
+Event models - User behavior and transaction events.
+"""
 from __future__ import annotations
 
 from datetime import datetime, date
@@ -9,7 +12,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import text
 
-from .base import Base
+from common.database import Base
 
 
 class Purchase(Base):
@@ -153,5 +156,3 @@ class ViewItem(Base):
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
-
-

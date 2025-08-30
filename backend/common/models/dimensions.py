@@ -1,3 +1,6 @@
+"""
+Dimension models - User and Location entities.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -7,7 +10,7 @@ from sqlalchemy import Boolean, String, TIMESTAMP, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from .base import Base
+from common.database import Base
 
 
 class Users(Base):
@@ -91,5 +94,3 @@ class Locations(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "warehouse_id", name="uq_locations_tenant_warehouse"),
     )
-
-

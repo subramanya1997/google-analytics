@@ -16,19 +16,13 @@ from sqlalchemy import MetaData, text
 from sqlalchemy.orm import Session
 from loguru import logger
 
-from app.database.sqlalchemy_session import get_engine
-from app.models.orm.base import Base
+from services.data_service.app.database.sqlalchemy_session import get_engine
+from common.database import Base
 
 # Import all models to register them with Base.metadata
-from app.models.orm.control import Tenants, ProcessingJobs, TaskTracking
-from app.models.orm.dimensions import Users, Locations
-from app.models.orm.events import (
-    Purchase,
-    AddToCart,
-    PageView,
-    ViewSearchResults,
-    NoSearchResults,
-    ViewItem,
+from common.models import (
+    Tenants, ProcessingJobs, TaskTracking, Users, Locations,
+    Purchase, AddToCart, PageView, ViewSearchResults, NoSearchResults, ViewItem
 )
 
 

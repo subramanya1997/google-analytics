@@ -8,11 +8,11 @@ from uuid import uuid4, UUID
 from loguru import logger
 import pandas as pd
 
-from app.database.sqlalchemy_repository import SqlAlchemyRepository
-from app.models.data_ingestion import DataIngestionRequest
-from app.clients.enhanced_bigquery_client import EnhancedBigQueryClient
-from app.clients.azure_sftp_client import AzureSFTPClient
-from app.core.config import settings
+from services.data_service.app.database.sqlalchemy_repository import SqlAlchemyRepository
+from common.models import DataIngestionRequest
+from services.data_service.app.clients.enhanced_bigquery_client import EnhancedBigQueryClient
+from services.data_service.app.clients.azure_sftp_client import AzureSFTPClient
+from services.data_service.app.core.config import settings
 
 
 class ComprehensiveDataProcessingService:

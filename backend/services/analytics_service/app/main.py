@@ -8,11 +8,12 @@ from services.analytics_service.app.api.v1.api import api_router
 # Get settings for this service
 settings = get_settings("analytics-service")
 
-# Create FastAPI app
+# Create FastAPI app with reverse proxy configuration
 app = create_fastapi_app(
     service_name="analytics-service",
     description="Analytics service for Google Analytics intelligence system",
-    api_router=api_router
+    api_router=api_router,
+    root_path="/analytics"  # Nginx serves this at /analytics/
 )
 
 

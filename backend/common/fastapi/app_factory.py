@@ -16,7 +16,8 @@ def create_fastapi_app(
     service_name: str,
     description: str,
     api_router = None,
-    additional_setup: Optional[callable] = None
+    additional_setup: Optional[callable] = None,
+    root_path: str = ""
 ) -> FastAPI:
     """
     Create a FastAPI app with common configuration and middleware.
@@ -34,12 +35,20 @@ def create_fastapi_app(
     # Get service settings
     settings = get_settings(service_name)
     
-    # Create FastAPI app
+    # Create FastAPI app with proper reverse proxy support
+    openapi_url = f"{settings.API_V1_STR}/openapi.json"
+    if root_path:
+        # When behind reverse proxy, use absolute path
+        openapi_url = f"{root_path}{settings.API_V1_STR}/openapi.json"
+    
     app = FastAPI(
         title=settings.SERVICE_NAME,
         version=settings.SERVICE_VERSION,
         description=description,
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
+        openapi_url=openapi_url,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        root_path=root_path
     )
     
     # Configure CORS

@@ -22,11 +22,12 @@ WORKDIR /app
 # Copy Poetry configuration files
 COPY pyproject.toml poetry.lock ./
 
-# Configure Poetry: Don't create virtual environment (we're in a container)
-RUN poetry config virtualenvs.create false
+# Configure Poetry to create virtual environment in the container
+RUN poetry config virtualenvs.create true \
+    && poetry config virtualenvs.in-project true
 
-# Install dependencies
-RUN poetry install --no-dev
+# Install dependencies in virtual environment (without dev dependencies and without installing the project itself)
+RUN poetry install --only main --no-root
 
 # Copy the entire backend codebase
 COPY . .
@@ -43,5 +44,5 @@ RUN chmod +x /app/docker-entrypoint.sh
 # Expose ports for all services
 EXPOSE 8001 8002 8003
 
-# Use the entrypoint script
+# Use Poetry's virtual environment in the entrypoint
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

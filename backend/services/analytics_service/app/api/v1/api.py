@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import stats, tasks, locations, sessions, users
+from services.analytics_service.app.api.v1.endpoints import stats, tasks, locations, sessions, users
 
 api_router = APIRouter()
 

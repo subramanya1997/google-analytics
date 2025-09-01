@@ -1,76 +1,19 @@
 """
 Analytics Service - FastAPI application for analytics and reporting
 """
-import time
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from loguru import logger
+from common.fastapi import create_fastapi_app
+from common.config import get_settings
+from services.analytics_service.app.api.v1.api import api_router
 
-from app.core.config import settings
-from app.api.v1.api import api_router
-
+# Get settings for this service
+settings = get_settings("analytics-service")
 
 # Create FastAPI app
-app = FastAPI(
-    title=settings.SERVICE_NAME,
-    version=settings.SERVICE_VERSION,
+app = create_fastapi_app(
+    service_name="analytics-service",
     description="Analytics service for Google Analytics intelligence system",
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    api_router=api_router
 )
-
-# Configure CORS
-if settings.CORS_ORIGINS:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-else:
-    # Allow all origins in development
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-# Add request timing middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
-
-
-# Include API router
-app.include_router(api_router, prefix=settings.API_V1_STR)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "service": settings.SERVICE_NAME,
-        "version": settings.SERVICE_VERSION,
-        "status": "healthy",
-        "timestamp": time.time()
-    }
-
-
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "service": settings.SERVICE_NAME,
-        "version": settings.SERVICE_VERSION,
-        "message": "Analytics service is running",
-        "docs": "/docs"
-    }
 
 
 if __name__ == "__main__":

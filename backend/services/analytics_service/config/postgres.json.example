@@ -1,9 +1,0 @@
-{
-  "host": "your-postgres-host",
-  "port": 5432,
-  "user": "postgres",
-  "password": "your-password",
-  "database": "postgres",
-  "connect_timeout_seconds": 10,
-  "sslmode": "require"
-}

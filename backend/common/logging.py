@@ -30,9 +30,17 @@ def setup_logging(service_name: str = None) -> None:
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
     
-    # Add file handler for errors
+    # Determine service-specific log file names
+    if service_name:
+        service_log_file = f"logs/{service_name}.log"
+        service_error_file = f"logs/{service_name}-error.log"
+    else:
+        service_log_file = "logs/app.log"
+        service_error_file = "logs/error.log"
+    
+    # Add file handler for errors (service-specific)
     logger.add(
-        "logs/error.log",
+        service_error_file,
         format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
         level="ERROR",
         rotation="10 MB",
@@ -40,13 +48,12 @@ def setup_logging(service_name: str = None) -> None:
         compression="zip",
     )
     
-    # Add file handler for all logs in production
-    if not settings.DEBUG:
-        logger.add(
-            "logs/app.log",
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
-            level=settings.LOG_LEVEL,
-            rotation="50 MB",
-            retention="7 days",
-            compression="zip",
-        )
+    # Add file handler for all logs (service-specific)
+    logger.add(
+        service_log_file,
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}",
+        level=settings.LOG_LEVEL,
+        rotation="50 MB",
+        retention="7 days",
+        compression="zip",
+    )

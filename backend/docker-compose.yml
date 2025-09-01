@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  google-analytics-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: google-analytics-backend
+    ports:
+      - "8001:8001"  # Analytics Service
+      - "8002:8002"  # Data Service
+      - "8003:8003"  # Auth Service
+    volumes:
+      # Mount logs directory to persist logs on host
+      - ./logs:/app/logs
+      # Optional: Mount for development (uncomment for development)
+      # - .:/app
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health", "http://localhost:8002/health", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - analytics-network
+
+  # Optional: PostgreSQL database service
+  # Uncomment if you want to run PostgreSQL in Docker as well
+  # postgres:
+  #   image: postgres:13
+  #   container_name: google-analytics-postgres
+  #   environment:
+  #     POSTGRES_DB: google_analytics
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: password
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     - ./backend/services/analytics_service/app/database/create_indices.sql:/docker-entrypoint-initdb.d/01-create-indices.sql
+  #     - ./backend/services/analytics_service/app/database/functions.sql:/docker-entrypoint-initdb.d/02-functions.sql
+  #   networks:
+  #     - analytics-network
+
+networks:
+  analytics-network:
+    driver: bridge
+
+# Uncomment if using PostgreSQL service
+# volumes:
+#   postgres_data:

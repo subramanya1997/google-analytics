@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import data_ingestion
+from services.data_service.app.api.v1.endpoints import data_ingestion
 
 api_router = APIRouter()
 

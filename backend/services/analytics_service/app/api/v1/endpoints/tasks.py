@@ -5,15 +5,17 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
-from app.models.analytics import (
+from fastapi import Depends
+from services.analytics_service.app.models import (
     TaskStatusResponse,
     TaskStatusRequest,
     TaskStatusUpdateRequest,
     TaskListRequest,
     PagedResponse
 )
-from app.database.postgres_client import AnalyticsPostgresClient
-from app.core.config import settings
+from services.analytics_service.app.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.app.database.dependencies import get_analytics_db_client
+from services.analytics_service.app.core.config import settings
 
 router = APIRouter()
 
@@ -22,12 +24,12 @@ router = APIRouter()
 async def get_task_status(
     task_id: str = Query(..., description="Task ID"),
     task_type: str = Query(..., description="Task type"),
-    tenant_id: str = Query(default=settings.DEFAULT_TENANT_ID, description="Tenant ID")
+    tenant_id: str = Query(default=settings.DEFAULT_TENANT_ID, description="Tenant ID"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get task completion status."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Get task status
         status = db_client.get_task_status(tenant_id, task_id, task_type)
@@ -42,23 +44,28 @@ async def get_task_status(
 
 
 @router.put("/status", response_model=Dict[str, Any])
-async def update_task_status(request: TaskStatusUpdateRequest):
+async def update_task_status(
+    request: TaskStatusUpdateRequest,
+    task_id: str = Query(..., description="Task ID"),
+    task_type: str = Query(..., description="Task type"),
+    tenant_id: str = Query(default=settings.DEFAULT_TENANT_ID, description="Tenant ID"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
+):
     """Update task completion status."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Update task status
         result = db_client.update_task_status(
-            tenant_id=request.tenant_id,
-            task_id=request.task_id,
-            task_type=request.task_type,
+            tenant_id=tenant_id,
+            task_id=task_id,
+            task_type=task_type,
             completed=request.completed,
             notes=request.notes,
             completed_by=request.completed_by
         )
         
-        logger.info(f"Updated task status for {request.task_id} ({request.task_type})")
+        logger.info(f"Updated task status for {task_id} ({task_type})")
         
         return result
         
@@ -76,12 +83,12 @@ async def get_purchase_tasks(
     query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
-    end_date: Optional[str] = Query(default=None, description="End date filter")
+    end_date: Optional[str] = Query(default=None, description="End date filter"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get purchase analysis tasks."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Fetch purchase tasks
         result = db_client.get_purchase_tasks(
@@ -111,12 +118,12 @@ async def get_cart_abandonment_tasks(
     query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
-    end_date: Optional[str] = Query(default=None, description="End date filter")
+    end_date: Optional[str] = Query(default=None, description="End date filter"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get cart abandonment analysis tasks."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Fetch cart abandonment tasks
         result = db_client.get_cart_abandonment_tasks(
@@ -147,12 +154,12 @@ async def get_search_analysis_tasks(
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
     end_date: Optional[str] = Query(default=None, description="End date filter"),
-    include_converted: bool = Query(default=False, description="Include sessions that resulted in a purchase")
+    include_converted: bool = Query(default=False, description="Include sessions that resulted in a purchase"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get search analysis tasks."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Fetch search analysis tasks
         result = db_client.get_search_analysis_tasks(
@@ -182,12 +189,12 @@ async def get_performance_tasks(
     limit: int = Query(default=settings.DEFAULT_PAGE_SIZE, ge=1, le=settings.MAX_PAGE_SIZE, description="Items per page"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
-    end_date: Optional[str] = Query(default=None, description="End date filter")
+    end_date: Optional[str] = Query(default=None, description="End date filter"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get performance analysis tasks."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Fetch performance tasks
         result = db_client.get_performance_tasks(
@@ -216,12 +223,12 @@ async def get_repeat_visit_tasks(
     query: Optional[str] = Query(default=None, description="Search query on user name, email, or company"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
-    end_date: Optional[str] = Query(default=None, description="End date filter")
+    end_date: Optional[str] = Query(default=None, description="End date filter"),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client)
 ):
     """Get repeat visit analysis tasks."""
     try:
-        # Initialize database client
-        db_client = AnalyticsPostgresClient()
+        # Database client injected via dependency
         
         # Fetch repeat visit tasks
         result = db_client.get_repeat_visit_tasks(

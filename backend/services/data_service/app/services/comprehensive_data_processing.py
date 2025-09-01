@@ -8,11 +8,12 @@ from uuid import uuid4, UUID
 from loguru import logger
 import pandas as pd
 
-from app.database.sqlalchemy_repository import SqlAlchemyRepository
-from app.models.data_ingestion import DataIngestionRequest
-from app.clients.enhanced_bigquery_client import EnhancedBigQueryClient
-from app.clients.azure_sftp_client import AzureSFTPClient
-from app.core.config import settings
+from services.data_service.app.database.sqlalchemy_repository import SqlAlchemyRepository
+from common.models import DataIngestionRequest
+from services.data_service.app.clients.tenant_client_factory import (
+    get_tenant_enhanced_bigquery_client,
+    get_tenant_azure_sftp_client
+)
 
 
 class ComprehensiveDataProcessingService:
@@ -117,9 +118,11 @@ class ComprehensiveDataProcessingService:
     def _process_bigquery_events(self, request: DataIngestionRequest) -> Dict[str, int]:
         """Process all event types from BigQuery."""
         try:
-            # Initialize BigQuery client
-            bigquery_config = settings.get_bigquery_config()
-            bigquery_client = EnhancedBigQueryClient(bigquery_config)
+            # Initialize BigQuery client using tenant configuration from database
+            bigquery_client = get_tenant_enhanced_bigquery_client(request.tenant_id)
+            
+            if not bigquery_client:
+                raise ValueError(f"BigQuery configuration not found for tenant {request.tenant_id}")
             
             # Get all events for date range
             events_by_type = bigquery_client.get_date_range_events(
@@ -159,10 +162,11 @@ class ComprehensiveDataProcessingService:
     async def _process_users(self, tenant_id: str) -> int:
         """Process users from SFTP."""
         try:
-            sftp_config = settings.get_sftp_config()
+            # Create a fresh Azure SFTP client using tenant configuration from database
+            sftp_client = get_tenant_azure_sftp_client(tenant_id)
             
-            # Create a fresh Azure SFTP client for each operation
-            sftp_client = AzureSFTPClient(sftp_config)
+            if not sftp_client:
+                raise ValueError(f"SFTP configuration not found for tenant {tenant_id}")
             
             # Get users data (Azure client handles connections internally)
             users_data = await sftp_client.get_latest_users_data()
@@ -198,20 +202,34 @@ class ComprehensiveDataProcessingService:
             raise
     
     async def _process_locations(self, tenant_id: str) -> int:
-        """Process locations from local temp_data directory (temporarily) or SFTP."""
+        """Process locations from SFTP using tenant configuration, with local fallback."""
         try:
-            # TEMPORARY: Read from local temp_data directory
-            # TODO: Switch back to SFTP when locations file is available on server
             import pandas as pd
             from pathlib import Path
             
-            # Local file path
-            temp_data_dir = Path(__file__).parent.parent.parent / "temp_data"
-            locations_file = temp_data_dir / "Locations_List1750281613134.xlsx"
+            locations_data = None
             
-            if locations_file.exists():
-                logger.info(f"Reading locations from local file: {locations_file}")
-                locations_data = pd.read_excel(locations_file)
+            # First try to get from SFTP using tenant configuration
+            try:
+                sftp_client = get_tenant_azure_sftp_client(tenant_id)
+                if sftp_client:
+                    logger.info(f"Attempting to get locations from SFTP for tenant {tenant_id}")
+                    locations_data = await sftp_client.get_latest_locations_data()
+            except Exception as e:
+                logger.warning(f"Failed to get locations from SFTP for tenant {tenant_id}: {e}")
+            
+            # Fallback to local file if SFTP failed or no data
+            if locations_data is None or len(locations_data) == 0:
+                logger.info("Falling back to local locations file")
+                temp_data_dir = Path(__file__).parent.parent.parent / "temp_data"
+                locations_file = temp_data_dir / "Locations_List1750281613134.xlsx"
+                
+                if locations_file.exists():
+                    logger.info(f"Reading locations from local file: {locations_file}")
+                    locations_data = pd.read_excel(locations_file)
+                else:
+                    logger.warning("No local locations file found")
+                    return 0
                 
                 if locations_data is not None and len(locations_data) > 0:
                     # Clean the data: replace NaN values with None and convert to proper types

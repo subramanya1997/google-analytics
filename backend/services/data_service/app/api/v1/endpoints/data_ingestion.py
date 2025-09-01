@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from uuid import uuid4
 from datetime import datetime
 
-from app.models.data_ingestion import DataIngestionRequest, DataIngestionResponse
-from app.services.comprehensive_data_processing import ComprehensiveDataProcessingService
+from common.models import DataIngestionRequest, DataIngestionResponse
+from services.data_service.app.services.comprehensive_data_processing import ComprehensiveDataProcessingService
 from loguru import logger
 
 router = APIRouter()

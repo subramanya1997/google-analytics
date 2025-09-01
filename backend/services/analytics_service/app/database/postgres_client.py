@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 from loguru import logger
 from datetime import datetime, date
 
-from app.database.postgres_session import SessionLocal
-from app.models.orm import (
+from services.analytics_service.app.database.postgres_session import SessionLocal
+from common.models import (
     Users, Locations, Purchase, AddToCart, PageView, 
     ViewSearchResults, NoSearchResults, ViewItem, TaskTracking
 )

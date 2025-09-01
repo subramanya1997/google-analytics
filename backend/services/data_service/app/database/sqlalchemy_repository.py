@@ -12,17 +12,11 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from loguru import logger
 
-from app.database.sqlalchemy_session import get_engine
-from app.models.orm.events import (
-    Purchase,
-    AddToCart,
-    PageView,
-    ViewSearchResults,
-    NoSearchResults,
-    ViewItem,
+from services.data_service.app.database.sqlalchemy_session import get_engine
+from common.models import (
+    Purchase, AddToCart, PageView, ViewSearchResults, NoSearchResults, ViewItem,
+    Users, Locations, ProcessingJobs
 )
-from app.models.orm.dimensions import Users, Locations
-from app.models.orm.control import ProcessingJobs
 
 
 def ensure_uuid_string(tenant_id: str) -> str:

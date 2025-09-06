@@ -22,25 +22,18 @@ A FastAPI-based microservice for providing analytics and reporting capabilities 
 ### Installation
 
 ```bash
-# Navigate to analytics service directory
-cd backend/services/analytics_service
+# Navigate to backend directory
+cd backend
 
-# Install dependencies
-poetry install
-
-# Activate virtual environment
-poetry shell
+# Install dependencies with uv
+uv sync
 
 # Set up environment variables
-cp env.example .env
+cp .env.example .env
 # Edit .env with your configuration
 
-# Ensure config files are set up
-# Copy from data service if needed:
-# cp ../data_service/config/postgres.json config/postgres.json
-
 # Start the service
-poetry run uvicorn app.main:app --reload --port 8002
+uv run uvicorn services.analytics_service.main:app --reload --port 8001
 ```
 
 ### API Endpoints
@@ -88,14 +81,14 @@ The service uses the same PostgreSQL database as the data service. Configure the
 
 ```bash
 # Format code
-poetry run black app/
-poetry run isort app/
+uv run black app/
+uv run isort app/
 
 # Type checking
-poetry run mypy app/
+uv run mypy app/
 
 # Run tests
-poetry run pytest
+uv run pytest
 ```
 
 ## Architecture

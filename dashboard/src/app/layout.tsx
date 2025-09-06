@@ -17,6 +17,15 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Reduce connection setup to API origin in case proxy is not used */}
+        {process.env.NEXT_PUBLIC_ANALYTICS_API_URL ? (
+          <>
+            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_ANALYTICS_API_URL} />
+            <link rel="preconnect" href={process.env.NEXT_PUBLIC_ANALYTICS_API_URL} crossOrigin="anonymous" />
+          </>
+        ) : null}
+      </head>
       <body className={inter.className}>
         <DashboardProvider>
           {children}

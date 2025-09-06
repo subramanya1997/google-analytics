@@ -32,7 +32,7 @@ Use `run_all_services.py` to start all services simultaneously on different port
 1. **Install Dependencies**:
    ```bash
    cd backend
-   poetry install
+   uv sync
    ```
 
 2. **Setup Configuration**:
@@ -47,7 +47,7 @@ Use `run_all_services.py` to start all services simultaneously on different port
 
 3. **Run All Services**:
    ```bash
-   python run_all_services.py
+   ./docker-entrypoint.sh
    ```
 
 ## Service URLs
@@ -74,6 +74,6 @@ Each service provides:
 1. **DRY Principle** - No code duplication across services
 2. **Consistency** - All services follow the same patterns
 3. **Maintainability** - Changes to common functionality affect all services
-4. **Single Dependency Management** - One poetry file for all services
+4. **Single Dependency Management** - One uv project file for all services
 5. **Unified Configuration** - One place to manage all settings
 6. **Easy Development** - Single command to run all services

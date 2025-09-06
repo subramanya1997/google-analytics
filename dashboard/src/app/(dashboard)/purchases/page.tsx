@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Filter, ChevronLeft, ChevronRight } from "lucide-react"
 import { Task, PurchaseCartTask } from "@/types/tasks"
+import { analyticsHeaders } from "@/lib/api-utils"
 
 interface PurchaseApiProduct {
   item_name: string
@@ -58,7 +59,7 @@ export default function PurchasesPage() {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/tasks/purchases${queryParams}`
         
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: PurchaseApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: PurchaseApiTask) => {

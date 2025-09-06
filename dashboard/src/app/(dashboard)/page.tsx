@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { TimeGranularitySelector, TimeGranularity } from "@/components/ui/time-granularity-selector"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { format } from "date-fns"
+import { analyticsHeaders } from "@/lib/api-utils"
 import {
   DollarSign,
   ShoppingCart,
@@ -67,7 +68,6 @@ export default function DashboardPage() {
       setLoading(true)
       const timezoneOffset = new Date().getTimezoneOffset()
       const params = new URLSearchParams()
-      params.append('tenant_id', '550e8400-e29b-41d4-a716-446655440000')
       if (selectedLocation) {
         params.append('location_id', selectedLocation)
       }
@@ -81,7 +81,7 @@ export default function DashboardPage() {
       params.append('timezone_offset', (-timezoneOffset).toString())
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/stats/dashboard?${params.toString()}`
-      const statsResponse = await fetch(url)
+      const statsResponse = await fetch(url, { headers: analyticsHeaders() })
       const statsData: DashboardApiResponse = await statsResponse.json()
       setMetrics(statsData.metrics)
       setLocationStats(statsData.locationStats || [])

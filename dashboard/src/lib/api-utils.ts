@@ -8,9 +8,6 @@ export function buildApiQueryParams(
 ): string {
   const params = new URLSearchParams()
   
-  // Example tenant_id
-  params.append('tenant_id', '550e8400-e29b-41d4-a716-446655440000')
-  
   if (selectedLocation) {
     params.append('location_id', selectedLocation)
   }
@@ -31,3 +28,17 @@ export function buildApiQueryParams(
   
   return params.toString() ? `?${params.toString()}` : ''
 } 
+
+export function getTenantId(): string {
+  return process.env.NEXT_PUBLIC_TENANT_ID || 'e0f01854-6c2e-4b76-bf7b-67f3c28dbdac'
+}
+
+export function analyticsHeaders(extra?: HeadersInit): HeadersInit {
+  const base: HeadersInit = {
+    'Accept': 'application/json',
+    'X-Tenant-Id': getTenantId(),
+  }
+  if (!extra) return base
+  // Merge, with extra taking precedence
+  return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
+}

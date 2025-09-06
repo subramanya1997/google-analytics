@@ -25,6 +25,7 @@ import {
 import { Mail, Phone, Eye, ShoppingBag, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, Search } from "lucide-react"
 
 import { buildApiQueryParams } from "@/lib/api-utils"
+import { analyticsHeaders } from "@/lib/api-utils"
 
 interface RepeatVisitApiTask {
   session_id: string
@@ -94,7 +95,7 @@ export default function RepeatVisitsPage() {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/tasks/repeat-visits${queryParams}`
       
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: RepeatVisitApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: RepeatVisitApiTask) => {

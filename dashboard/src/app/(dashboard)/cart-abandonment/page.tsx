@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Task, PurchaseCartTask } from "@/types/tasks"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { buildApiQueryParams } from "@/lib/api-utils"
+import { analyticsHeaders } from "@/lib/api-utils"
 
 interface CartApiProduct {
   item_name: string
@@ -57,7 +58,7 @@ export default function CartAbandonmentPage() {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/tasks/cart-abandonment${queryParams}`
         
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: CartApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: CartApiTask) => {

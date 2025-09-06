@@ -26,6 +26,7 @@ import {
 import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
 
 import { buildApiQueryParams } from "@/lib/api-utils"
+import { analyticsHeaders } from "@/lib/api-utils"
 
 interface SearchAnalysisApiTask {
   session_id: string
@@ -93,7 +94,7 @@ export default function SearchAnalysisPage() {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
       const url = `${baseUrl}/tasks/search-analysis${queryParams}`
 
-      const response = await fetch(url)
+      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: SearchAnalysisApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: SearchAnalysisApiTask) => {

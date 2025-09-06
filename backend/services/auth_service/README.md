@@ -79,5 +79,6 @@ The service is automatically included when running `python run_all_services.py` 
 
 Individual service startup:
 ```bash
-poetry run uvicorn services.auth_service.app.main:app --host 0.0.0.0 --port 8003 --reload
+cd backend
+uv run uvicorn services.auth_service.main:app --host 0.0.0.0 --port 8003 --reload
 ```

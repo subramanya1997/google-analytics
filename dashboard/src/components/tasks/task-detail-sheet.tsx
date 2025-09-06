@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
+import { analyticsHeaders } from "@/lib/api-utils"
 
 // Skeleton loading components
 const TabSkeleton = () => (
@@ -163,9 +164,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const fetchTaskStatus = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
-      const url = `${baseUrl}/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}&tenant_id=${tenantId}`
-      const response = await fetch(url)
+      const url = `${baseUrl}/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}`
+      const response = await fetch(url, { headers: analyticsHeaders() })
       if (response.ok) {
         const data = await response.json()
         setCompleted(data.completed || false)
@@ -187,10 +187,9 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       const response = await fetch(url, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json',
+          ...analyticsHeaders({ 'Content-Type': 'application/json' }),
         },
         body: JSON.stringify({
-          tenant_id: '550e8400-e29b-41d4-a716-446655440000', // Example tenant_id
           task_id: actualTask.id,
           task_type: actualTask.type,
           completed,
@@ -242,21 +241,20 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     
     try {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const tenantId = '550e8400-e29b-41d4-a716-446655440000' // Example tenant_id
       let url = ''
       
       // First try to fetch by userId if available
       if (userId) {
-        url = `${baseUrl}/users/${userId}/history?tenant_id=${tenantId}`
+        url = `${baseUrl}/users/${userId}/history`
       } else if (sessionId) {
         // If no userId or failed, try by sessionId
-        url = `${baseUrl}/sessions/${sessionId}/history?tenant_id=${tenantId}`
+        url = `${baseUrl}/sessions/${sessionId}/history`
       }
 
       console.log('History API URL:', url)
 
       if (url) {
-        const response = await fetch(url)
+        const response = await fetch(url, { headers: analyticsHeaders() })
         if (response.ok) {
           const historyEvents = await response.json()
           

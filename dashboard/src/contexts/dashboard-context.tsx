@@ -1,8 +1,9 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { DateRange } from 'react-day-picker'
 import { startOfDay, subDays } from 'date-fns'
+import { analyticsHeaders } from '@/lib/api-utils'
 
 interface Location {
   locationId: string
@@ -28,6 +29,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [locations, setLocations] = useState<Location[]>([])
   const [loadingLocations, setLoadingLocations] = useState(false)
   const [locationsCacheTime, setLocationsCacheTime] = useState<number>(0)
+  const isFetchingRef = useRef(false)
+  const didInitRef = useRef(false)
+  const lastFetchAtRef = useRef<number>(0)
   
   // Initialize with last 7 days from yesterday
   const yesterday = startOfDay(subDays(new Date(), 1))
@@ -37,47 +41,136 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     to: yesterday,
   })
   
-  // Fetch locations with caching (5 minutes TTL)
-  const fetchLocations = useCallback(async () => {
+  // Internal fetch function with TTL and in-flight guard
+  const doFetchLocations = useCallback(async (force: boolean = false) => {
+    if (isFetchingRef.current) return
     const now = Date.now()
-    const cacheTTL = 5 * 60 * 1000 // 5 minutes in milliseconds
-    
-    // Check if we have cached locations that are still valid
-    if (locations.length > 0 && (now - locationsCacheTime) < cacheTTL && !loadingLocations) {
-      console.log('Using cached locations (cache age:', Math.round((now - locationsCacheTime) / 1000), 'seconds)')
+
+    const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
+    const CACHE_TTL_MS = 5 * 60 * 1000
+
+    const cachedAt = locationsCacheTime || lastFetchAtRef.current
+    if (!force && locations.length > 0 && cachedAt && (now - cachedAt) < CACHE_TTL_MS) {
       return
     }
-    
+
     try {
-      console.log('Fetching fresh locations from API...')
+      isFetchingRef.current = true
       setLoadingLocations(true)
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const tenantId = '550e8400-e29b-41d4-a716-446655440000'
-      const url = `${baseUrl}/locations?tenant_id=${tenantId}`
-      
-      const response = await fetch(url)
+
+      // Prefer same-origin proxy to avoid cross-origin DNS/TLS and CORS
+      const proxyUrl = `/api/analytics/locations`
+
+      // Fallback to direct origin if proxy isn't configured/reachable
+      const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const directUrl = directBase ? `${directBase}/locations` : ''
+
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 2500)
+      let response: Response | null = null
+
+      try {
+        response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: analyticsHeaders(),
+          signal: controller.signal,
+          cache: 'no-store',
+          // keepalive helps allow abort without killing request on nav
+          keepalive: true,
+        })
+      } catch {
+        // ignore and try fallback below
+      } finally {
+        clearTimeout(timeoutId)
+      }
+
+      if ((!response || !response.ok) && directUrl) {
+        const fallbackController = new AbortController()
+        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 2500)
+        try {
+          response = await fetch(directUrl, {
+            method: 'GET',
+            headers: analyticsHeaders(),
+            signal: fallbackController.signal,
+            cache: 'no-store',
+            // Avoid sending cookies to cross-origin endpoint
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            keepalive: true,
+          })
+        } finally {
+          clearTimeout(fallbackTimeoutId)
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error(`Failed to fetch locations${response ? `: ${response.status}` : ''}`)
+      }
+
       const data = await response.json()
       setLocations(data)
       setLocationsCacheTime(now)
-      console.log('Locations cached successfully')
+      lastFetchAtRef.current = now
+
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ data, cachedAt: now }))
+      } catch {
+        // ignore storage errors
+      }
     } catch (error) {
       console.error('Error fetching locations:', error)
     } finally {
+      isFetchingRef.current = false
       setLoadingLocations(false)
     }
-  }, [locations.length, locationsCacheTime, loadingLocations])
+  }, [locationsCacheTime, locations.length])
 
   // Refresh locations (force fetch)
-  const refreshLocations = async () => {
+  const refreshLocations = useCallback(async () => {
+    const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
+    try {
+      sessionStorage.removeItem(SESSION_STORAGE_KEY)
+    } catch {
+      // ignore storage errors
+    }
     setLocations([])
     setLocationsCacheTime(0)
-    await fetchLocations()
-  }
+    await doFetchLocations(true)
+  }, [doFetchLocations])
 
   // Fetch locations on mount
   useEffect(() => {
-    fetchLocations()
-  }, [fetchLocations])
+    if (didInitRef.current) return
+    didInitRef.current = true
+
+    const loadFromSession = () => {
+      const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
+      const CACHE_TTL_MS = 5 * 60 * 1000
+      try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
+        if (!raw) return false
+        const parsed = JSON.parse(raw) as { data: Location[]; cachedAt: number }
+        if (!Array.isArray(parsed.data) || typeof parsed.cachedAt !== 'number') return false
+        const age = Date.now() - parsed.cachedAt
+        if (age >= CACHE_TTL_MS) return false
+        setLocations(parsed.data)
+        setLocationsCacheTime(parsed.cachedAt)
+        lastFetchAtRef.current = parsed.cachedAt
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    const init = async () => {
+      const hasValidCache = loadFromSession()
+      if (!hasValidCache) {
+        await doFetchLocations(false)
+      }
+    }
+
+    void init()
+  }, [doFetchLocations])
 
   return (
     <DashboardContext.Provider 

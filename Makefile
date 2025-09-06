@@ -1,4 +1,4 @@
-.PHONY: all load_data export_report generate_report clean clean-all run_dashboard sftp_sync install install_dashboard build_dashboard start_dashboard
+.PHONY: all load_data export_report generate_report clean clean-all run_dashboard sftp_sync install install_dashboard build_dashboard start_dashboard install_backend run_backend
 
 # Variables
 PYTHON = python
@@ -8,6 +8,7 @@ LOCATIONS_FILE = Locations_List1750281613134.xlsx
 DB_FILE = db/branch_wise_location.db
 EXPORT_DIR = branch_reports
 DASHBOARD_DIR = dashboard
+BACKEND_DIR = backend
 CONFIG_FILE = configs/sftp_config.json
 
 all: load_data export_report generate_report
@@ -15,6 +16,14 @@ all: load_data export_report generate_report
 install:
 	@echo "Installing Python dependencies..."
 	pip install -r requirements.txt
+
+install_backend:
+	@echo "Installing backend dependencies with uv..."
+	cd $(BACKEND_DIR) && uv sync --dev
+
+run_backend:
+	@echo "Starting all backend services..."
+	cd $(BACKEND_DIR) && ./docker-entrypoint.sh
 
 sftp_sync:
 	@echo "Running SFTP sync and data loading..."

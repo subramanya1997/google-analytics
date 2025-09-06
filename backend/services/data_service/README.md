@@ -24,21 +24,18 @@ A FastAPI-based microservice for ingesting Google Analytics 4 data from BigQuery
 ### Installation
 
 ```bash
-# Install dependencies
-poetry install
+# Navigate to backend directory
+cd backend
 
-# Activate virtual environment
-poetry shell
+# Install dependencies with uv
+uv sync
 
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your configuration
 
-# Run database migrations
-alembic upgrade head
-
 # Start the service
-poetry run uvicorn app.main:app --reload --port 8001
+uv run uvicorn services.data_service.main:app --reload --port 8002
 ```
 
 ### API Endpoints
@@ -56,17 +53,17 @@ The service uses environment variables for configuration. See `.env.example` for
 
 ```bash
 # Run tests
-poetry run pytest
+uv run pytest
 
 # Format code
-poetry run black app/
-poetry run isort app/
+uv run black app/
+uv run isort app/
 
 # Type checking
-poetry run mypy app/
+uv run mypy app/
 
 # Run linting
-poetry run flake8 app/
+uv run flake8 app/
 ```
 
 ## Architecture

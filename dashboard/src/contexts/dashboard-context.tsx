@@ -63,7 +63,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
       // Fallback to direct origin if proxy isn't configured/reachable
       const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const directUrl = directBase ? `${directBase}/locations` : ''
+      const directUrl = directBase ? `${directBase}/api/v1/locations` : ''
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 2500)

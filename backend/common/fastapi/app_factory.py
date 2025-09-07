@@ -35,11 +35,12 @@ def create_fastapi_app(
     # Get service settings
     settings = get_settings(service_name)
     
+    # Conditionally set the root_path based on the environment
+    # In development, root_path should be empty as we are not behind a reverse proxy
+    effective_root_path = root_path if settings.ENVIRONMENT != "DEV" else ""
+    
     # Create FastAPI app with proper reverse proxy support
-    openapi_url = f"{settings.API_V1_STR}/openapi.json"
-    if root_path:
-        # When behind reverse proxy, use absolute path
-        openapi_url = f"{root_path}{settings.API_V1_STR}/openapi.json"
+    openapi_url = "/openapi.json"
     
     app = FastAPI(
         title=settings.SERVICE_NAME,
@@ -48,11 +49,11 @@ def create_fastapi_app(
         openapi_url=openapi_url,
         docs_url="/docs",
         redoc_url="/redoc",
-        root_path=root_path
+        root_path=effective_root_path
     )
     
     # Configure CORS
-    if settings.CORS_ORIGINS:
+    if settings.ENVIRONMENT == "production":
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.CORS_ORIGINS,

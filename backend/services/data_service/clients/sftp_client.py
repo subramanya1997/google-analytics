@@ -320,6 +320,113 @@ class SFTPClient:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, self._get_users_data_sync)
 
+    def _get_locations_data_sync(self) -> pd.DataFrame:
+        """Get locations data synchronously with proper session management."""
+        temp_path = None
+
+        try:
+            # Download the locations file
+            temp_path = self._download_file_sync(self.locations_file)
+
+            # Read Excel file with multiple fallback strategies
+            df = None
+
+            # Strategy 1: Try with 'Locations' sheet
+            try:
+                df = pd.read_excel(temp_path, sheet_name="Locations")
+                logger.info("Successfully read locations data with 'Locations' sheet")
+            except Exception as e:
+                logger.debug(f"Strategy 1 failed: {e}")
+
+            # Strategy 2: Try first sheet directly
+            if df is None or df.empty:
+                try:
+                    df = pd.read_excel(temp_path)
+                    logger.info("Successfully read locations data from first sheet")
+                except Exception as e:
+                    logger.debug(f"Strategy 2 failed: {e}")
+
+            if df is None or df.empty:
+                raise ValueError("Could not read locations data from Excel file")
+
+            # Rename columns to match database schema
+            rename_map = {
+                "WAREHOUSE_ID": "warehouse_id",
+                "WAREHOUSE_CODE": "warehouse_code",
+                "WAREHOUSE_NAME": "warehouse_name",
+                "LOCATION_NAME": "warehouse_name",  # Alternative name
+                "CITY": "city",
+                "STATE": "state",
+                "PROVINCE": "state",  # Alternative name
+                "COUNTRY": "country",
+                "ADDRESS1": "address1",
+                "ADDRESS": "address1",  # Alternative name
+                "ADDRESS2": "address2",
+                "ZIP_CODE": "zip",
+                "POSTAL_CODE": "zip",  # Alternative name
+                "ZIP": "zip",  # Alternative name
+            }
+
+            # Apply only the rename mappings that match existing columns
+            rename_dict = {}
+            for old_col, new_col in rename_map.items():
+                if old_col in df.columns:
+                    rename_dict[old_col] = new_col
+
+            df = df.rename(columns=rename_dict)
+
+            # Keep only columns that match the database schema
+            db_columns = [
+                "warehouse_id",
+                "warehouse_code", 
+                "warehouse_name",
+                "city",
+                "state",
+                "country",
+                "address1",
+                "address2",
+                "zip",
+            ]
+
+            available_cols = [col for col in db_columns if col in df.columns]
+
+            if available_cols:
+                df = df[available_cols]
+
+            # Ensure warehouse_id is present and convert to string
+            if "warehouse_id" in df.columns:
+                df["warehouse_id"] = df["warehouse_id"].astype(str)
+                df = df.dropna(subset=["warehouse_id"])
+                df = df[df["warehouse_id"].str.strip() != ""]
+                df = df[df["warehouse_id"] != "nan"]  # Remove 'nan' strings
+
+            logger.info(
+                f"Successfully processed {len(df)} locations with columns: {list(df.columns)}"
+            )
+            return df
+
+        except Exception as e:
+            logger.error(f"Error getting locations data: {e}")
+            raise
+
+        finally:
+            # Clean up temporary file
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except:
+                    pass
+
+    async def get_latest_locations_data(self) -> pd.DataFrame:
+        """
+        Get the latest locations data from SFTP (async wrapper).
+
+        Returns:
+            DataFrame containing locations data
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._get_locations_data_sync)
+
     def _list_files_sync(self) -> list:
         """List files synchronously with proper session management."""
         ssh_client = None

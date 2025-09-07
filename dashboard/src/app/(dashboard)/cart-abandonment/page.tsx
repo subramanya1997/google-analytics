@@ -56,7 +56,7 @@ export default function CartAbandonmentPage() {
         limit: itemsPerPage
       })
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/cart-abandonment${queryParams}`
+      const url = `${baseUrl}/api/v1/tasks/cart-abandonment${queryParams}`
         
       const response = await fetch(url, { headers: analyticsHeaders() })
       const data: CartApiResponse = await response.json()

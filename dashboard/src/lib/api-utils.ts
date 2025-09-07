@@ -42,3 +42,34 @@ export function analyticsHeaders(extra?: HeadersInit): HeadersInit {
   // Merge, with extra taking precedence
   return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
 }
+
+export async function fetchFromDataService(endpoint: string, options?: RequestInit): Promise<Response> {
+  const proxyUrl = `/api/data${endpoint}`
+  const directUrl = process.env.NEXT_PUBLIC_DATA_API_URL 
+    ? `${process.env.NEXT_PUBLIC_DATA_API_URL}/api/v1${endpoint}` 
+    : null
+
+  // Try proxy first
+  try {
+    const response = await fetch(proxyUrl, {
+      ...options,
+      headers: {
+        ...analyticsHeaders(),
+        ...options?.headers
+      }
+    })
+    return response
+  } catch (error) {
+    // Fallback to direct URL if proxy fails
+    if (directUrl) {
+      return await fetch(directUrl, {
+        ...options,
+        headers: {
+          ...analyticsHeaders(),
+          ...options?.headers
+        }
+      })
+    }
+    throw error
+  }
+}

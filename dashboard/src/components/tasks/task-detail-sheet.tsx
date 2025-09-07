@@ -164,7 +164,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const fetchTaskStatus = async () => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}`
+      const url = `${baseUrl}/api/v1/tasks/status?task_id=${actualTask.id}&task_type=${actualTask.type}`
       const response = await fetch(url, { headers: analyticsHeaders() })
       if (response.ok) {
         const data = await response.json()
@@ -183,7 +183,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     setSavingStatus(true)
     try {
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/status`
+      const url = `${baseUrl}/api/v1/tasks/status`
       const response = await fetch(url, {
         method: 'PUT',
         headers: {
@@ -245,10 +245,10 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       
       // First try to fetch by userId if available
       if (userId) {
-        url = `${baseUrl}/history/user?user_id=${userId}`
+        url = `${baseUrl}/api/v1/history/user?user_id=${userId}`
       } else if (sessionId) {
         // If no userId or failed, try by sessionId
-        url = `${baseUrl}/history/session?session_id=${sessionId}`
+        url = `${baseUrl}/api/v1/history/session?session_id=${sessionId}`
       }
 
       if (url) {

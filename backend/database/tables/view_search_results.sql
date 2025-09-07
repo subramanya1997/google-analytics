@@ -17,5 +17,25 @@ CREATE TABLE public.view_search_results (
   geo_city character varying(100),
   raw_data jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );
+
+-- ======================================
+-- VIEW_SEARCH_RESULTS TABLE INDEXES
+-- ======================================
+
+-- Core performance indexes - for search analytics
+CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_date 
+ON view_search_results (tenant_id, event_date);
+
+CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_session 
+ON view_search_results (tenant_id, param_ga_session_id);
+
+CREATE INDEX IF NOT EXISTS idx_view_search_results_term 
+ON view_search_results (tenant_id, param_search_term);
+
+-- Specialized index for search conversion analysis
+CREATE INDEX IF NOT EXISTS idx_search_session_lookup 
+ON view_search_results (param_ga_session_id, tenant_id) 
+WHERE param_ga_session_id IS NOT NULL;

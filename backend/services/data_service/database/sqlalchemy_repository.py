@@ -1,22 +1,29 @@
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
 import json
 import uuid
+from datetime import date
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
-from loguru import logger
 
-from services.data_service.database.sqlalchemy_session import get_engine
 from common.models import (
-    Purchase, AddToCart, PageView, ViewSearchResults, NoSearchResults, ViewItem,
-    Users, Locations, ProcessingJobs
+    AddToCart,
+    Locations,
+    NoSearchResults,
+    PageView,
+    ProcessingJobs,
+    Purchase,
+    Users,
+    ViewItem,
+    ViewSearchResults,
 )
+from services.data_service.database.sqlalchemy_session import get_engine
 
 
 def ensure_uuid_string(tenant_id: str) -> str:
@@ -28,6 +35,7 @@ def ensure_uuid_string(tenant_id: str) -> str:
     except ValueError:
         # If not a valid UUID, generate one from the string using MD5 hash
         import hashlib
+
         tenant_uuid = uuid.UUID(bytes=hashlib.md5(tenant_id.encode()).digest()[:16])
         return str(tenant_uuid)
 
@@ -52,9 +60,9 @@ class SqlAlchemyRepository:
     def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         with Session(self.engine) as session:
             # Ensure tenant_id is properly formatted for UUID column
-            if 'tenant_id' in job_data:
-                job_data['tenant_id'] = ensure_uuid_string(job_data['tenant_id'])
-            
+            if "tenant_id" in job_data:
+                job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
+
             stmt = (
                 insert(ProcessingJobs.__table__)
                 .values(job_data)
@@ -105,7 +113,9 @@ class SqlAlchemyRepository:
             )
             delete_result = session.execute(del_stmt)
             deleted_count = delete_result.rowcount or 0
-            logger.info(f"Deleted {deleted_count} existing {event_type} events for tenant {tenant_id} from {start_date} to {end_date}")
+            logger.info(
+                f"Deleted {deleted_count} existing {event_type} events for tenant {tenant_id} from {start_date} to {end_date}"
+            )
 
             if not events_data:
                 session.commit()
@@ -150,17 +160,23 @@ class SqlAlchemyRepository:
 
             batch_size = 1000
             total = 0
-            logger.info(f"Inserting {len(normalized)} new {event_type} events in batches of {batch_size}")
+            logger.info(
+                f"Inserting {len(normalized)} new {event_type} events in batches of {batch_size}"
+            )
             for i in range(0, len(normalized), batch_size):
                 batch = normalized[i : i + batch_size]
                 ins = table.insert().values(batch)
                 result = session.execute(ins)
                 batch_count = result.rowcount or 0
                 total += batch_count
-                logger.debug(f"Inserted batch {i//batch_size + 1}: {batch_count} {event_type} events")
+                logger.debug(
+                    f"Inserted batch {i//batch_size + 1}: {batch_count} {event_type} events"
+                )
 
             session.commit()
-            logger.info(f"Successfully inserted {total} new {event_type} events for tenant {tenant_id}")
+            logger.info(
+                f"Successfully inserted {total} new {event_type} events for tenant {tenant_id}"
+            )
             return total
 
     # ---------- Dimensions ----------
@@ -203,7 +219,9 @@ class SqlAlchemyRepository:
             logger.info(f"Successfully upserted {total} users for tenant {tenant_id}")
             return total
 
-    def upsert_locations(self, tenant_id: str, locations_data: List[Dict[str, Any]]) -> int:
+    def upsert_locations(
+        self, tenant_id: str, locations_data: List[Dict[str, Any]]
+    ) -> int:
         if not locations_data:
             return 0
         table = Locations.__table__
@@ -232,25 +250,33 @@ class SqlAlchemyRepository:
                 }
                 update_map["updated_at"] = func.now()
                 upsert_stmt = stmt.on_conflict_do_update(
-                    index_elements=[table.c.tenant_id, table.c.warehouse_id], set_=update_map
+                    index_elements=[table.c.tenant_id, table.c.warehouse_id],
+                    set_=update_map,
                 )
                 result = session.execute(upsert_stmt)
                 batch_count = result.rowcount or 0
                 total += batch_count
-                logger.debug(f"Upserted batch {i//batch_size + 1}: {batch_count} locations")
+                logger.debug(
+                    f"Upserted batch {i//batch_size + 1}: {batch_count} locations"
+                )
             session.commit()
-            logger.info(f"Successfully upserted {total} locations for tenant {tenant_id}")
+            logger.info(
+                f"Successfully upserted {total} locations for tenant {tenant_id}"
+            )
             return total
 
     # ---------- Analytics helpers ----------
     def get_analytics_summary(
-        self, tenant_id: str, start_date: Optional[date] = None, end_date: Optional[date] = None
+        self,
+        tenant_id: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
     ) -> Dict[str, int]:
         summary: Dict[str, int] = {}
-        
+
         # Convert tenant_id to proper UUID string
         tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
+
         with Session(self.engine) as session:
             for key, table in EVENT_TABLES.items():
                 conds = [table.c.tenant_id == tenant_uuid_str]
@@ -262,15 +288,17 @@ class SqlAlchemyRepository:
             # users
             u = Users.__table__
             summary["users"] = session.execute(
-                select(func.count()).select_from(u).where(u.c.tenant_id == tenant_uuid_str)
+                select(func.count())
+                .select_from(u)
+                .where(u.c.tenant_id == tenant_uuid_str)
             ).scalar_one()
 
             # locations
             l = Locations.__table__
             summary["locations"] = session.execute(
-                select(func.count()).select_from(l).where(l.c.tenant_id == tenant_uuid_str)
+                select(func.count())
+                .select_from(l)
+                .where(l.c.tenant_id == tenant_uuid_str)
             ).scalar_one()
 
         return summary
-
-

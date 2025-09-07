@@ -1,8 +1,9 @@
 """
 Database dependency injection for analytics service.
 """
+
 from functools import lru_cache
-from typing import Dict
+
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
 
 

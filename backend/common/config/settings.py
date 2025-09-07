@@ -58,11 +58,6 @@ class AnalyticsServiceSettings(BaseServiceSettings):
     SERVICE_NAME: str = "analytics-service"
     SERVICE_VERSION: str = "0.1.0"
     PORT: int = 8001
-    
-    # Analytics specific configuration
-    DEFAULT_TENANT_ID: str = "550e8400-e29b-41d4-a716-446655440000"
-    DEFAULT_PAGE_SIZE: int = 50
-    MAX_PAGE_SIZE: int = 1000
 
 
 class DataServiceSettings(BaseServiceSettings):

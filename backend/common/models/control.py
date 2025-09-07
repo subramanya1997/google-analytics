@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import JSON, TIMESTAMP, Boolean, Date, String, Text, UniqueConstraint, text
+from sqlalchemy import JSON, TIMESTAMP, Date, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

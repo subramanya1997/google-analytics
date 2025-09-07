@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import delete, func, select, literal_column, union_all
+from sqlalchemy import delete, func, select, literal_column, union_all, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -341,138 +341,87 @@ class SqlAlchemyRepository:
             }
 
     def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
-        """Get both data availability summary and detailed breakdown in one SUPER-FAST query."""
+        """Get both data availability summary and detailed breakdown - SINGLE ULTRA-FAST call!"""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
         with Session(self.engine) as session:
-            # Build a single UNION ALL query for all event types at once
-            union_queries = []
+            # SINGLE combined function call - gets BOTH summary and breakdown!
+            combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
+            results = session.execute(combined_query, {"tenant_id": tenant_uuid_str}).mappings().all()
             
-            for event_type, table in EVENT_TABLES.items():
-                # Each subquery gets event_type, date, and count
-                subquery = (
-                    select(
-                        literal_column(f"'{event_type}'").label("event_type"),
-                        table.c.event_date,
-                        func.count().label("count")
-                    )
-                    .select_from(table)
-                    .where(table.c.tenant_id == tenant_uuid_str)
-                    .group_by(table.c.event_date)
-                )
-                union_queries.append(subquery)
-            
-            # Combine all subqueries with UNION ALL
-            if not union_queries:
-                return {
-                    "summary": {
-                        "earliest_date": None,
-                        "latest_date": None, 
-                        "total_events": 0
-                    },
-                    "breakdown": {}
-                }
-            
-            # Combine all subqueries using the union_all function
-            union_query = union_all(*union_queries)
-            
-            # Wrap in outer query to get summary stats
-            final_query = (
-                select(
-                    union_query.c.event_type,
-                    union_query.c.event_date, 
-                    union_query.c.count,
-                    func.min(union_query.c.event_date).over().label("earliest_date"),
-                    func.max(union_query.c.event_date).over().label("latest_date")
-                )
-                .select_from(union_query.alias("combined_events"))
-                .order_by(union_query.c.event_date.desc(), union_query.c.event_type)
-            )
-            
-            result = session.execute(final_query).mappings().all()
-            
-            # Process results
+            # Process results - first row is summary, rest are breakdown
+            summary_data = None
             breakdown = {}
-            earliest_date = None
-            latest_date = None
-            total_events = 0
+            breakdown_count = 0
             
-            for row in result:
-                # Extract summary data (same for all rows)
-                if earliest_date is None:
-                    earliest_date = row.earliest_date
-                    latest_date = row.latest_date
-                
-                # Build breakdown data
-                date_str = row.event_date.isoformat()
-                if date_str not in breakdown:
-                    breakdown[date_str] = {}
-                breakdown[date_str][row.event_type] = row.count
-                total_events += row.count
+            for row in results:
+                if row.result_type == 'summary':
+                    summary_data = {
+                        "earliest_date": row.earliest_date.isoformat() if row.earliest_date else None,
+                        "latest_date": row.latest_date.isoformat() if row.latest_date else None,
+                        "total_events": int(row.event_count)
+                    }
+                elif row.result_type == 'breakdown':
+                    date_str = row.event_date.isoformat()
+                    if date_str not in breakdown:
+                        breakdown[date_str] = {}
+                    breakdown[date_str][row.event_type] = row.event_count
+                    breakdown_count += 1
             
-            # Sort breakdown by date (most recent first)
-            sorted_breakdown = dict(sorted(breakdown.items(), key=lambda x: x[0], reverse=True))
+            logger.info(f"Data availability: {breakdown_count} breakdown entries, {summary_data['total_events'] if summary_data else 0} total events (SINGLE FUNCTION CALL!)")
             
             return {
-                "summary": {
-                    "earliest_date": earliest_date.isoformat() if earliest_date else None,
-                    "latest_date": latest_date.isoformat() if latest_date else None,
-                    "total_events": total_events
+                "summary": summary_data or {
+                    "earliest_date": None,
+                    "latest_date": None,
+                    "total_events": 0
                 },
-                "breakdown": sorted_breakdown
+                "breakdown": breakdown
             }
 
     def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """Get job history for a tenant."""
+        """Get job history for a tenant - ULTRA-FAST PostgreSQL function only."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
         with Session(self.engine) as session:
-            # Get total count
-            count_stmt = (
-                select(func.count())
-                .select_from(ProcessingJobs.__table__)
-                .where(ProcessingJobs.__table__.c.tenant_id == tenant_uuid_str)
-            )
-            total = session.execute(count_stmt).scalar_one()
+            # Call optimized PostgreSQL function (ULTRA FAST!)
+            jobs_query = text("SELECT * FROM get_tenant_jobs_paginated(:tenant_id, :limit, :offset)")
             
-            # Get paginated jobs - explicitly select only existing columns
-            jobs_stmt = (
-                select(
-                    ProcessingJobs.__table__.c.id,
-                    ProcessingJobs.__table__.c.tenant_id,
-                    ProcessingJobs.__table__.c.job_id,
-                    ProcessingJobs.__table__.c.status,
-                    ProcessingJobs.__table__.c.data_types,
-                    ProcessingJobs.__table__.c.start_date,
-                    ProcessingJobs.__table__.c.end_date,
-                    ProcessingJobs.__table__.c.progress,
-                    ProcessingJobs.__table__.c.records_processed,
-                    ProcessingJobs.__table__.c.error_message,
-                    ProcessingJobs.__table__.c.created_at,
-                    ProcessingJobs.__table__.c.started_at,
-                    ProcessingJobs.__table__.c.completed_at,
-                )
-                .where(ProcessingJobs.__table__.c.tenant_id == tenant_uuid_str)
-                .order_by(ProcessingJobs.__table__.c.created_at.desc())
-                .limit(limit)
-                .offset(offset)
-            )
+            results = session.execute(
+                jobs_query,
+                {
+                    "tenant_id": tenant_uuid_str,
+                    "limit": limit,
+                    "offset": offset
+                }
+            ).mappings().all()
             
             jobs = []
-            for row in session.execute(jobs_stmt):
-                job_data = dict(row._mapping)
-                # Convert dates to ISO strings for JSON serialization
-                if job_data.get("start_date"):
-                    job_data["start_date"] = job_data["start_date"].isoformat()
-                if job_data.get("end_date"):
-                    job_data["end_date"] = job_data["end_date"].isoformat()
-                if job_data.get("created_at"):
-                    job_data["created_at"] = job_data["created_at"].isoformat()
-                if job_data.get("started_at"):
-                    job_data["started_at"] = job_data["started_at"].isoformat()
-                if job_data.get("completed_at"):
-                    job_data["completed_at"] = job_data["completed_at"].isoformat()
+            total = 0
+            
+            for row in results:
+                if total == 0:  # Get total from first row
+                    total = int(row.total_count)
+                
+                # Build job data with proper type conversion
+                job_data = {
+                    "id": str(row.id),
+                    "tenant_id": str(row.tenant_id),
+                    "job_id": row.job_id,
+                    "status": row.status,
+                    "data_types": row.data_types,
+                    "start_date": row.start_date.isoformat() if row.start_date else None,
+                    "end_date": row.end_date.isoformat() if row.end_date else None,
+                    "progress": row.progress,
+                    "records_processed": row.records_processed,
+                    "error_message": row.error_message,
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "started_at": row.started_at.isoformat() if row.started_at else None,
+                    "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+                }
                 jobs.append(job_data)
+            
+            logger.info(f"Job history: {len(jobs)} jobs returned, {total} total")
             
             return {
                 "jobs": jobs,

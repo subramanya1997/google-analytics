@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, date
 from uuid import uuid4
 from typing import Optional, List, Dict, Any
@@ -60,26 +61,21 @@ async def create_ingestion_job(
 @router.get("/data-availability")
 async def get_data_availability(
     tenant_id: str = Depends(get_tenant_id),
-    include_breakdown: bool = Query(False, description="Include detailed date-wise breakdown"),
 ):
     """
-    Get the date range of available data for the tenant, optionally with detailed breakdown.
+    Get the date range of available data for the tenant with detailed breakdown.
     """
     try:
         ingestion_service = IngestionService()
         
-        if include_breakdown:
-            # Get both summary and breakdown in one call
-            combined_data = ingestion_service.get_data_availability_with_breakdown(tenant_id)
-            return combined_data
-        else:
-            # Just get summary data
-            data_range = ingestion_service.get_data_availability(tenant_id)
-            return {
-                "earliest_date": data_range.get("earliest_date"),
-                "latest_date": data_range.get("latest_date"),
-                "total_events": data_range.get("total_events", 0)
-            }
+        # Run synchronous database operations in thread pool to prevent blocking!
+        loop = asyncio.get_event_loop()
+        combined_data = await loop.run_in_executor(
+            None, 
+            ingestion_service.get_data_availability_with_breakdown, 
+            tenant_id
+        )
+        return combined_data
     except Exception as e:
         logger.error(f"Error getting data availability: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -96,7 +92,16 @@ async def get_ingestion_jobs(
     """
     try:
         ingestion_service = IngestionService()
-        jobs = ingestion_service.get_tenant_jobs(tenant_id, limit=limit, offset=offset)
+        
+        # Run synchronous database operations in thread pool to prevent blocking!
+        loop = asyncio.get_event_loop()
+        jobs = await loop.run_in_executor(
+            None,
+            ingestion_service.get_tenant_jobs,
+            tenant_id,
+            limit,
+            offset
+        )
         
         return {
             "jobs": jobs.get("jobs", []),
@@ -119,7 +124,14 @@ async def get_ingestion_job(
     """
     try:
         ingestion_service = IngestionService()
-        job = ingestion_service.get_job_status(job_id)
+        
+        # Run synchronous database operations in thread pool to prevent blocking!
+        loop = asyncio.get_event_loop()
+        job = await loop.run_in_executor(
+            None,
+            ingestion_service.get_job_status,
+            job_id
+        )
         
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")

@@ -69,7 +69,6 @@ export default function DataManagementPage() {
   const [dataAvailability, setDataAvailability] = useState<DataAvailability | null>(null)
   const [dataBreakdown, setDataBreakdown] = useState<Record<string, Record<string, number>> | null>(null)
   const [loadingAvailability, setLoadingAvailability] = useState(true)
-  const [loadingBreakdown, setLoadingBreakdown] = useState(false)
   const [jobs, setJobs] = useState<IngestionJob[]>([])
   const [loadingJobs, setLoadingJobs] = useState(true)
   const [isJobHistoryExpanded, setIsJobHistoryExpanded] = useState(false)
@@ -91,23 +90,19 @@ export default function DataManagementPage() {
   // Fallback to direct URL if proxy not available
   const directDataUrl = process.env.NEXT_PUBLIC_DATA_API_URL || ''
 
-  const fetchDataAvailability = useCallback(async (includeBreakdown = false) => {
+  const fetchDataAvailability = useCallback(async () => {
     try {
       setLoadingAvailability(true)
-      if (includeBreakdown) {
-        setLoadingBreakdown(true)
-      }
       
       // Try proxy first, then fallback to direct URL
-      const params = includeBreakdown ? '?include_breakdown=true' : ''
-      let url = `${dataServiceBaseUrl}/data-availability${params}`
+      let url = `${dataServiceBaseUrl}/data-availability`
       let response: Response | null = null
       
       try {
         response = await fetch(url, { headers: analyticsHeaders() })
       } catch (error) {
         if (directDataUrl) {
-          url = `${directDataUrl}/api/v1/data-availability${params}`
+          url = `${directDataUrl}/api/v1/data-availability`
           response = await fetch(url, { headers: analyticsHeaders() })
         } else {
           throw error
@@ -120,22 +115,20 @@ export default function DataManagementPage() {
       
       const data = await response.json()
       
-      if (includeBreakdown && data.summary && data.breakdown) {
-        // Combined response with both summary and breakdown
+      // API always returns combined response with both summary and breakdown
+      if (data.summary && data.breakdown) {
         setDataAvailability(data.summary)
         setDataBreakdown(data.breakdown)
       } else {
-        // Just summary response
+        // Fallback for unexpected response format
         setDataAvailability(data)
+        setDataBreakdown(null)
       }
     } catch (error) {
       console.error('Error fetching data availability:', error)
       toast.error('Failed to load data availability')
     } finally {
       setLoadingAvailability(false)
-      if (includeBreakdown) {
-        setLoadingBreakdown(false)
-      }
     }
   }, [dataServiceBaseUrl, directDataUrl])
 
@@ -176,8 +169,11 @@ export default function DataManagementPage() {
   }, [dataServiceBaseUrl, directDataUrl, jobsPerPage])
 
   useEffect(() => {
-    fetchDataAvailability(true) // Always load both summary AND breakdown together
-    fetchJobs()
+    // PARALLEL API calls - both start simultaneously!
+    Promise.all([
+      fetchDataAvailability(), // Always gets both summary and breakdown
+      fetchJobs()              // Also starts immediately (parallel!)
+    ])
   }, [fetchDataAvailability, fetchJobs])
 
   const handleSubmitIngestion = async () => {
@@ -408,11 +404,11 @@ export default function DataManagementPage() {
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <h4 className="text-sm font-medium">Date-wise Event Breakdown</h4>
-                      {(loadingBreakdown || loadingAvailability) && (
+                      {loadingAvailability && (
                         <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
                       )}
                     </div>
-                    {(loadingBreakdown || loadingAvailability) ? (
+                    {loadingAvailability ? (
                       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                           <Card key={i} className="animate-pulse">

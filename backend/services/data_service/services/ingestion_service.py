@@ -6,8 +6,8 @@ from loguru import logger
 
 from services.data_service.api.v1.models import CreateIngestionJobRequest
 from services.data_service.clients.tenant_client_factory import (
-    get_tenant_azure_sftp_client,
-    get_tenant_enhanced_bigquery_client,
+    get_tenant_sftp_client,
+    get_tenant_bigquery_client,
 )
 from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepository
 
@@ -118,7 +118,7 @@ class IngestionService:
         """Process all event types from BigQuery."""
         try:
             # Initialize BigQuery client using tenant configuration from database
-            bigquery_client = get_tenant_enhanced_bigquery_client(tenant_id)
+            bigquery_client = get_tenant_bigquery_client(tenant_id)
 
             if not bigquery_client:
                 raise ValueError(
@@ -163,7 +163,7 @@ class IngestionService:
         """Process users from SFTP."""
         try:
             # Create a fresh Azure SFTP client using tenant configuration from database
-            sftp_client = get_tenant_azure_sftp_client(tenant_id)
+            sftp_client = get_tenant_sftp_client(tenant_id)
 
             if not sftp_client:
                 raise ValueError(f"SFTP configuration not found for tenant {tenant_id}")
@@ -217,7 +217,7 @@ class IngestionService:
 
             # First try to get from SFTP using tenant configuration
             try:
-                sftp_client = get_tenant_azure_sftp_client(tenant_id)
+                sftp_client = get_tenant_sftp_client(tenant_id)
                 if sftp_client:
                     logger.info(
                         f"Attempting to get locations from SFTP for tenant {tenant_id}"

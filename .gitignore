@@ -1,12 +1,3 @@
-#
-# * @file            .gitignore
-# * @description     
-# * @author          Subramanya N <subramanyanagabhushan@gmail.com>
-# * @createTime      2025-06-25 21:55:25
-# * @lastModified    2025-09-05 21:36:13
-# * Copyright ©YourCompanyName All rights reserved
-#
-
 *.db
 *.sqlite
 *.sqlite3

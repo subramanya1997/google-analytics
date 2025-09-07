@@ -3,11 +3,11 @@ Event models - User behavior and transaction events.
 """
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import DECIMAL, Date, String, TIMESTAMP, Text, Integer
+from sqlalchemy import DECIMAL, Date, String, Text, Integer
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import text
@@ -36,7 +36,6 @@ class Purchase(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
 
 
 class AddToCart(Base):
@@ -63,7 +62,6 @@ class AddToCart(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
 
 
 class PageView(Base):
@@ -85,7 +83,6 @@ class PageView(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
 
 
 class ViewSearchResults(Base):
@@ -107,7 +104,6 @@ class ViewSearchResults(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
 
 
 class NoSearchResults(Base):
@@ -129,7 +125,6 @@ class NoSearchResults(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))
 
 
 class ViewItem(Base):
@@ -155,4 +150,3 @@ class ViewItem(Base):
     geo_country: Mapped[Optional[str]] = mapped_column(String(100))
     geo_city: Mapped[Optional[str]] = mapped_column(String(100))
     raw_data: Mapped[Optional[dict]] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=text("NOW()"))

@@ -23,7 +23,7 @@ from common.models import (
     ViewItem,
     ViewSearchResults,
 )
-from services.data_service.database.sqlalchemy_session import get_engine
+from common.database import get_engine
 
 
 def ensure_uuid_string(tenant_id: str) -> str:

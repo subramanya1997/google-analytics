@@ -5,64 +5,51 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Loader2, Check, AlertCircle, Play, ShieldAlert } from "lucide-react"
+import { Loader2, Check, AlertCircle, Play, ShieldAlert, User } from "lucide-react"
 
 type Status = "working" | "success" | "error"
 
 export const dynamic = "force-dynamic"
 
-async function exchangeOAuthCode(code: string, state?: string | null) {
+async function authenticateWithCode(code: string): Promise<AuthResponse> {
   const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
-  const redirectUri = typeof window !== "undefined" ? `${window.location.origin}/oauth/callback` : ""
-  const url = `${authBase}/v1/oauth/callback`
+  const url = `${authBase}/authenticate`
 
   const response = await fetch(url, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, state, redirect_uri: redirectUri }),
+    body: JSON.stringify({ code }),
   })
 
   if (!response.ok) {
     let detail = ""
-    try { detail = (await response.json())?.message || "" } catch {}
-    throw new Error(detail || "OAuth exchange failed")
+    try { 
+      const errorData = await response.json()
+      detail = errorData?.detail || errorData?.message || "" 
+    } catch {}
+    throw new Error(detail || "Authentication failed")
   }
 
-  // Response may set cookies; body content is optional
-  try { return await response.json() } catch { return {} }
+  return await response.json()
 }
 
-async function verifySession() {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
-  const profileResp = await fetch(`${authBase}/v1/auth/me`, { credentials: "include" })
-  if (!profileResp.ok) throw new Error("Session verification failed")
-  return profileResp.json().catch(() => null)
-}
+// Session verification is handled by the auth service authenticate endpoint
 
-// (Reserved) tenant status shape if we persist this state in the future
-
-async function checkTenantConfig(tenantId: string): Promise<{ ok: boolean; issues: string[] }> {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
-  try {
-    const resp = await fetch(`${authBase}/v1/tenant/config/check?tenant_id=${encodeURIComponent(tenantId)}`, {
-      credentials: "include",
-    })
-    if (!resp.ok) return { ok: false, issues: ["Configuration check failed"] }
-    const data = await resp.json()
-    const ok = (data && (data.ok ?? data.configured))
-    return { ok: Boolean(ok), issues: Array.isArray(data?.issues) ? data.issues : [] }
-  } catch {
-    // Endpoint may not exist yet
-    console.log("[oauth] config check endpoint unavailable; assuming ok for now")
-    return { ok: true, issues: [] }
-  }
+interface AuthResponse {
+  success: boolean
+  message: string
+  tenant_id?: string
+  first_name?: string
+  username?: string
+  missing_configs?: string[]
+  invalid_configs?: string[]
 }
 
 async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
   const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
   try {
-    const resp = await fetch(`${authBase}/v1/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`, {
+    const resp = await fetch(`${authBase}/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`, {
       credentials: "include",
     })
     if (!resp.ok) return { started: false }
@@ -95,16 +82,16 @@ function OAuthCallbackContent() {
   const router = useRouter()
   const params = useSearchParams()
   const [status, setStatus] = useState<Status>("working")
-  const [message, setMessage] = useState("Connecting your account…")
+  const [message, setMessage] = useState("Verifying your account…")
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
   const [syncStarted, setSyncStarted] = useState<boolean | null>(null)
   const [startingSync, setStartingSync] = useState(false)
+  const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string } | null>(null)
 
   useEffect(() => {
     const code = params.get("code")
-    const state = params.get("state")
     const error = params.get("error")
     const errorDescription = params.get("error_description")
 
@@ -122,27 +109,47 @@ function OAuthCallbackContent() {
     let cancelled = false
     ;(async () => {
       try {
-        setMessage("Finalizing sign-in…")
-        await exchangeOAuthCode(code, state)
-        const profile = await verifySession().catch(() => null)
+        setMessage("Verifying your account…")
+        const authResult = await authenticateWithCode(code)
         if (cancelled) return
-        const tId = profile?.tenant_id || profile?.tenantId
-        setTenantId(tId || null)
-        console.log("[oauth] verified profile:", profile)
-
-        // Config checks first
-        if (tId) {
-          const cfg = await checkTenantConfig(tId)
-          setConfigOk(cfg.ok)
-          setConfigIssues(cfg.issues)
-
-          if (!cfg.ok) {
+        
+        console.log("[oauth] authentication result:", authResult)
+        
+        // Handle authentication response
+        if (!authResult.success) {
+          // Check if it's a configuration issue (not a hard failure)
+          if (authResult.missing_configs || authResult.invalid_configs) {
             setStatus("error")
-            setMessage("Tenant configuration issues detected")
+            const issues = [
+              ...(authResult.missing_configs || []).map((config: string) => `Missing: ${config}`),
+              ...(authResult.invalid_configs || []).map((config: string) => `Invalid: ${config}`)
+            ]
+            setConfigIssues(issues)
+            setMessage("Verification complete, but setup issues detected")
+            setTenantId(authResult.tenant_id || null)
+            setUserInfo({ firstName: authResult.first_name || undefined, username: authResult.username || undefined })
             return
+          } else {
+            // Hard authentication failure
+            throw new Error(authResult.message || "Authentication failed")
           }
+        }
+        
+        // Successful authentication
+        const tId = authResult.tenant_id
+        setTenantId(tId || null)
+        console.log("[oauth] authenticated user:", {
+          tenant_id: tId,
+          first_name: authResult.first_name,
+          username: authResult.username
+        })
+        setUserInfo({ firstName: authResult.first_name || undefined, username: authResult.username || undefined })
 
-          // Sync status
+        // Since auth service already validated configurations, we can proceed
+        if (tId) {
+          setConfigOk(true)
+          
+          // Check sync status
           const sync = await getSyncStatus(tId)
           setSyncStarted(sync.started)
 
@@ -152,11 +159,11 @@ function OAuthCallbackContent() {
             setTimeout(() => router.replace("/"), 1200)
           } else {
             setStatus("success")
-            setMessage("Configuration valid. You can start the initial data sync.")
+            setMessage("Verification complete. You can start the initial data sync.")
           }
         } else {
           setStatus("success")
-          setMessage("Connected. Redirecting…")
+          setMessage("Verification complete. Redirecting…")
           setTimeout(() => router.replace("/"), 1200)
         }
       } catch (err: unknown) {
@@ -176,7 +183,7 @@ function OAuthCallbackContent() {
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>OAuth Callback</CardTitle>
+          <CardTitle>Account verification & setup</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {status === "working" && (
@@ -193,21 +200,32 @@ function OAuthCallbackContent() {
                 <span>{message}</span>
               </div>
 
+              {userInfo && (
+                <div className="rounded-md border p-3">
+                  <div className="flex items-center gap-3">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <div className="text-sm">
+                      <div className="font-medium">Signed in as {userInfo.firstName || userInfo.username}</div>
+                      {userInfo.firstName && userInfo.username && (
+                        <div className="text-xs text-muted-foreground">{userInfo.username}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Config issues (when configOk === false) */}
-              {configOk === false && (
+              {configOk === false && configIssues.length > 0 && (
                 <Alert variant="destructive">
                   <ShieldAlert className="h-4 w-4" />
-                  <AlertTitle>Configuration required</AlertTitle>
+                  <AlertTitle>Configuration Issues</AlertTitle>
                   <AlertDescription>
-                    {configIssues.length > 0 ? (
-                      <ul className="list-disc pl-5 space-y-1">
-                        {configIssues.map((issue, i) => (
-                          <li key={i}>{issue}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <span>We found issues with your tenant configuration.</span>
-                    )}
+                    <p className="mb-2">Please fix the following configuration issues:</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {configIssues.map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
                   </AlertDescription>
                 </Alert>
               )}
@@ -216,7 +234,7 @@ function OAuthCallbackContent() {
               {configOk && syncStarted === false && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    We will initiate your first data sync. This can take a few minutes. Please check back shortly.
+                    Start your initial data sync to set up your workspace. This can take a few minutes.
                   </p>
                   <div className="flex gap-2">
                     <Button
@@ -247,7 +265,6 @@ function OAuthCallbackContent() {
                         </>
                       )}
                     </Button>
-                    <Button variant="outline" onClick={() => router.replace("/")}>Skip for now</Button>
                   </div>
                 </div>
               )}
@@ -258,13 +275,35 @@ function OAuthCallbackContent() {
             <>
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Authentication failed</AlertTitle>
-                <AlertDescription>{message}</AlertDescription>
+                <AlertTitle>
+                  {configIssues.length > 0 ? "Setup issues" : "Verification failed"}
+                </AlertTitle>
+                <AlertDescription>
+                  {configIssues.length > 0 ? (
+                    <div>
+                      <p className="mb-2">{message}</p>
+                      <p className="mb-2">Please fix the following issues:</p>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {configIssues.map((issue, i) => (
+                          <li key={i}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    message
+                  )}
+                </AlertDescription>
               </Alert>
-              <div className="flex gap-2">
-                <Button onClick={() => router.replace("/")}>Go to dashboard</Button>
-                <Button variant="outline" onClick={() => router.back()}>Back</Button>
-              </div>
+              {configIssues.length > 0 ? (
+                <div className="flex gap-2">
+                  <Button onClick={() => router.replace("/")}>Go to dashboard anyway</Button>
+                  <Button variant="outline" onClick={() => router.back()}>Back</Button>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground mt-3">
+                  Please close this window and try signing in again.
+                </div>
+              )}
             </>
           )}
         </CardContent>

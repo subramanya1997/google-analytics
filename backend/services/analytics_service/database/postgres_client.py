@@ -3,22 +3,13 @@ PostgreSQL client for analytics service operations
 """
 
 import time
-from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from sqlalchemy import and_, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from common.models import (
-    AddToCart,
-    NoSearchResults,
-    PageView,
-    Purchase,
-    TaskTracking
-)
-from services.analytics_service.database.postgres_session import SessionLocal
-
+from common.database import SessionLocal
 
 class AnalyticsPostgresClient:
     """PostgreSQL client for analytics operations."""
@@ -97,7 +88,6 @@ class AnalyticsPostgresClient:
         location_id: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
-        granularity: str = "daily",
     ) -> Dict[str, Any]:
         """Get dashboard statistics using RPC function."""
         try:
@@ -106,11 +96,9 @@ class AnalyticsPostgresClient:
                     "totalRevenue": 0,
                     "totalPurchases": 0,
                     "totalVisitors": 0,
-                    "uniqueUsers": 0,
                     "abandonedCarts": 0,
                     "totalSearches": 0,
                     "failedSearches": 0,
-                    "conversionRate": 0,
                 }
 
             with self.get_db_session() as session:
@@ -132,247 +120,14 @@ class AnalyticsPostgresClient:
 
         except Exception as e:
             logger.error(f"Error fetching dashboard stats: {e}")
-            return self._calculate_dashboard_stats_fallback(
-                tenant_id, location_id, start_date, end_date
-            )
-
-    def _calculate_dashboard_stats_fallback(
-        self,
-        tenant_id: str,
-        location_id: Optional[str],
-        start_date: Optional[str],
-        end_date: Optional[str],
-    ) -> Dict[str, Any]:
-        """Fallback method to calculate dashboard stats."""
-        try:
-            with self.get_db_session() as session:
-                # Base filters
-                filters = [Purchase.tenant_id == tenant_id]
-                if location_id:
-                    filters.append(Purchase.user_prop_default_branch_id == location_id)
-                if start_date and end_date:
-                    start_formatted = start_date.replace("-", "")
-                    end_formatted = end_date.replace("-", "")
-                    filters.append(
-                        Purchase.event_date
-                        >= datetime.strptime(start_formatted, "%Y%m%d").date()
-                    )
-                    filters.append(
-                        Purchase.event_date
-                        <= datetime.strptime(end_formatted, "%Y%m%d").date()
-                    )
-
-                # Purchase data
-                purchases = session.query(Purchase).filter(and_(*filters)).all()
-                total_revenue = sum(
-                    float(p.ecommerce_purchase_revenue or 0) for p in purchases
-                )
-                total_purchases = len(purchases)
-                purchase_sessions = set(
-                    p.param_ga_session_id for p in purchases if p.param_ga_session_id
-                )
-
-                # Cart data with same filters
-                cart_filters = [AddToCart.tenant_id == tenant_id]
-                if location_id:
-                    cart_filters.append(
-                        AddToCart.user_prop_default_branch_id == location_id
-                    )
-                if start_date and end_date:
-                    cart_filters.append(
-                        AddToCart.event_date
-                        >= datetime.strptime(start_formatted, "%Y%m%d").date()
-                    )
-                    cart_filters.append(
-                        AddToCart.event_date
-                        <= datetime.strptime(end_formatted, "%Y%m%d").date()
-                    )
-
-                carts = session.query(AddToCart).filter(and_(*cart_filters)).all()
-                cart_sessions = set(
-                    c.param_ga_session_id for c in carts if c.param_ga_session_id
-                )
-                abandoned_carts = len(cart_sessions - purchase_sessions)
-
-                # Failed searches
-                search_filters = [NoSearchResults.tenant_id == tenant_id]
-                if location_id:
-                    search_filters.append(
-                        NoSearchResults.user_prop_default_branch_id == location_id
-                    )
-                if start_date and end_date:
-                    search_filters.append(
-                        NoSearchResults.event_date
-                        >= datetime.strptime(start_formatted, "%Y%m%d").date()
-                    )
-                    search_filters.append(
-                        NoSearchResults.event_date
-                        <= datetime.strptime(end_formatted, "%Y%m%d").date()
-                    )
-
-                failed_searches = (
-                    session.query(NoSearchResults).filter(and_(*search_filters)).count()
-                )
-
-                # Page view data for visitors and repeat visits
-                pv_filters = [PageView.tenant_id == tenant_id]
-                if location_id:
-                    pv_filters.append(
-                        PageView.user_prop_default_branch_id == location_id
-                    )
-                if start_date and end_date:
-                    pv_filters.append(
-                        PageView.event_date
-                        >= datetime.strptime(start_formatted, "%Y%m%d").date()
-                    )
-                    pv_filters.append(
-                        PageView.event_date
-                        <= datetime.strptime(end_formatted, "%Y%m%d").date()
-                    )
-
-                pageviews = session.query(PageView).filter(and_(*pv_filters)).all()
-
-                # Total Visitors (unique sessions)
-                total_visitors = len(
-                    set(
-                        pv.param_ga_session_id
-                        for pv in pageviews
-                        if pv.param_ga_session_id
-                    )
-                )
-
-                # Repeat Visits (users with more than one session)
-                user_sessions = {}
-                for pv in pageviews:
-                    user_id = pv.user_prop_webuserid
-                    session_id = pv.param_ga_session_id
-                    if user_id and session_id:
-                        if user_id not in user_sessions:
-                            user_sessions[user_id] = set()
-                        user_sessions[user_id].add(session_id)
-
-                repeat_visits = sum(
-                    1 for sessions in user_sessions.values() if len(sessions) > 1
-                )
-
-                return {
-                    "totalRevenue": f"${total_revenue:,.2f}",
-                    "purchases": total_purchases,
-                    "abandonedCarts": abandoned_carts,
-                    "failedSearches": failed_searches,
-                    "totalVisitors": total_visitors,
-                    "repeatVisits": repeat_visits,
-                }
-
-        except Exception as e:
-            logger.error(f"Error in fallback stats calculation: {e}")
             return {
-                "totalRevenue": "$0.00",
-                "purchases": 0,
-                "abandonedCarts": 0,
-                "failedSearches": 0,
+                "totalRevenue": 0,
+                "totalPurchases": 0,
                 "totalVisitors": 0,
-                "repeatVisits": 0,
+                "abandonedCarts": 0,
+                "totalSearches": 0,
+                "failedSearches": 0,
             }
-
-    # Task operations
-    def get_task_status(
-        self, tenant_id: str, task_id: str, task_type: str
-    ) -> Dict[str, Any]:
-        """Get task completion status."""
-        try:
-            with self.get_db_session() as session:
-                task = (
-                    session.query(TaskTracking)
-                    .filter(
-                        TaskTracking.tenant_id == tenant_id,
-                        TaskTracking.task_id == task_id,
-                        TaskTracking.task_type == task_type,
-                    )
-                    .first()
-                )
-
-                if task:
-                    return {
-                        "taskId": task_id,
-                        "taskType": task_type,
-                        "completed": task.completed,
-                        "notes": task.notes or "",
-                        "completedAt": (
-                            task.completed_at.isoformat() if task.completed_at else None
-                        ),
-                        "completedBy": task.completed_by or "",
-                    }
-                else:
-                    return {
-                        "taskId": task_id,
-                        "taskType": task_type,
-                        "completed": False,
-                        "notes": "",
-                        "completedAt": None,
-                        "completedBy": None,
-                    }
-
-        except Exception as e:
-            logger.error(f"Error fetching task status: {e}")
-            raise
-
-    def update_task_status(
-        self,
-        tenant_id: str,
-        task_id: str,
-        task_type: str,
-        completed: bool,
-        notes: str = "",
-        completed_by: str = "",
-    ) -> Dict[str, Any]:
-        """Update task completion status."""
-        try:
-            with self.get_db_session() as session:
-                # Try to find existing task
-                task = (
-                    session.query(TaskTracking)
-                    .filter(
-                        TaskTracking.tenant_id == tenant_id,
-                        TaskTracking.task_id == task_id,
-                        TaskTracking.task_type == task_type,
-                    )
-                    .first()
-                )
-
-                if task:
-                    # Update existing task
-                    task.completed = completed
-                    task.notes = notes
-                    task.completed_by = completed_by
-                    task.updated_at = datetime.now()
-                    if completed:
-                        task.completed_at = datetime.now()
-                else:
-                    # Create new task
-                    task = TaskTracking(
-                        tenant_id=tenant_id,
-                        task_id=task_id,
-                        task_type=task_type,
-                        completed=completed,
-                        notes=notes,
-                        completed_by=completed_by,
-                        completed_at=datetime.now() if completed else None,
-                    )
-                    session.add(task)
-
-                session.commit()
-
-                return {
-                    "success": True,
-                    "taskId": task_id,
-                    "taskType": task_type,
-                    "completed": completed,
-                }
-
-        except Exception as e:
-            logger.error(f"Error updating task status: {e}")
-            raise
 
     # Task list operations using RPC functions
     def get_purchase_tasks(

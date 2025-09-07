@@ -8,10 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
 from services.analytics_service.api.dependencies import get_tenant_id
-from services.analytics_service.api.v1.models import (
-    TaskStatusResponse,
-    TaskStatusUpdateRequest,
-)
 from services.analytics_service.database.dependencies import get_analytics_db_client
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
 
@@ -19,65 +15,6 @@ router = APIRouter()
 
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 1000
-
-
-@router.get("/status", response_model=TaskStatusResponse)
-async def get_task_status(
-    task_id: str = Query(..., description="Task ID"),
-    task_type: str = Query(..., description="Task type"),
-    tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
-):
-    """Get task completion status."""
-    try:
-        # Database client injected via dependency
-
-        # Get task status
-        status = db_client.get_task_status(tenant_id, task_id, task_type)
-
-        logger.info(f"Retrieved task status for {task_id} ({task_type})")
-
-        return TaskStatusResponse(**status)
-
-    except Exception as e:
-        logger.error(f"Error fetching task status: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch task status: {str(e)}"
-        )
-
-
-@router.put("/status", response_model=Dict[str, Any])
-async def update_task_status(
-    request: TaskStatusUpdateRequest,
-    task_id: str = Query(..., description="Task ID"),
-    task_type: str = Query(..., description="Task type"),
-    tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
-):
-    """Update task completion status."""
-    try:
-        # Database client injected via dependency
-
-        # Update task status
-        result = db_client.update_task_status(
-            tenant_id=tenant_id,
-            task_id=task_id,
-            task_type=task_type,
-            completed=request.completed,
-            notes=request.notes,
-            completed_by=request.completed_by,
-        )
-
-        logger.info(f"Updated task status for {task_id} ({task_type})")
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Error updating task status: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update task status: {str(e)}"
-        )
-
 
 # Task-specific endpoints
 @router.get("/purchases", response_model=Dict[str, Any])

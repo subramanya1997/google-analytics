@@ -1,6 +1,8 @@
-import asyncio
-from datetime import date
-from typing import Any, Dict, List, Optional
+"""
+Enhanced BigQuery client for comprehensive GA4 analytics data extraction
+"""
+
+from typing import Any, Dict, List
 
 import pandas as pd
 from google.cloud import bigquery
@@ -9,181 +11,334 @@ from loguru import logger
 
 
 class BigQueryClient:
-    """Enhanced BigQuery client for multi-tenant GA4 data access."""
+    """Enhanced BigQuery client for event-specific GA4 data extraction."""
 
-    def __init__(self, tenant_config: Dict[str, Any]):
-        """
-        Initialize BigQuery client with tenant-specific configuration.
-
-        Args:
-            tenant_config: Dictionary containing:
-                - tenant_id: Tenant identifier
-                - project_id: BigQuery project ID
-                - dataset_id: BigQuery dataset ID
-                - service_account: Service account credentials dict
-        """
-        self.tenant_id = tenant_config["tenant_id"]
-        self.project_id = tenant_config["project_id"]
-        self.dataset_id = tenant_config["dataset_id"]
+    def __init__(self, bigquery_config: Dict[str, Any]):
+        """Initialize BigQuery client with configuration."""
+        self.project_id = bigquery_config["project_id"]
+        self.dataset_id = bigquery_config["dataset_id"]
 
         # Initialize credentials from service account dict
         credentials = service_account.Credentials.from_service_account_info(
-            tenant_config["service_account"]
+            bigquery_config["service_account"]
         )
 
         # Initialize BigQuery client
         self.client = bigquery.Client(credentials=credentials, project=self.project_id)
 
-        logger.info(f"Initialized BigQuery client for tenant {self.tenant_id}")
+        logger.info(
+            f"Initialized Enhanced BigQuery client for {self.project_id}.{self.dataset_id}"
+        )
 
-    async def get_events_for_date_range(
-        self,
-        start_date: date,
-        end_date: date,
-        event_types: Optional[List[str]] = None,
-        limit: Optional[int] = None,
-    ) -> pd.DataFrame:
+    def get_date_range_events(
+        self, start_date: str, end_date: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Get GA4 events for a specific date range.
-
-        Args:
-            start_date: Start date for data retrieval
-            end_date: End date for data retrieval
-            event_types: Optional list of event types to filter
-            limit: Optional limit on number of records
+        Get all event types for a date range, properly structured for analytics.
 
         Returns:
-            DataFrame containing the events data
+            Dictionary with event types as keys and lists of records as values
         """
-        # Convert dates to BigQuery table suffix format
-        start_suffix = start_date.strftime("%Y%m%d")
-        end_suffix = end_date.strftime("%Y%m%d")
+        results = {}
 
-        # Build the base query
+        # Get each event type
+        event_extractors = {
+            "purchase": self._extract_purchase_events,
+            "add_to_cart": self._extract_add_to_cart_events,
+            "page_view": self._extract_page_view_events,
+            "view_search_results": self._extract_view_search_results_events,
+            "no_search_results": self._extract_no_search_results_events,
+            "view_item": self._extract_view_item_events,
+        }
+
+        for event_type, extractor in event_extractors.items():
+            try:
+                logger.info(
+                    f"Extracting {event_type} events for {start_date} to {end_date}"
+                )
+                events = extractor(start_date, end_date)
+                results[event_type] = events
+                logger.info(f"Extracted {len(events)} {event_type} events")
+            except Exception as e:
+                logger.error(f"Error extracting {event_type} events: {e}")
+                results[event_type] = []
+
+        return results
+
+    def _execute_query(self, query: str) -> pd.DataFrame:
+        """Execute BigQuery query and return DataFrame."""
+        try:
+            query_job = self.client.query(query)
+            df = query_job.to_dataframe()
+            return df
+        except Exception as e:
+            logger.error(f"BigQuery execution error: {e}")
+            logger.error(f"Query: {query}")
+            raise
+
+    def _extract_purchase_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract purchase events with revenue and transaction details."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
             event_timestamp,
-            event_name,
             user_pseudo_id,
-            user_properties,
-            event_params,
-            items,
-            device,
-            geo
+            -- Extract user properties with proper type handling
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            -- Extract event parameters with proper type handling  
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'transaction_id') as param_transaction_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            ecommerce.purchase_revenue as ecommerce_purchase_revenue,
+            TO_JSON_STRING(items) as items_json,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                ecommerce,
+                items,
+                device,
+                geo
+            )) as raw_data
         FROM `{self.project_id}.{self.dataset_id}.events_*`
         WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name = 'purchase'
+        ORDER BY event_timestamp
         """
 
-        # Add event type filter if specified
-        if event_types:
-            event_filter = "', '".join(event_types)
-            query += f" AND event_name IN ('{event_filter}')"
+        df = self._execute_query(query)
+        return df.to_dict("records")
 
-        # Add ordering for consistent results
-        query += " ORDER BY event_timestamp"
-
-        # Add limit if specified
-        if limit:
-            query += f" LIMIT {limit}"
-
-        logger.info(
-            f"Querying BigQuery for {start_date} to {end_date}, tenant: {self.tenant_id}"
-        )
-        logger.debug(f"Query: {query}")
-
-        try:
-            # Execute query in thread pool to avoid blocking
-            loop = asyncio.get_event_loop()
-            df = await loop.run_in_executor(None, self._execute_query, query)
-
-            logger.info(f"Retrieved {len(df)} events for tenant {self.tenant_id}")
-            return df
-
-        except Exception as e:
-            logger.error(f"Error querying BigQuery for tenant {self.tenant_id}: {e}")
-            raise
-
-    def _execute_query(self, query: str) -> pd.DataFrame:
-        """Execute BigQuery query and return DataFrame."""
-        query_job = self.client.query(query)
-        return query_job.to_dataframe()
-
-    async def get_available_dates(self, start_date: date, end_date: date) -> List[str]:
-        """
-        Check which dates have data available in the dataset.
-
-        Args:
-            start_date: Start date to check
-            end_date: End date to check
-
-        Returns:
-            List of available dates in YYYYMMDD format
-        """
-        start_suffix = start_date.strftime("%Y%m%d")
-        end_suffix = end_date.strftime("%Y%m%d")
+    def _extract_add_to_cart_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract add to cart events with item details."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT table_name
-        FROM `{self.project_id}.{self.dataset_id}.INFORMATION_SCHEMA.TABLES`
-        WHERE table_name LIKE 'events_%'
-        AND table_name BETWEEN 'events_{start_suffix}' AND 'events_{end_suffix}'
-        ORDER BY table_name
+        SELECT 
+            event_date,
+            event_timestamp,
+            user_pseudo_id,
+            -- Extract user properties with proper type handling
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            -- Extract event parameters with proper type handling
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            items[SAFE_OFFSET(0)].item_id as first_item_item_id,
+            items[SAFE_OFFSET(0)].item_name as first_item_item_name,
+            items[SAFE_OFFSET(0)].item_category as first_item_item_category,
+            items[SAFE_OFFSET(0)].price as first_item_price,
+            items[SAFE_OFFSET(0)].quantity as first_item_quantity,
+            TO_JSON_STRING(items) as items_json,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                items,
+                device,
+                geo
+            )) as raw_data
+        FROM `{self.project_id}.{self.dataset_id}.events_*`
+        WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name = 'add_to_cart'
+        ORDER BY event_timestamp
         """
 
-        try:
-            loop = asyncio.get_event_loop()
-            df = await loop.run_in_executor(None, self._execute_query, query)
+        df = self._execute_query(query)
+        return df.to_dict("records")
 
-            # Extract dates from table names
-            dates = [table.replace("events_", "") for table in df["table_name"]]
-            logger.info(
-                f"Found {len(dates)} available dates for tenant {self.tenant_id}"
-            )
-            return dates
+    def _extract_page_view_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract page view events."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
 
-        except Exception as e:
-            logger.error(
-                f"Error checking available dates for tenant {self.tenant_id}: {e}"
-            )
-            raise
-
-    async def get_table_info(self, table_name: str) -> Dict[str, Any]:
+        query = f"""
+        SELECT 
+            event_date,
+            event_timestamp,
+            user_pseudo_id,
+            -- Extract user properties with proper type handling
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            -- Extract event parameters with proper type handling
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_referrer') as param_page_referrer,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                device,
+                geo
+            )) as raw_data
+        FROM `{self.project_id}.{self.dataset_id}.events_*`
+        WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name = 'page_view'
+        ORDER BY event_timestamp
         """
-        Get information about a specific table.
 
-        Args:
-            table_name: Name of the table (e.g., 'events_20240115')
+        df = self._execute_query(query)
+        return df.to_dict("records")
 
-        Returns:
-            Dictionary containing table information
+    def _extract_view_search_results_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract successful search events."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
+        query = f"""
+        SELECT 
+            event_date,
+            event_timestamp,
+            user_pseudo_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'search_term') as param_search_term,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                device,
+                geo
+            )) as raw_data
+        FROM `{self.project_id}.{self.dataset_id}.events_*`
+        WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name = 'view_search_results'
+        ORDER BY event_timestamp
         """
-        try:
-            table_ref = self.client.dataset(self.dataset_id).table(table_name)
-            table = self.client.get_table(table_ref)
 
-            return {
-                "table_id": table.table_id,
-                "created": table.created,
-                "modified": table.modified,
-                "num_rows": table.num_rows,
-                "num_bytes": table.num_bytes,
-                "description": table.description,
-            }
+        df = self._execute_query(query)
+        return df.to_dict("records")
 
-        except Exception as e:
-            logger.error(f"Error getting table info for {table_name}: {e}")
-            raise
+    def _extract_no_search_results_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract failed search events - critical for search analysis."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
 
-    def close(self) -> None:
-        """Close the BigQuery client connection."""
-        if hasattr(self.client, "close"):
-            self.client.close()
-        logger.info(f"Closed BigQuery client for tenant {self.tenant_id}")
+        query = f"""
+        SELECT 
+            event_date,
+            event_timestamp,
+            user_pseudo_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'no_search_results_term') as param_no_search_results_term,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                device,
+                geo
+            )) as raw_data
+        FROM `{self.project_id}.{self.dataset_id}.events_*`
+        WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name IN ('no_search_results', 'view_search_results_no_results')
+        ORDER BY event_timestamp
+        """
 
-    def __enter__(self):
-        return self
+        df = self._execute_query(query)
+        return df.to_dict("records")
 
-    def __exit__(self, exc_type, exc_val, exc_tb): # noqa: ANN001, ANN002, ANN003
-        """Exit the BigQuery client context manager."""
-        self.close()
+    def _extract_view_item_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
+        """Extract product view events."""
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
+        query = f"""
+        SELECT 
+            event_date,
+            event_timestamp,
+            user_pseudo_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
+            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            items[SAFE_OFFSET(0)].item_id as first_item_item_id,
+            items[SAFE_OFFSET(0)].item_name as first_item_item_name,
+            items[SAFE_OFFSET(0)].item_category as first_item_item_category,
+            items[SAFE_OFFSET(0)].price as first_item_price,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            TO_JSON_STRING(items) as items_json,
+            device.category as device_category,
+            device.operating_system as device_operating_system,
+            geo.country as geo_country,
+            geo.city as geo_city,
+            TO_JSON_STRING(STRUCT(
+                event_date,
+                event_timestamp,
+                event_name,
+                user_pseudo_id,
+                user_properties,
+                event_params,
+                items,
+                device,
+                geo
+            )) as raw_data
+        FROM `{self.project_id}.{self.dataset_id}.events_*`
+        WHERE _TABLE_SUFFIX BETWEEN '{start_suffix}' AND '{end_suffix}'
+        AND event_name = 'view_item'
+        ORDER BY event_timestamp
+        """
+
+        df = self._execute_query(query)
+        return df.to_dict("records")

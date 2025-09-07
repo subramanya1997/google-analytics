@@ -16,3 +16,23 @@ CREATE TABLE public.processing_jobs (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );
+
+-- ======================================
+-- PROCESSING_JOBS TABLE INDEXES
+-- ======================================
+
+-- Critical performance index for job history queries
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_tenant_created 
+ON processing_jobs (tenant_id, created_at DESC);
+
+-- Unique constraint on job_id for fast lookups
+CREATE UNIQUE INDEX IF NOT EXISTS idx_processing_jobs_job_id 
+ON processing_jobs (job_id);
+
+-- Status filtering index
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_tenant_status 
+ON processing_jobs (tenant_id, status);
+
+-- Date range queries index
+CREATE INDEX IF NOT EXISTS idx_processing_jobs_tenant_date_range 
+ON processing_jobs (tenant_id, start_date, end_date);

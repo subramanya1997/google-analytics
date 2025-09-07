@@ -80,7 +80,7 @@ export default function DashboardPage() {
       params.append('granularity', timeGranularity)
       params.append('timezone_offset', (-timezoneOffset).toString())
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/stats/dashboard?${params.toString()}`
+      const url = `${baseUrl}/stats?${params.toString()}`
       const statsResponse = await fetch(url, { headers: analyticsHeaders() })
       const statsData: DashboardApiResponse = await statsResponse.json()
       setMetrics(statsData.metrics)

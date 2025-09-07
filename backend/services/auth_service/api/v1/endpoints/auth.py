@@ -1,9 +1,11 @@
 """
 Authentication endpoints.
 """
+
+from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from typing import Optional, List
 
 from services.auth_service.services.auth_service import AuthenticationService
 
@@ -12,11 +14,13 @@ router = APIRouter()
 
 class AuthRequest(BaseModel):
     """Request model for authentication."""
+
     code: str
 
 
 class AuthResponse(BaseModel):
     """Response model for authentication."""
+
     success: bool
     message: str
     tenant_id: Optional[str] = None
@@ -30,7 +34,7 @@ class AuthResponse(BaseModel):
 async def authenticate(request: AuthRequest):
     """
     Authenticate user with code and validate configurations.
-    
+
     This endpoint:
     1. Validates the authentication code with the external service
     2. Retrieves application settings using the obtained tokens
@@ -40,18 +44,17 @@ async def authenticate(request: AuthRequest):
     """
     auth_service = AuthenticationService()
     result = await auth_service.authenticate_with_code(request.code)
-    
+
     if not result["success"]:
         # Determine appropriate HTTP status code based on the error
         if "Invalid authentication code" in result["message"]:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail=result["message"]
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=result["message"]
             )
         elif "service unavailable" in result["message"]:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=result["message"]
+                detail=result["message"],
             )
         elif "configurations" in result["message"]:
             # Configuration issues are not HTTP errors, return as successful response
@@ -59,7 +62,7 @@ async def authenticate(request: AuthRequest):
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result["message"]
+                detail=result["message"],
             )
-    
+
     return AuthResponse(**result)

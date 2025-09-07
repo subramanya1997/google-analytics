@@ -245,13 +245,11 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       
       // First try to fetch by userId if available
       if (userId) {
-        url = `${baseUrl}/users/${userId}/history`
+        url = `${baseUrl}/history/user?user_id=${userId}`
       } else if (sessionId) {
         // If no userId or failed, try by sessionId
-        url = `${baseUrl}/sessions/${sessionId}/history`
+        url = `${baseUrl}/history/session?session_id=${sessionId}`
       }
-
-      console.log('History API URL:', url)
 
       if (url) {
         const response = await fetch(url, { headers: analyticsHeaders() })

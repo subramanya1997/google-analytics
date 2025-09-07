@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from common.config import get_settings, BaseServiceSettings
+from common.config import get_settings
 from common.logging import setup_logging
 from loguru import logger
 

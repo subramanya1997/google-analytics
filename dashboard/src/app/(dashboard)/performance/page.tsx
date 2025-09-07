@@ -340,118 +340,129 @@ export default function PerformancePage() {
           </div>
         ) : (
           <>
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="min-w-[200px] sm:min-w-[250px]">
-                      Page
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50 min-w-[120px]"
-                      onClick={() => handleSort('type')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Issue
-                        <SortIcon field="type" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50 min-w-[150px]"
-                      onClick={() => handleSort('customer')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Customer
-                        <SortIcon field="customer" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50 min-w-[200px]"
-                      onClick={() => handleSort('metric')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Details
-                        <SortIcon field="metric" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50 min-w-[100px]"
-                      onClick={() => handleSort('priority')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Priority
-                        <SortIcon field="priority" />
-                      </div>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="max-w-xs sm:max-w-md">
-                        <div className="space-y-1">
-                          {task.metadata?.pageTitle && task.metadata?.pageUrl ? (
-                            <a 
-                              href={task.metadata.pageUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="font-medium text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
-                            >
-                              <span className="truncate">{task.metadata.pageTitle}</span>
-                              <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                            </a>
-                          ) : (
-                            <span className="font-medium text-sm">{task.title}</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
+            <div className="rounded-md border overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table className="min-w-full">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[25%] max-w-[250px]">
+                        Page
+                      </TableHead>
+                      <TableHead 
+                        className="cursor-pointer hover:bg-muted/50 w-[15%] max-w-[120px]"
+                        onClick={() => handleSort('type')}
+                      >
                         <div className="flex items-center gap-2">
-                          {getIssueIcon(task.metadata?.issueType)}
-                          <Badge variant={
-                            task.metadata?.issueType === 'slow_page' ? 'destructive' : 
-                            task.metadata?.issueType === 'high_bounce' ? 'default' : 
-                            task.metadata?.issueType === 'page_bounce_issue' ? 'default' : 'secondary'
-                          } className="text-xs">
-                            {task.metadata?.issueType === 'slow_page' && 'Slow Page'}
-                            {task.metadata?.issueType === 'high_bounce' && 'High Bounce'}
-                            {task.metadata?.issueType === 'page_bounce_issue' && 'Page Bounce'}
-                            {task.metadata?.issueType === 'form_abandonment' && 'Form Abandonment'}
-                          </Badge>
+                          Issue
+                          <SortIcon field="type" />
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium text-sm">{task.customer.name}</div>
-                          {task.customer.email && (
-                            <a href={`mailto:${task.customer.email}`} className="flex items-center gap-1 text-xs text-muted-foreground hover:underline">
-                              <Mail className="h-3 w-3" />
-                              <span className="truncate">{task.customer.email}</span>
-                            </a>
-                          )}
-                          {task.metadata?.location && (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              <span className="truncate">{task.metadata.location}</span>
-                            </div>
-                          )}
+                      </TableHead>
+                      <TableHead 
+                        className="cursor-pointer hover:bg-muted/50 w-[20%] max-w-[180px]"
+                        onClick={() => handleSort('customer')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Customer
+                          <SortIcon field="customer" />
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <p className="text-xs sm:text-sm text-muted-foreground">{task.description}</p>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          task.priority === 'high' ? 'destructive' : 
-                          task.priority === 'medium' ? 'default' : 'secondary'
-                        } className="text-xs">
-                          {task.priority}
-                        </Badge>
-                      </TableCell>
+                      </TableHead>
+                      <TableHead 
+                        className="cursor-pointer hover:bg-muted/50 w-[30%] max-w-[300px]"
+                        onClick={() => handleSort('metric')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Details
+                          <SortIcon field="metric" />
+                        </div>
+                      </TableHead>
+                      <TableHead 
+                        className="cursor-pointer hover:bg-muted/50 w-[10%] max-w-[100px]"
+                        onClick={() => handleSort('priority')}
+                      >
+                        <div className="flex items-center gap-2">
+                          Priority
+                          <SortIcon field="priority" />
+                        </div>
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedTasks.map((task) => (
+                      <TableRow key={task.id}>
+                        <TableCell className="w-[25%] max-w-[250px]">
+                          <div className="space-y-1">
+                            {task.metadata?.pageTitle && task.metadata?.pageUrl ? (
+                              <a 
+                                href={task.metadata.pageUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="font-medium text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                                title={task.metadata.pageTitle}
+                              >
+                                <span className="truncate">{task.metadata.pageTitle}</span>
+                                <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                              </a>
+                            ) : (
+                              <span className="font-medium text-sm truncate" title={task.title}>{task.title}</span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[15%] max-w-[120px]">
+                          <div className="flex items-center gap-2">
+                            {getIssueIcon(task.metadata?.issueType)}
+                            <Badge variant={
+                              task.metadata?.issueType === 'slow_page' ? 'destructive' : 
+                              task.metadata?.issueType === 'high_bounce' ? 'default' : 
+                              task.metadata?.issueType === 'page_bounce_issue' ? 'default' : 'secondary'
+                            } className="text-xs whitespace-nowrap">
+                              {task.metadata?.issueType === 'slow_page' && 'Slow Page'}
+                              {task.metadata?.issueType === 'high_bounce' && 'High Bounce'}
+                              {task.metadata?.issueType === 'page_bounce_issue' && 'Page Bounce'}
+                              {task.metadata?.issueType === 'form_abandonment' && 'Form Abandonment'}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[20%] max-w-[180px]">
+                          <div className="space-y-1">
+                            <div className="font-medium text-sm truncate" title={task.customer.name}>
+                              {task.customer.name}
+                            </div>
+                            {task.customer.email && (
+                              <a 
+                                href={`mailto:${task.customer.email}`} 
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                                title={task.customer.email}
+                              >
+                                <Mail className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{task.customer.email}</span>
+                              </a>
+                            )}
+                            {task.metadata?.location && (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground" title={task.metadata.location}>
+                                <MapPin className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{task.metadata.location}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="w-[30%] max-w-[300px]">
+                          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2" title={task.description}>
+                            {task.description}
+                          </p>
+                        </TableCell>
+                        <TableCell className="w-[10%] max-w-[100px]">
+                          <Badge variant={
+                            task.priority === 'high' ? 'destructive' : 
+                            task.priority === 'medium' ? 'default' : 'secondary'
+                          } className="text-xs whitespace-nowrap">
+                            {task.priority}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
 
             {/* Pagination Controls */}

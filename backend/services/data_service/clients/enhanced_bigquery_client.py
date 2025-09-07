@@ -1,10 +1,10 @@
 """
 Enhanced BigQuery client for comprehensive GA4 analytics data extraction
 """
-import json
+
+from typing import Any, Dict, List
+
 import pandas as pd
-from datetime import date
-from typing import Dict, List, Optional, Any
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from loguru import logger
@@ -12,56 +12,59 @@ from loguru import logger
 
 class EnhancedBigQueryClient:
     """Enhanced BigQuery client for event-specific GA4 data extraction."""
-    
+
     def __init__(self, bigquery_config: Dict[str, Any]):
         """Initialize BigQuery client with configuration."""
-        self.project_id = bigquery_config['project_id']
-        self.dataset_id = bigquery_config['dataset_id']
-        
+        self.project_id = bigquery_config["project_id"]
+        self.dataset_id = bigquery_config["dataset_id"]
+
         # Initialize credentials from service account dict
         credentials = service_account.Credentials.from_service_account_info(
-            bigquery_config['service_account']
+            bigquery_config["service_account"]
         )
-        
+
         # Initialize BigQuery client
-        self.client = bigquery.Client(
-            credentials=credentials,
-            project=self.project_id
+        self.client = bigquery.Client(credentials=credentials, project=self.project_id)
+
+        logger.info(
+            f"Initialized Enhanced BigQuery client for {self.project_id}.{self.dataset_id}"
         )
-        
-        logger.info(f"Initialized Enhanced BigQuery client for {self.project_id}.{self.dataset_id}")
-    
-    def get_date_range_events(self, start_date: str, end_date: str) -> Dict[str, List[Dict[str, Any]]]:
+
+    def get_date_range_events(
+        self, start_date: str, end_date: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all event types for a date range, properly structured for analytics.
-        
+
         Returns:
             Dictionary with event types as keys and lists of records as values
         """
         results = {}
-        
+
         # Get each event type
         event_extractors = {
-            'purchase': self._extract_purchase_events,
-            'add_to_cart': self._extract_add_to_cart_events,
-            'page_view': self._extract_page_view_events,
-            'view_search_results': self._extract_view_search_results_events,
-            'no_search_results': self._extract_no_search_results_events,
-            'view_item': self._extract_view_item_events
+            "purchase": self._extract_purchase_events,
+            "add_to_cart": self._extract_add_to_cart_events,
+            "page_view": self._extract_page_view_events,
+            "view_search_results": self._extract_view_search_results_events,
+            "no_search_results": self._extract_no_search_results_events,
+            "view_item": self._extract_view_item_events,
         }
-        
+
         for event_type, extractor in event_extractors.items():
             try:
-                logger.info(f"Extracting {event_type} events for {start_date} to {end_date}")
+                logger.info(
+                    f"Extracting {event_type} events for {start_date} to {end_date}"
+                )
                 events = extractor(start_date, end_date)
                 results[event_type] = events
                 logger.info(f"Extracted {len(events)} {event_type} events")
             except Exception as e:
                 logger.error(f"Error extracting {event_type} events: {e}")
                 results[event_type] = []
-        
+
         return results
-    
+
     def _execute_query(self, query: str) -> pd.DataFrame:
         """Execute BigQuery query and return DataFrame."""
         try:
@@ -72,12 +75,14 @@ class EnhancedBigQueryClient:
             logger.error(f"BigQuery execution error: {e}")
             logger.error(f"Query: {query}")
             raise
-    
-    def _extract_purchase_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+
+    def _extract_purchase_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract purchase events with revenue and transaction details."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -114,15 +119,17 @@ class EnhancedBigQueryClient:
         AND event_name = 'purchase'
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
-    
-    def _extract_add_to_cart_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        return df.to_dict("records")
+
+    def _extract_add_to_cart_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract add to cart events with item details."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -161,15 +168,17 @@ class EnhancedBigQueryClient:
         AND event_name = 'add_to_cart'
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
-    
-    def _extract_page_view_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        return df.to_dict("records")
+
+    def _extract_page_view_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract page view events."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -202,15 +211,17 @@ class EnhancedBigQueryClient:
         AND event_name = 'page_view'
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
-    
-    def _extract_view_search_results_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        return df.to_dict("records")
+
+    def _extract_view_search_results_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract successful search events."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -241,15 +252,17 @@ class EnhancedBigQueryClient:
         AND event_name = 'view_search_results'
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
-    
-    def _extract_no_search_results_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        return df.to_dict("records")
+
+    def _extract_no_search_results_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract failed search events - critical for search analysis."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -280,15 +293,17 @@ class EnhancedBigQueryClient:
         AND event_name IN ('no_search_results', 'view_search_results_no_results')
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
-    
-    def _extract_view_item_events(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+        return df.to_dict("records")
+
+    def _extract_view_item_events(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Extract product view events."""
-        start_suffix = start_date.replace('-', '')
-        end_suffix = end_date.replace('-', '')
-        
+        start_suffix = start_date.replace("-", "")
+        end_suffix = end_date.replace("-", "")
+
         query = f"""
         SELECT 
             event_date,
@@ -324,6 +339,6 @@ class EnhancedBigQueryClient:
         AND event_name = 'view_item'
         ORDER BY event_timestamp
         """
-        
+
         df = self._execute_query(query)
-        return df.to_dict('records')
+        return df.to_dict("records")

@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 
 async function authenticateWithCode(code: string): Promise<AuthResponse> {
   const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
-  const url = `${authBase}/authenticate`
+  const url = `${authBase}/api/v1/authenticate`
 
   const response = await fetch(url, {
     method: "POST",
@@ -49,7 +49,7 @@ interface AuthResponse {
 async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
   const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
   try {
-    const resp = await fetch(`${authBase}/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`, {
+    const resp = await fetch(`${authBase}/api/v1/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`, {
       credentials: "include",
     })
     if (!resp.ok) return { started: false }
@@ -65,7 +65,7 @@ async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
 async function startSync(tenantId: string): Promise<boolean> {
   const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
   try {
-    const resp = await fetch(`${authBase}/v1/tenant/sync/start`, {
+    const resp = await fetch(`${authBase}/api/v1/tenant/sync/start`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },

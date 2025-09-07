@@ -47,15 +47,9 @@ BEGIN
             u.buying_company_name as customer_name,
             u.email,
             u.cell_phone as phone,
-            CASE 
-                WHEN tt.completed IS NOT NULL THEN tt.completed 
-                ELSE false 
-            END as completed
+            false as completed
         FROM paginated_purchases pp
         LEFT JOIN users u ON u.user_id = pp.user_prop_webuserid AND u.tenant_id = p_tenant_id
-        LEFT JOIN task_tracking tt ON tt.tenant_id = p_tenant_id 
-            AND tt.task_id = pp.param_transaction_id 
-            AND tt.task_type = 'purchase'
     )
     SELECT jsonb_build_object(
         'data', (

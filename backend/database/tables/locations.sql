@@ -34,5 +34,14 @@ CREATE TABLE public.locations (
   is_active boolean NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  CONSTRAINT uq_locations_tenant_warehouse UNIQUE (tenant_id, warehouse_id)
 );
+
+-- ======================================
+-- LOCATIONS TABLE CONSTRAINTS AND INDEXES  
+-- ======================================
+
+-- Core performance index for location lookups 
+CREATE INDEX IF NOT EXISTS idx_locations_tenant_location 
+ON locations (tenant_id, warehouse_code) WHERE is_active = true;

@@ -92,7 +92,7 @@ export default function SearchAnalysisPage() {
       
       const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/search-analysis${queryParams}`
+      const url = `${baseUrl}/api/v1/tasks/search-analysis${queryParams}`
 
       const response = await fetch(url, { headers: analyticsHeaders() })
       const data: SearchAnalysisApiResponse = await response.json()

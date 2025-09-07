@@ -24,6 +24,7 @@ import {
   Users,
   AlertCircle,
   ShoppingBag,
+  Database,
 } from "lucide-react"
 
 const data = {
@@ -57,6 +58,11 @@ const data = {
       title: "Performance",
       url: "/performance",
       icon: AlertCircle,
+    },
+    {
+      title: "Data Management",
+      url: "/data-management",
+      icon: Database,
     },
   ],
 }

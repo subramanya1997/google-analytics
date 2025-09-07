@@ -10,8 +10,9 @@ CREATE TABLE public.processing_jobs (
   progress json NOT NULL,
   records_processed json NOT NULL,
   error_message text,
-  created_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
   started_at timestamp with time zone,
   completed_at timestamp with time zone,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );

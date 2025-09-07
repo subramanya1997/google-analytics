@@ -1,3 +1,5 @@
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from typing import Any, Dict
 
@@ -17,6 +19,16 @@ class IngestionService:
 
     def __init__(self):
         self.repo = SqlAlchemyRepository()
+        # Thread pool for heavy synchronous operations
+        self._executor = ThreadPoolExecutor(
+            max_workers=2,  # Limit concurrent heavy operations
+            thread_name_prefix="ingestion-worker"
+        )
+    
+    def __del__(self):
+        """Cleanup thread pool on destruction."""
+        if hasattr(self, '_executor'):
+            self._executor.shutdown(wait=False)
 
     def create_job(
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
@@ -30,7 +42,6 @@ class IngestionService:
                 "data_types": request.data_types,
                 "start_date": request.start_date,  # Pass as date object, not string
                 "end_date": request.end_date,  # Pass as date object, not string
-                "created_at": datetime.now(),  # Pass as datetime object, not string
             }
 
             job = self.repo.create_processing_job(job_data)
@@ -60,11 +71,18 @@ class IngestionService:
                 "locations_processed": 0,
             }
 
-            # Process events from BigQuery
+            # Process events from BigQuery in thread pool to avoid blocking
             if "events" in request.data_types:
                 try:
                     logger.info(f"Processing events for job {job_id}")
-                    event_results = self._process_events(tenant_id, request)
+                    # Run the synchronous event processing in a thread pool
+                    loop = asyncio.get_event_loop()
+                    event_results = await loop.run_in_executor(
+                        self._executor, 
+                        self._process_events_sync, 
+                        tenant_id, 
+                        request
+                    )
                     results.update(event_results)
 
                 except Exception as e:
@@ -112,11 +130,14 @@ class IngestionService:
             logger.error(f"Failed processing job {job_id}: {e}")
             raise
 
-    def _process_events(
+    def _process_events_sync(
         self, tenant_id: str, request: CreateIngestionJobRequest
     ) -> Dict[str, int]:
-        """Process all event types from BigQuery."""
+        """Process all event types from BigQuery (runs in thread pool)."""
         try:
+            # Create a new repository instance for this thread to avoid connection sharing
+            thread_repo = SqlAlchemyRepository()
+            
             # Initialize BigQuery client using tenant configuration from database
             bigquery_client = get_tenant_bigquery_client(tenant_id)
 
@@ -136,7 +157,7 @@ class IngestionService:
             for event_type, events_data in events_by_type.items():
                 try:
                     if events_data:
-                        count = self.repo.replace_event_data(
+                        count = thread_repo.replace_event_data(
                             tenant_id,
                             event_type,
                             request.start_date,
@@ -158,6 +179,18 @@ class IngestionService:
         except Exception as e:
             logger.error(f"Error processing BigQuery events: {e}")
             raise
+
+    def _upsert_users_sync(self, tenant_id: str, users_data: list) -> int:
+        """Synchronous user upsert operation (runs in thread pool)."""
+        # Create a new repository instance for this thread
+        thread_repo = SqlAlchemyRepository()
+        return thread_repo.upsert_users(tenant_id, users_data)
+    
+    def _upsert_locations_sync(self, tenant_id: str, locations_data: list) -> int:
+        """Synchronous location upsert operation (runs in thread pool)."""
+        # Create a new repository instance for this thread
+        thread_repo = SqlAlchemyRepository()
+        return thread_repo.upsert_locations(tenant_id, locations_data)
 
     async def _process_users(self, tenant_id: str) -> int:
         """Process users from SFTP."""
@@ -195,7 +228,14 @@ class IngestionService:
                             cleaned_record[key] = value
                     cleaned_users.append(cleaned_record)
 
-                count = self.repo.upsert_users(tenant_id, cleaned_users)
+                # Run the database operation in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                count = await loop.run_in_executor(
+                    self._executor,
+                    self._upsert_users_sync,
+                    tenant_id,
+                    cleaned_users
+                )
                 logger.info(f"Processed {count} users from SFTP")
                 return count
             else:
@@ -229,78 +269,43 @@ class IngestionService:
                 )
 
             # Fallback to local file if SFTP failed or no data
-            if locations_data is None or len(locations_data) == 0:
-                logger.info("Falling back to local locations file")
-                temp_data_dir = Path(__file__).parent.parent.parent / "temp_data"
-                locations_file = temp_data_dir / "Locations_List1750281613134.xlsx"
-
-                if locations_file.exists():
-                    logger.info(f"Reading locations from local file: {locations_file}")
-                    locations_data = pd.read_excel(locations_file)
-                else:
-                    logger.warning("No local locations file found")
-                    return 0
-
-                if locations_data is not None and len(locations_data) > 0:
-                    # Clean the data: replace NaN values with None and convert to proper types
-                    import numpy as np
-
-                    locations_data = locations_data.replace({np.nan: None})
-
-                    # Map Excel columns to database columns (only include columns that exist in DB schema)
-                    # Database schema: warehouse_id, warehouse_code, warehouse_name, city, state, country
-                    column_mapping = {
-                        "WAREHOUSE_ID": "warehouse_id",  # Maps to warehouse_id in DB
-                        "WAREHOUSE_CODE": "warehouse_code",  # Maps to warehouse_code in DB
-                        "WAREHOUSE_NAME": "warehouse_name",  # Maps to warehouse_name in DB
-                        "CITY": "city",  # Maps to city in DB
-                        "STATE": "state",  # Maps to state in DB
-                        "COUNTRY": "country",  # Maps to country in DB
-                    }
-
-                    # Filter columns to only include those that exist in our mapping AND in the Excel file
-                    available_columns = [
-                        col
-                        for col in column_mapping.keys()
-                        if col in locations_data.columns
-                    ]
-                    filtered_data = locations_data[available_columns].copy()
-
-                    # Rename columns to match database schema
-                    filtered_data = filtered_data.rename(columns=column_mapping)
-
-                    # Convert DataFrame to list of dictionaries
-                    locations_list = filtered_data.to_dict("records")
-
-                    # Further clean the records to ensure JSON compatibility
-                    cleaned_locations = []
-                    for record in locations_list:
-                        cleaned_record = {}
-                        for key, value in record.items():
-                            # Convert pandas NaT, NaN, and other problematic types to None
-                            if (
-                                pd.isna(value)
-                                if hasattr(pd, "isna")
-                                else (value is None or str(value) == "nan")
-                            ):
-                                cleaned_record[key] = None
-                            else:
-                                cleaned_record[key] = value
-                        cleaned_locations.append(cleaned_record)
-
-                    final_columns = list(filtered_data.columns)
-                    logger.info(
-                        f"Mapped locations data from {len(available_columns)} Excel columns to {len(final_columns)} DB columns"
-                    )
-                    logger.info(f"Final DB columns: {final_columns}")
-                    count = self.repo.upsert_locations(tenant_id, cleaned_locations)
-                    logger.info(f"Processed {count} locations from local file")
-                    return count
-                else:
-                    logger.info("Local locations file is empty")
-                    return 0
+                # Successfully got data from SFTP - process it
+            if locations_data is not None and len(locations_data) > 0:
+                # Clean the data: replace NaN values with None
+                import numpy as np
+                
+                locations_data = locations_data.replace({np.nan: None})
+                
+                # Convert DataFrame to list of dictionaries
+                locations_list = locations_data.to_dict("records")
+                
+                # Clean the records for JSON compatibility
+                cleaned_locations = []
+                for record in locations_list:
+                    cleaned_record = {}
+                    for key, value in record.items():
+                        if (
+                            pd.isna(value)
+                            if hasattr(pd, "isna")
+                            else (value is None or str(value) == "nan")
+                        ):
+                            cleaned_record[key] = None
+                        else:
+                            cleaned_record[key] = value
+                    cleaned_locations.append(cleaned_record)
+                
+                # Run the database operation in thread pool to avoid blocking
+                loop = asyncio.get_event_loop()
+                count = await loop.run_in_executor(
+                    self._executor,
+                    self._upsert_locations_sync,
+                    tenant_id,
+                    cleaned_locations
+                )
+                logger.info(f"Processed {count} locations from SFTP")
+                return count
             else:
-                logger.warning(f"Local locations file not found: {locations_file}")
+                logger.info("No locations data received from SFTP")
                 return 0
 
         except Exception as e:
@@ -319,3 +324,15 @@ class IngestionService:
     ) -> Dict[str, Any]:
         """Get analytics summary for a tenant."""
         return self.repo.get_analytics_summary(tenant_id, start_date, end_date)
+
+    def get_data_availability(self, tenant_id: str) -> Dict[str, Any]:
+        """Get the date range of available data for a tenant."""
+        return self.repo.get_data_availability(tenant_id)
+
+    def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
+        """Get both data availability summary and detailed breakdown in one call."""
+        return self.repo.get_data_availability_with_breakdown(tenant_id)
+
+    def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Get job history for a tenant."""
+        return self.repo.get_tenant_jobs(tenant_id, limit, offset)

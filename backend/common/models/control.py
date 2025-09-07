@@ -5,7 +5,7 @@ from typing import Optional
 
 from sqlalchemy import TIMESTAMP, Date, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, declared_attr
 
 from common.database import Base
 

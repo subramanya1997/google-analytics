@@ -8,8 +8,8 @@ CREATE TABLE public.tenants (
   bigquery_credentials json,
   sftp_config json,
   is_active boolean NOT NULL,
-  created_at timestamp with time zone NOT NULL,
-  updated_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   postgres_config jsonb,
   PRIMARY KEY (id)
 );

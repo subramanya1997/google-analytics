@@ -79,9 +79,24 @@ export default function DashboardPage() {
       }
       params.append('granularity', timeGranularity)
       params.append('timezone_offset', (-timezoneOffset).toString())
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/stats?${params.toString()}`
-      const statsResponse = await fetch(url, { headers: analyticsHeaders() })
+      
+      // Try proxy first, then fallback to direct URL
+      const proxyUrl = `/api/analytics/stats?${params.toString()}`
+      const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+      const directUrl = directBase ? `${directBase}/api/v1/stats?${params.toString()}` : ''
+      
+      let statsResponse: Response | null = null
+      
+      try {
+        statsResponse = await fetch(proxyUrl, { headers: analyticsHeaders() })
+      } catch (error) {
+        if (directUrl) {
+          statsResponse = await fetch(directUrl, { headers: analyticsHeaders() })
+        } else {
+          throw error
+        }
+      }
+      
       const statsData: DashboardApiResponse = await statsResponse.json()
       setMetrics(statsData.metrics)
       setLocationStats(statsData.locationStats || [])

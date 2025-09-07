@@ -93,7 +93,7 @@ export default function RepeatVisitsPage() {
 
       const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/repeat-visits${queryParams}`
+      const url = `${baseUrl}/api/v1/tasks/repeat-visits${queryParams}`
       
       const response = await fetch(url, { headers: analyticsHeaders() })
       const data: RepeatVisitApiResponse = await response.json()

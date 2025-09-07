@@ -17,5 +17,37 @@ CREATE TABLE public.page_view (
   geo_city character varying(100),
   raw_data jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );
+
+-- ======================================
+-- PAGE_VIEW TABLE INDEXES
+-- ======================================
+
+-- Core performance indexes - critical for visitor analytics
+CREATE INDEX IF NOT EXISTS idx_page_view_tenant_date 
+ON page_view (tenant_id, event_date);
+
+CREATE INDEX IF NOT EXISTS idx_page_view_tenant_session 
+ON page_view (tenant_id, param_ga_session_id);
+
+CREATE INDEX IF NOT EXISTS idx_page_view_tenant_user 
+ON page_view (tenant_id, user_prop_webuserid);
+
+CREATE INDEX IF NOT EXISTS idx_page_view_tenant_date_branch 
+ON page_view (tenant_id, event_date, user_prop_default_branch_id);
+
+-- Time-series index for dashboard
+CREATE INDEX IF NOT EXISTS idx_page_view_time_series 
+ON page_view (tenant_id, event_date DESC, event_timestamp DESC);
+
+-- Specialized index for repeat visitor analysis
+CREATE INDEX IF NOT EXISTS idx_page_view_user_session 
+ON page_view (tenant_id, user_prop_webuserid, param_ga_session_id) 
+WHERE user_prop_webuserid IS NOT NULL AND param_ga_session_id IS NOT NULL;
+
+-- Partial index for recent data
+CREATE INDEX IF NOT EXISTS idx_page_view_recent 
+ON page_view (tenant_id, event_date DESC) 
+WHERE event_date >= '2024-01-01';

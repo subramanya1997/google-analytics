@@ -27,6 +27,10 @@ export const pageConfig: Record<string, PageInfo> = {
   "/purchases": {
     title: "Recent Purchases",
     subtitle: "Track successful transactions and customer activity"
+  },
+  "/data-management": {
+    title: "Data Management",
+    subtitle: "Manage data ingestion and view system status"
   }
 }
 

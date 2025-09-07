@@ -31,5 +31,14 @@ CREATE TABLE public.users (
   is_active boolean NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  CONSTRAINT uq_users_tenant_user UNIQUE (tenant_id, user_id)
 );
+
+-- ======================================
+-- USERS TABLE CONSTRAINTS AND INDEXES
+-- ======================================
+
+-- Core performance index for user lookups (PostgreSQL will use the unique constraint as an index too)
+CREATE INDEX IF NOT EXISTS idx_users_tenant_user_id 
+ON users (tenant_id, user_id);

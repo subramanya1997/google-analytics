@@ -16,6 +16,7 @@ class BaseServiceSettings(BaseSettings):
     PORT: int = 8000
     
     # Global Configuration
+    ENVIRONMENT: str = "DEV"  # Can be "DEV" or "PROD"
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     

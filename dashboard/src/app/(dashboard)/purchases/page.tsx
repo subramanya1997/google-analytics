@@ -57,7 +57,7 @@ export default function PurchasesPage() {
         limit: itemsPerPage
       })
       const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/tasks/purchases${queryParams}`
+      const url = `${baseUrl}/api/v1/tasks/purchases${queryParams}`
         
       const response = await fetch(url, { headers: analyticsHeaders() })
       const data: PurchaseApiResponse = await response.json()

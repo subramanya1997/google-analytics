@@ -17,5 +17,17 @@ CREATE TABLE public.no_search_results (
   geo_city character varying(100),
   raw_data jsonb,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );
+
+-- ======================================
+-- NO_SEARCH_RESULTS TABLE INDEXES
+-- ======================================
+
+-- Core performance indexes - for failed search analytics
+CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_date 
+ON no_search_results (tenant_id, event_date);
+
+CREATE INDEX IF NOT EXISTS idx_no_search_results_term 
+ON no_search_results (tenant_id, param_no_search_results_term);

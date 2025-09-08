@@ -52,7 +52,8 @@ BEGIN
                         'user_id', u.user_id,
                         'customer_name', u.buying_company_name,
                         'email', u.email,
-                        'phone', u.cell_phone
+                        'phone', u.cell_phone,
+                        'office_phone', u.office_phone
                     )
                 ), '[]'::jsonb)
                 FROM paginated_sessions ps

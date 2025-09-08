@@ -7,8 +7,8 @@ import { LocationStatsCard } from "@/components/charts/location-stats-card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TimeGranularitySelector, TimeGranularity } from "@/components/ui/time-granularity-selector"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { format } from "date-fns"
-import { analyticsHeaders } from "@/lib/api-utils"
+import { fetchDashboardStats } from "@/lib/api-utils"
+import { DashboardMetrics, LocationStats, ChartDataPoint, DashboardApiResponse } from "@/types"
 import {
   DollarSign,
   ShoppingCart,
@@ -19,41 +19,6 @@ import {
   MapPin,
   BarChart3
 } from "lucide-react"
-
-interface DashboardMetrics {
-  totalRevenue: string
-  purchases: number
-  abandonedCarts: number
-  failedSearches: number
-  totalVisitors: number
-  repeatVisits: number
-}
-
-interface LocationStats {
-  locationId: string
-  locationName: string
-  city: string
-  state: string
-  totalRevenue: string
-  purchases: number
-  abandonedCarts: number
-  failedSearches: number
-  totalVisitors: number
-  repeatVisits: number
-}
-
-interface ChartDataPoint {
-  time: string
-  purchases: number
-  carts: number
-  searches: number
-}
-
-interface DashboardApiResponse {
-  metrics: DashboardMetrics
-  locationStats: LocationStats[]
-  chartData: ChartDataPoint[]
-}
 
 export default function DashboardPage() {
   const { selectedLocation, setSelectedLocation, dateRange } = useDashboard()
@@ -67,35 +32,13 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       const timezoneOffset = new Date().getTimezoneOffset()
-      const params = new URLSearchParams()
-      if (selectedLocation) {
-        params.append('location_id', selectedLocation)
-      }
-      if (dateRange?.from) {
-        params.append('start_date', format(dateRange.from, 'yyyy-MM-dd'))
-      }
-      if (dateRange?.to) {
-        params.append('end_date', format(dateRange.to, 'yyyy-MM-dd'))
-      }
-      params.append('granularity', timeGranularity)
-      params.append('timezone_offset', (-timezoneOffset).toString())
       
-      // Try proxy first, then fallback to direct URL
-      const proxyUrl = `/api/analytics/stats?${params.toString()}`
-      const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const directUrl = directBase ? `${directBase}/api/v1/stats?${params.toString()}` : ''
-      
-      let statsResponse: Response | null = null
-      
-      try {
-        statsResponse = await fetch(proxyUrl, { headers: analyticsHeaders() })
-      } catch (error) {
-        if (directUrl) {
-          statsResponse = await fetch(directUrl, { headers: analyticsHeaders() })
-        } else {
-          throw error
-        }
-      }
+      const statsResponse = await fetchDashboardStats({
+        selectedLocation,
+        dateRange,
+        granularity: timeGranularity,
+        timezoneOffset: -timezoneOffset
+      })
       
       const statsData: DashboardApiResponse = await statsResponse.json()
       setMetrics(statsData.metrics)

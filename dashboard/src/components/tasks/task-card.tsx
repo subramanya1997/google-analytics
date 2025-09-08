@@ -3,51 +3,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TaskDetailSheet } from "./task-detail-sheet"
+import { TaskCardProps } from "@/types"
 import {
   ShoppingCart,
   TrendingUp,
   DollarSign,
   MapPin
 } from "lucide-react"
-
-interface ProductDetail {
-  name: string
-  quantity: number
-  price: number
-  sku?: string
-}
-
-interface PurchaseCartTask {
-  id: string
-  type: 'purchase' | 'cart'
-  priority: 'high' | 'medium' | 'low'
-  title: string
-  description: string
-  customer: {
-    name: string
-    email?: string
-    phone?: string
-    company?: string
-    orderValue?: number
-    lastOrder?: string
-  }
-  productDetails?: ProductDetail[]
-  metadata?: {
-    products?: string[]
-    cartValue?: number
-    visitCount?: number
-    location?: string
-    branchId?: string
-  }
-  createdAt: string
-  status?: 'pending' | 'in_progress' | 'completed'
-  userId?: string
-  sessionId?: string
-}
-
-interface TaskCardProps {
-  task: PurchaseCartTask
-}
 
 const taskIcons = {
   purchase: TrendingUp,
@@ -138,7 +100,7 @@ export function TaskCard({ task }: TaskCardProps) {
             <div className="flex flex-wrap gap-1 pt-2 border-t">
               {task.metadata.products.slice(0, 3).map((product, i) => (
                 <Badge key={i} variant="outline" className="text-xs">
-                  {product}
+                  {typeof product === 'string' ? product : product.title}
                 </Badge>
               ))}
               {task.metadata.products.length > 3 && (

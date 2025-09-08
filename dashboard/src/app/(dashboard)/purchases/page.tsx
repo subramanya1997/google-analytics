@@ -2,42 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { buildApiQueryParams } from "@/lib/api-utils"
+import { fetchPurchaseTasks } from "@/lib/api-utils"
 import { TaskCard } from "@/components/tasks/task-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Search, Filter, ChevronLeft, ChevronRight } from "lucide-react"
-import { Task, PurchaseCartTask } from "@/types/tasks"
-import { analyticsHeaders } from "@/lib/api-utils"
-
-interface PurchaseApiProduct {
-  item_name: string
-  quantity: number
-  price: number
-  item_id: string
-}
-
-interface PurchaseApiTask {
-  transaction_id: string
-  user_id: string
-  customer_name?: string
-  email?: string
-  phone?: string
-  order_value: number
-  products: PurchaseApiProduct[]
-  event_date: string
-  session_id: string
-}
-
-interface PurchaseApiResponse {
-  data: PurchaseApiTask[]
-  total: number
-  page: number
-  limit: number
-  has_more: boolean
-}
+import { Task, PurchaseCartTask, PurchaseApiProduct, PurchaseApiTask, PurchaseApiResponse } from "@/types"
 
 export default function PurchasesPage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -49,17 +21,16 @@ export default function PurchasesPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(50)
 
-  const fetchPurchaseTasks = useCallback(async () => {
+  const fetchPurchaseTasksData = useCallback(async () => {
     try {
       setLoading(true)
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange, {
+      
+      const response = await fetchPurchaseTasks({
+        selectedLocation,
+        dateRange,
         page: currentPage,
         limit: itemsPerPage
       })
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/api/v1/tasks/purchases${queryParams}`
-        
-      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: PurchaseApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: PurchaseApiTask) => {
@@ -86,6 +57,7 @@ export default function PurchasesPage() {
           name: task.customer_name || 'Unknown User',
           email: task.email,
           phone: task.phone,
+          office_phone: task.office_phone,
           orderValue: task.order_value,
         } as const,
         productDetails: (task.products || []).map((p: PurchaseApiProduct) => ({
@@ -113,9 +85,9 @@ export default function PurchasesPage() {
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchPurchaseTasks()
+      fetchPurchaseTasksData()
     }
-  }, [dateRange, fetchPurchaseTasks])
+  }, [dateRange, fetchPurchaseTasksData])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
@@ -263,37 +235,6 @@ export default function PurchasesPage() {
               </div>
             )}
           </>
-        )}
-
-        {/* Summary Stats */}
-        {!loading && tasks.length > 0 && (
-          <div className="mt-6 sm:mt-8 rounded-lg border bg-card p-4 sm:p-6">
-            <h3 className="text-base sm:text-lg font-semibold mb-4">Summary Statistics</h3>
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Total Value</p>
-                <p className="text-xl sm:text-2xl font-bold">
-                  ${tasks.reduce((sum, task) => sum + (task.customer.orderValue || 0), 0).toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Avg Order Value</p>
-                <p className="text-xl sm:text-2xl font-bold">
-                  ${(tasks.reduce((sum, task) => sum + (task.customer.orderValue || 0), 0) / tasks.length).toFixed(2)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">High Priority</p>
-                <p className="text-xl sm:text-2xl font-bold">
-                  {tasks.filter(task => task.priority === 'high').length}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs sm:text-sm text-muted-foreground">Total Tasks</p>
-                <p className="text-xl sm:text-2xl font-bold">{tasks.length}</p>
-              </div>
-            </div>
-          </div>
         )}
       </div>
   )

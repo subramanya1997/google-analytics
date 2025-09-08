@@ -6,37 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ChevronLeft, ChevronRight } from "lucide-react"
-import { Task, PurchaseCartTask } from "@/types/tasks"
+import { Task, PurchaseCartTask, CartApiProduct, CartApiTask, CartApiResponse } from "@/types"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { buildApiQueryParams } from "@/lib/api-utils"
-import { analyticsHeaders } from "@/lib/api-utils"
-
-interface CartApiProduct {
-  item_name: string
-  quantity: number
-  price: number
-  item_id: string
-}
-
-interface CartApiTask {
-  session_id: string
-  user_id: string
-  customer_name?: string
-  email?: string
-  phone?: string
-  total_value: number
-  items_count: number
-  products: CartApiProduct[]
-  event_date: string
-}
-
-interface CartApiResponse {
-  data: CartApiTask[]
-  total: number
-  page: number
-  limit: number
-  has_more: boolean
-}
+import { fetchCartAbandonmentTasks } from "@/lib/api-utils"
 
 export default function CartAbandonmentPage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -51,14 +23,12 @@ export default function CartAbandonmentPage() {
     try {
       setLoading(true)
       
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange, {
+      const response = await fetchCartAbandonmentTasks({
+        selectedLocation,
+        dateRange,
         page: currentPage,
         limit: itemsPerPage
       })
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/api/v1/tasks/cart-abandonment${queryParams}`
-        
-      const response = await fetch(url, { headers: analyticsHeaders() })
       const data: CartApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: CartApiTask) => {
@@ -85,6 +55,7 @@ export default function CartAbandonmentPage() {
           name: task.customer_name || 'Unknown User',
           email: task.email,
           phone: task.phone,
+          office_phone: task.office_phone,
         },
         productDetails: (task.products || []).map((p: CartApiProduct) => ({
           name: p.item_name,

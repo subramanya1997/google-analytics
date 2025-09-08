@@ -2,7 +2,7 @@
 Centralized configuration management for all backend services.
 """
 import os
-from typing import List, Optional, Any
+from typing import List, Any
 from pydantic import validator
 from pydantic_settings import BaseSettings
 

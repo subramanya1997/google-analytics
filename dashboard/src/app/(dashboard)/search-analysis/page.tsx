@@ -5,9 +5,7 @@ import { useDashboard } from "@/contexts/dashboard-context"
 import { Task, SearchAnalysisApiTask, SearchAnalysisApiResponse, SortField, SortOrder } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -23,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
+import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
 
 import { fetchSearchAnalysisTasks } from "@/lib/api-utils"
 
@@ -35,7 +33,6 @@ export default function SearchAnalysisPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(50)
-  const [includeConverted, setIncludeConverted] = useState(false)
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("")
@@ -66,7 +63,6 @@ export default function SearchAnalysisPage() {
         dateRange,
         page: currentPage,
         limit: itemsPerPage,
-        includeConverted,
         query: debouncedSearchQuery
       })
       const data: SearchAnalysisApiResponse = await response.json()
@@ -127,7 +123,7 @@ export default function SearchAnalysisPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, itemsPerPage, includeConverted, debouncedSearchQuery, selectedLocation, dateRange])
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
@@ -142,11 +138,6 @@ export default function SearchAnalysisPage() {
   const handleItemsPerPageChange = (value: string) => {
     setItemsPerPage(parseInt(value))
     setCurrentPage(1) // Reset to first page when changing items per page
-  }
-
-  const handleIncludeConvertedChange = (checked: boolean) => {
-    setIncludeConverted(checked)
-    setCurrentPage(1) // Reset to first page when changing filter
   }
 
   // Filter and sort tasks
@@ -221,73 +212,6 @@ export default function SearchAnalysisPage() {
 
   return (
     <div className="space-y-6">
-
-        {/* Filters */}
-        <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search for products (e.g. 'bay vent', 'pvc')..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Priorities</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="no_results">No Results</SelectItem>
-                <SelectItem value="no_conversion">No Conversion</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="h-10 px-3"
-              >
-                <X className="h-4 w-4 mr-1" />
-                Clear
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="include-converted" 
-              checked={includeConverted}
-              onCheckedChange={handleIncludeConvertedChange}
-            />
-            <label
-              htmlFor="include-converted"
-              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-            >
-              Include active searches from sessions that resulted in purchases
-            </label>
-            <span className="text-xs text-muted-foreground">
-              (All &quot;no results&quot; searches are always shown)
-            </span>
-          </div>
-        </div>
 
         {loading ? (
           <div className="space-y-3">

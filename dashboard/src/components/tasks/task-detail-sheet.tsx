@@ -314,7 +314,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
       <SheetTrigger asChild>
         {children}
       </SheetTrigger>
-      <SheetContent className="w-[600px] sm:max-w-[600px] overflow-y-auto p-0">
+      <SheetContent className="w-full sm:w-[600px] sm:max-w-[600px] overflow-y-auto p-0">
         <SheetHeader className="p-6 pb-3 border-b">
           <div className="space-y-2">
             {/* Task icon and Customer name */}
@@ -340,11 +340,11 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
             
             {/* Contact details and task info */}
             <div className="space-y-1">
-              <div className="flex flex-wrap items-center text-sm gap-y-1">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center text-sm gap-y-1 sm:gap-y-1">
                 {actualTask.customer.email && (
                   <a 
                     href={`mailto:${actualTask.customer.email}`} 
-                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 before:mx-3 first:before:hidden max-w-[260px] truncate"
+                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 sm:before:mx-3 sm:first:before:hidden max-w-full sm:max-w-[260px] truncate"
                   >
                     <Mail className="h-3 w-3" />
                     {actualTask.customer.email}
@@ -354,7 +354,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 {actualTask.customer.phone && actualTask.customer.phone.trim() && (
                   <a 
                     href={`tel:${actualTask.customer.phone}`} 
-                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 before:mx-3 first:before:hidden whitespace-nowrap"
+                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 sm:before:mx-3 sm:first:before:hidden whitespace-nowrap"
                   >
                     <Phone className="h-3 w-3" />
                     {actualTask.customer.phone}
@@ -364,7 +364,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 {actualTask.customer.office_phone && actualTask.customer.office_phone.trim() && (
                   <a 
                     href={`tel:${actualTask.customer.office_phone}`} 
-                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 before:content-['•'] before:mx-3 first:before:hidden whitespace-nowrap"
+                    className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 sm:before:content-['•'] sm:before:mx-3 sm:first:before:hidden whitespace-nowrap"
                   >
                     <Phone className="h-3 w-3" />
                     {actualTask.customer.office_phone} <span className="text-xs">(office)</span>
@@ -391,14 +391,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               <h3 className="font-semibold">Current Order Details</h3>
               <div className="space-y-2 p-3 bg-muted/30 rounded-lg">
                 {actualTask.productDetails.map((product, idx) => (
-                  <div key={idx} className="flex justify-between items-center">
+                  <div key={idx} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
                     <div className="flex-1">
                       <p className="font-medium text-sm">{product.name}</p>
                       {product.sku && (
                         <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
                       )}
                     </div>
-                    <div className="text-right">
+                    <div className="text-left sm:text-right">
                       <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
                       <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
@@ -433,14 +433,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               <h3 className="font-semibold">Abandoned Cart Items</h3>
               <div className="space-y-2 p-3 bg-muted/30 rounded-lg">
                 {actualTask.productDetails.map((product, idx) => (
-                  <div key={idx} className="flex justify-between items-center">
+                  <div key={idx} className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-1 sm:gap-0">
                     <div className="flex-1">
                       <p className="font-medium text-sm">{product.name}</p>
                       {product.sku && (
                         <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
                       )}
                     </div>
-                    <div className="text-right">
+                    <div className="text-left sm:text-right">
                       <p className="text-sm">{product.quantity} × ${(product.price || 0).toFixed(2)}</p>
                       <p className="text-xs font-medium">${((product.quantity || 0) * (product.price || 0)).toFixed(2)}</p>
                     </div>
@@ -466,22 +466,22 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
             </div>
             <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
               <TabsList className={cn(
-                "grid w-full h-9",
+                "grid w-full h-9 text-xs sm:text-sm",
                 actualTask.type === 'purchase' && "grid-cols-3",
                 actualTask.type === 'cart' && "grid-cols-3"
               )}>
                 {actualTask.type === 'purchase' && (
                   <>
-                    <TabsTrigger value="searches" className="text-xs">Searches</TabsTrigger>
-                    <TabsTrigger value="carts" className="text-xs">Carts</TabsTrigger>
-                    <TabsTrigger value="products" className="text-xs">Products</TabsTrigger>
+                    <TabsTrigger value="searches" className="text-xs sm:text-sm px-2 sm:px-3">Searches</TabsTrigger>
+                    <TabsTrigger value="carts" className="text-xs sm:text-sm px-2 sm:px-3">Carts</TabsTrigger>
+                    <TabsTrigger value="products" className="text-xs sm:text-sm px-2 sm:px-3">Products</TabsTrigger>
                   </>
                 )}
                 {actualTask.type === 'cart' && (
                   <>
-                    <TabsTrigger value="purchases" className="text-xs">Purchases</TabsTrigger>
-                    <TabsTrigger value="searches" className="text-xs">Searches</TabsTrigger>
-                    <TabsTrigger value="products" className="text-xs">Products</TabsTrigger>
+                    <TabsTrigger value="purchases" className="text-xs sm:text-sm px-2 sm:px-3">Purchases</TabsTrigger>
+                    <TabsTrigger value="searches" className="text-xs sm:text-sm px-2 sm:px-3">Searches</TabsTrigger>
+                    <TabsTrigger value="products" className="text-xs sm:text-sm px-2 sm:px-3">Products</TabsTrigger>
                   </>
                 )}
               </TabsList>

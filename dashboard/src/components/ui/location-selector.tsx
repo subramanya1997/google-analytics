@@ -13,9 +13,10 @@ interface LocationSelectorProps {
   selectedLocation: string | null
   onLocationChange: (locationId: string | null) => void
   className?: string
+  iconOnly?: boolean
 }
 
-export function LocationSelector({ selectedLocation, onLocationChange, className }: LocationSelectorProps) {
+export function LocationSelector({ selectedLocation, onLocationChange, className, iconOnly = false }: LocationSelectorProps) {
   const { locations, loadingLocations } = useDashboard()
 
   const getLocationDisplay = () => {
@@ -32,12 +33,16 @@ export function LocationSelector({ selectedLocation, onLocationChange, className
   if (loadingLocations) {
     return (
       <Select disabled>
-        <SelectTrigger className={`w-full sm:w-[250px] ${className || ''}`}>
+      <SelectTrigger className={`${iconOnly ? 'w-10 h-10 p-0 [&>svg:last-child]:hidden flex items-center justify-center' : 'w-full sm:w-[250px]'} ${className || ''}`}>
+        {iconOnly ? (
+          <MapPin className="h-4 w-4 shrink-0 text-foreground" />
+        ) : (
           <div className="flex items-center gap-2 truncate">
-            <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+            <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="truncate">Loading locations...</span>
           </div>
-        </SelectTrigger>
+        )}
+      </SelectTrigger>
       </Select>
     )
   }
@@ -47,11 +52,15 @@ export function LocationSelector({ selectedLocation, onLocationChange, className
       value={selectedLocation || "all"}
       onValueChange={(value) => onLocationChange(value === "all" ? null : value)}
     >
-      <SelectTrigger className={`w-full sm:w-[250px] ${className || ''}`}>
-        <div className="flex items-center gap-2 truncate">
-          <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="truncate">{getLocationDisplay()}</span>
-        </div>
+      <SelectTrigger className={`${iconOnly ? 'w-10 h-10 p-0 [&>svg:last-child]:hidden flex items-center justify-center' : 'w-full sm:w-[250px]'} ${className || ''}`}>
+        {iconOnly ? (
+          <MapPin className="h-4 w-4 shrink-0 text-foreground" />
+        ) : (
+          <div className="flex items-center gap-2 truncate">
+            <MapPin className="h-4 w-4 shrink-0 text-foreground" />
+            <span className="truncate">{getLocationDisplay()}</span>
+          </div>
+        )}
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">All Locations</SelectItem>

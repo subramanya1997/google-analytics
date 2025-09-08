@@ -18,12 +18,14 @@ interface DateRangeSelectorProps {
   dateRange: DateRange | undefined
   onDateRangeChange: (range: DateRange | undefined) => void
   className?: string
+  iconOnly?: boolean
 }
 
 export function DateRangeSelector({
   dateRange,
   onDateRangeChange,
   className,
+  iconOnly = false,
 }: DateRangeSelectorProps) {
   const [open, setOpen] = React.useState(false)
   const [date, setDate] = React.useState<DateRange | undefined>(dateRange)
@@ -123,19 +125,27 @@ export function DateRangeSelector({
             id="date"
             variant={"outline"}
             className={cn(
-              "w-full sm:w-[260px] justify-between text-left font-normal truncate group",
+              iconOnly 
+                ? "w-10 h-10 p-0 justify-center"
+                : "w-full sm:w-[260px] justify-between text-left font-normal truncate group",
               !date && "text-muted-foreground"
             )}
           >
-            <span className="flex items-center truncate">
-              <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-              <span className="truncate">{formatDateRange()}</span>
-            </span>
-            {date && (
-              <X 
-                className="h-4 w-4 opacity-50 group-hover:opacity-100 transition-opacity" 
-                onClick={clearDateRange}
-              />
+            {iconOnly ? (
+              <CalendarIcon className="h-4 w-4 shrink-0" />
+            ) : (
+              <>
+                <span className="flex items-center truncate">
+                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                  <span className="truncate">{formatDateRange()}</span>
+                </span>
+                {date && (
+                  <X 
+                    className="h-4 w-4 opacity-50 group-hover:opacity-100 transition-opacity" 
+                    onClick={clearDateRange}
+                  />
+                )}
+              </>
             )}
           </Button>
         </PopoverTrigger>

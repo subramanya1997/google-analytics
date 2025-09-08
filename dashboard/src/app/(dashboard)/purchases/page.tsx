@@ -5,10 +5,9 @@ import { useDashboard } from "@/contexts/dashboard-context"
 import { fetchPurchaseTasks } from "@/lib/api-utils"
 import { TaskCard } from "@/components/tasks/task-card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Search, Filter, ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Task, PurchaseCartTask, PurchaseApiProduct, PurchaseApiTask, PurchaseApiResponse } from "@/types"
 
 export default function PurchasesPage() {
@@ -100,42 +99,6 @@ export default function PurchasesPage() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search by customer, company, or product..."
-              className="pl-9"
-            />
-          </div>
-          <Select defaultValue="all">
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Filter by priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="high">High Priority</SelectItem>
-              <SelectItem value="medium">Medium Priority</SelectItem>
-              <SelectItem value="low">Low Priority</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select defaultValue="recent">
-            <SelectTrigger className="w-full sm:w-[180px]">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="recent">Most Recent</SelectItem>
-              <SelectItem value="value-high">Highest Value</SelectItem>
-              <SelectItem value="value-low">Lowest Value</SelectItem>
-              <SelectItem value="customer">Customer Name</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" className="shrink-0">
-            <Filter className="h-4 w-4" />
-          </Button>
-        </div>
-
         {/* Task Cards Grid */}
         {loading ? (
           <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">

@@ -237,7 +237,7 @@ export async function fetchSearchAnalysisTasks(params: {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
     limit: (params.limit || 50).toString(),
-    include_converted: (params.includeConverted || false).toString(),
+    include_converted: (params.includeConverted || true).toString(),
   }
   if (params.query) {
     additionalParams.query = params.query

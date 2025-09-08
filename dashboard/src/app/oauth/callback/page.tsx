@@ -6,21 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Loader2, Check, AlertCircle, Play, ShieldAlert, User } from "lucide-react"
+import { authenticateWithCode as authWithCode, getSyncStatus as getSyncStatusApi, startSync as startSyncApi } from "@/lib/api-utils"
 
 type Status = "working" | "success" | "error"
 
 export const dynamic = "force-dynamic"
 
 async function authenticateWithCode(code: string): Promise<AuthResponse> {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
-  const url = `${authBase}/api/v1/authenticate`
-
-  const response = await fetch(url, {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  })
+  const response = await authWithCode(code)
 
   if (!response.ok) {
     let detail = ""
@@ -47,11 +40,8 @@ interface AuthResponse {
 }
 
 async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
   try {
-    const resp = await fetch(`${authBase}/api/v1/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`, {
-      credentials: "include",
-    })
+    const resp = await getSyncStatusApi(tenantId)
     if (!resp.ok) return { started: false }
     const data = await resp.json()
     const started = (data && (data.started ?? data.syncStarted))
@@ -63,14 +53,8 @@ async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
 }
 
 async function startSync(tenantId: string): Promise<boolean> {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
   try {
-    const resp = await fetch(`${authBase}/api/v1/tenant/sync/start`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tenant_id: tenantId }),
-    })
+    const resp = await startSyncApi(tenantId)
     return resp.ok
   } catch {
     console.log("[oauth] sync start endpoint unavailable")

@@ -60,6 +60,7 @@ BEGIN
                     'customer_name', u.buying_company_name,
                     'email', u.email,
                     'phone', u.cell_phone,
+                    'office_phone', u.office_phone,
                     'products', sd.products
                 )
             )

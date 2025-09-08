@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { Task } from "@/types/tasks"
+import { Task, SearchAnalysisApiTask, SearchAnalysisApiResponse, SortField, SortOrder } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,29 +25,7 @@ import {
 } from "@/components/ui/select"
 import { Mail, Phone, Search, AlertCircle, ChevronLeft, ChevronRight, X, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
 
-import { buildApiQueryParams } from "@/lib/api-utils"
-import { analyticsHeaders } from "@/lib/api-utils"
-
-interface SearchAnalysisApiTask {
-  session_id: string
-  user_id: string
-  customer_name?: string
-  email?: string
-  phone?: string
-  search_term: string
-  search_count: number
-  search_type: string
-  event_date: string
-  location_id?: string
-}
-
-interface SearchAnalysisApiResponse {
-  data: SearchAnalysisApiTask[]
-  total?: number
-}
-
-type SortField = 'searchTerms' | 'customer' | 'type' | 'attempts' | 'priority'
-type SortOrder = 'asc' | 'desc'
+import { fetchSearchAnalysisTasks } from "@/lib/api-utils"
 
 export default function SearchAnalysisPage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -79,22 +57,18 @@ export default function SearchAnalysisPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const fetchSearchTasks = useCallback(async () => {
+  const fetchSearchTasksData = useCallback(async () => {
     try {
       setLoading(true)
 
-      const additionalParams = {
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
-        include_converted: includeConverted.toString(),
+      const response = await fetchSearchAnalysisTasks({
+        selectedLocation,
+        dateRange,
+        page: currentPage,
+        limit: itemsPerPage,
+        includeConverted,
         query: debouncedSearchQuery
-      }
-      
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/api/v1/tasks/search-analysis${queryParams}`
-
-      const response = await fetch(url, { headers: analyticsHeaders() })
+      })
       const data: SearchAnalysisApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: SearchAnalysisApiTask) => {
@@ -119,20 +93,23 @@ export default function SearchAnalysisPage() {
           }
         }
         
+        const searchTerm = task.search_term || 'Unknown Search';
+        
         return {
-          id: `${task.session_id}-${task.search_term}`,
+          id: `${task.session_id}-${searchTerm}`,
           type: 'search',
           priority,
-          title: `Search: ${task.search_term}`,
-          description: `User searched for "${task.search_term}" ${task.search_count} times`,
+          title: `Search: ${searchTerm}`,
+          description: `User searched for "${searchTerm}" ${task.search_count} times`,
           customer: {
             id: task.user_id,
             name: task.customer_name || 'Unknown User',
             email: task.email,
             phone: task.phone,
+            office_phone: task.office_phone,
           },
           metadata: {
-            searchTerms: task.search_term.split(', '),
+            searchTerms: searchTerm ? searchTerm.split(', ') : [],
             issueType: task.search_type,
             visitCount: task.search_count,
           },
@@ -154,9 +131,9 @@ export default function SearchAnalysisPage() {
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchSearchTasks()
+      fetchSearchTasksData()
     }
-  }, [dateRange, fetchSearchTasks])
+  }, [dateRange, fetchSearchTasksData])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)

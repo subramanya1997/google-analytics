@@ -3,14 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { DateRange } from 'react-day-picker'
 import { startOfDay, subDays } from 'date-fns'
-import { analyticsHeaders } from '@/lib/api-utils'
-
-interface Location {
-  locationId: string
-  locationName: string
-  city: string
-  state: string
-}
+import { fetchLocations } from '@/lib/api-utils'
+import { Location } from '@/types'
 
 interface DashboardContextType {
   selectedLocation: string | null
@@ -58,62 +52,33 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       isFetchingRef.current = true
       setLoadingLocations(true)
 
-      // Prefer same-origin proxy to avoid cross-origin DNS/TLS and CORS
-      const proxyUrl = `/api/analytics/locations`
-
-      // Fallback to direct origin if proxy isn't configured/reachable
-      const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const directUrl = directBase ? `${directBase}/api/v1/locations` : ''
-
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 2500)
-      let response: Response | null = null
-
+      
+      let data: Location[] = []
+      
       try {
-        response = await fetch(proxyUrl, {
-          method: 'GET',
-          headers: analyticsHeaders(),
-          signal: controller.signal,
-          cache: 'no-store',
-          // keepalive helps allow abort without killing request on nav
-          keepalive: true,
-        })
-      } catch {
-        // ignore and try fallback below
-      } finally {
-        clearTimeout(timeoutId)
-      }
-
-      if ((!response || !response.ok) && directUrl) {
-        const fallbackController = new AbortController()
-        const fallbackTimeoutId = setTimeout(() => fallbackController.abort(), 2500)
-        try {
-          response = await fetch(directUrl, {
-            method: 'GET',
-            headers: analyticsHeaders(),
-            signal: fallbackController.signal,
-            cache: 'no-store',
-            // Avoid sending cookies to cross-origin endpoint
-            credentials: 'omit',
-            referrerPolicy: 'no-referrer',
-            keepalive: true,
-          })
-        } finally {
-          clearTimeout(fallbackTimeoutId)
+        const response = await fetchLocations(controller.signal)
+        
+        if (!response || !response.ok) {
+          throw new Error(`Failed to fetch locations${response ? `: ${response.status}` : ''}`)
         }
-      }
+        
+        clearTimeout(timeoutId)
 
-      if (!response || !response.ok) {
-        throw new Error(`Failed to fetch locations${response ? `: ${response.status}` : ''}`)
+        data = await response.json()
+        setLocations(data)
+        setLocationsCacheTime(now)
+        lastFetchAtRef.current = now
+      } catch (error) {
+        clearTimeout(timeoutId)
+        throw error
       }
-
-      const data = await response.json()
-      setLocations(data)
-      setLocationsCacheTime(now)
-      lastFetchAtRef.current = now
 
       try {
-        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ data, cachedAt: now }))
+        if (data) {
+          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ data: data, cachedAt: now }))
+        }
       } catch {
         // ignore storage errors
       }

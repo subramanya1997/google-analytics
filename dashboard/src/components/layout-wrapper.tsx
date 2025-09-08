@@ -21,6 +21,7 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const { selectedLocation, setSelectedLocation, dateRange, setDateRange } = useDashboard()
 
   const { subtitle } = getPageInfo(pathname)
+  const isDataManagementPage = pathname === '/data-management'
 
   return (
     <SidebarProvider>
@@ -32,18 +33,20 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
               <BreadcrumbPage>{subtitle}</BreadcrumbPage>
             </BreadcrumbItem>
           </Breadcrumb>
-          <div className="ml-auto flex items-center gap-2">
-            <LocationSelector
-              selectedLocation={selectedLocation}
-              onLocationChange={setSelectedLocation}
-              className="w-auto"
-            />
-            <DateRangeSelector
-              dateRange={dateRange}
-              onDateRangeChange={setDateRange}
-              className="w-[200px] lg:w-[260px]"
-            />
-          </div>
+          {!isDataManagementPage && (
+            <div className="ml-auto flex items-center gap-2">
+              <LocationSelector
+                selectedLocation={selectedLocation}
+                onLocationChange={setSelectedLocation}
+                className="w-auto"
+              />
+              <DateRangeSelector
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                className="w-[200px] lg:w-[260px]"
+              />
+            </div>
+          )}
         </header>
         <div className="flex flex-1 flex-col gap-4 p-4">
           {children}

@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { buildApiQueryParams } from "@/lib/api-utils"
-import { Task } from "@/types/tasks"
+import { fetchPerformanceTasks } from "@/lib/api-utils"
+import { Task, PerformanceApiTask, FrequentlyBouncedPage, PerformanceApiResponse, SortField, SortOrder } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,36 +24,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Mail, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
-import { analyticsHeaders } from "@/lib/api-utils"
-
-type SortField = 'customer' | 'type' | 'metric' | 'priority'
-type SortOrder = 'asc' | 'desc'
-
-interface PerformanceApiTask {
-  session_id: string
-  user_id: string
-  customer_name?: string
-  email?: string
-  phone?: string
-  entry_page: string
-  location_id?: string
-  event_date: string
-}
 
 type BouncedSession = PerformanceApiTask
-
-interface FrequentlyBouncedPage {
-  entry_page: string
-  bounce_count: number
-}
-
-interface PerformanceApiResponse {
-  data: {
-    bounced_sessions: BouncedSession[]
-    frequently_bounced_pages: FrequentlyBouncedPage[]
-  }
-  total?: number
-}
 
 export default function PerformancePage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -84,21 +56,17 @@ export default function PerformancePage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const fetchPerformanceTasks = useCallback(async () => {
+  const fetchPerformanceTasksData = useCallback(async () => {
     try {
       setLoading(true)
       
-      const additionalParams = {
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+      const response = await fetchPerformanceTasks({
+        selectedLocation,
+        dateRange,
+        page: currentPage,
+        limit: itemsPerPage,
         query: debouncedSearchQuery
-      }
-
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/api/v1/tasks/performance${queryParams}`
-      
-      const response = await fetch(url, { headers: analyticsHeaders() })
+      })
       const data: PerformanceApiResponse = await response.json()
 
       // Transform the new data structure to the old one
@@ -118,6 +86,7 @@ export default function PerformancePage() {
             name: session.customer_name || 'Unknown',
             email: session.email,
             phone: session.phone,
+            office_phone: session.office_phone,
           },
           metadata: {
             issueType: 'high_bounce',
@@ -141,6 +110,7 @@ export default function PerformancePage() {
             name: 'System',
             email: undefined,
             phone: undefined,
+            office_phone: undefined,
           },
           metadata: {
             issueType: 'page_bounce_issue',
@@ -164,9 +134,9 @@ export default function PerformancePage() {
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchPerformanceTasks()
+      fetchPerformanceTasksData()
     }
-  }, [dateRange, fetchPerformanceTasks])
+  }, [dateRange, fetchPerformanceTasksData])
 
 
 

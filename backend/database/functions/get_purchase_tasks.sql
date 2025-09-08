@@ -47,6 +47,7 @@ BEGIN
             u.buying_company_name as customer_name,
             u.email,
             u.cell_phone as phone,
+            u.office_phone as office_phone,
             false as completed
         FROM paginated_purchases pp
         LEFT JOIN users u ON u.user_id = pp.user_prop_webuserid AND u.tenant_id = p_tenant_id
@@ -64,6 +65,7 @@ BEGIN
                     'customer_name', pd.customer_name,
                     'email', pd.email,
                     'phone', pd.phone,
+                    'office_phone', pd.office_phone,
                     'products', COALESCE(pd.items_json, '[]'::jsonb),
                     'completed', pd.completed
                 )

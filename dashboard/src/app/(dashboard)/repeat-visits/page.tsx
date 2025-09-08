@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { Task } from "@/types/tasks"
+import { Task, RepeatVisitApiTask, RepeatVisitApiResponse, SortField, SortOrder } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,31 +24,7 @@ import {
 } from "@/components/ui/select"
 import { Mail, Phone, Eye, ShoppingBag, ChevronLeft, ChevronRight, X, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, Search } from "lucide-react"
 
-import { buildApiQueryParams } from "@/lib/api-utils"
-import { analyticsHeaders } from "@/lib/api-utils"
-
-interface RepeatVisitApiTask {
-  session_id: string
-  user_id: string
-  customer_name?: string
-  email?: string
-  phone?: string
-  page_views_count: number
-  products_viewed?: number
-  event_date: string
-  products_details?: Array<{
-    title: string
-    url?: string
-  }>
-}
-
-interface RepeatVisitApiResponse {
-  data: RepeatVisitApiTask[]
-  total?: number
-}
-
-type SortField = 'customer' | 'lastVisit' | 'visitCount' | 'products' | 'priority'
-type SortOrder = 'asc' | 'desc'
+import { fetchRepeatVisitTasks } from "@/lib/api-utils"
 
 export default function RepeatVisitsPage() {
   const { selectedLocation, dateRange } = useDashboard()
@@ -81,21 +57,17 @@ export default function RepeatVisitsPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  const fetchRepeatVisitTasks = useCallback(async () => {
+  const fetchRepeatVisitTasksData = useCallback(async () => {
     try {
       setLoading(true)
       
-      const additionalParams = {
-        page: currentPage.toString(),
-        limit: itemsPerPage.toString(),
+      const response = await fetchRepeatVisitTasks({
+        selectedLocation,
+        dateRange,
+        page: currentPage,
+        limit: itemsPerPage,
         query: debouncedSearchQuery
-      }
-
-      const queryParams = buildApiQueryParams(selectedLocation, dateRange, additionalParams)
-      const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-      const url = `${baseUrl}/api/v1/tasks/repeat-visits${queryParams}`
-      
-      const response = await fetch(url, { headers: analyticsHeaders() })
+      })
       const data: RepeatVisitApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: RepeatVisitApiTask) => {
@@ -123,6 +95,7 @@ export default function RepeatVisitsPage() {
             name: task.customer_name || 'Unknown User',
             email: task.email,
             phone: task.phone,
+            office_phone: task.office_phone,
           },
                   metadata: {
           visitCount: task.page_views_count,
@@ -152,9 +125,9 @@ export default function RepeatVisitsPage() {
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchRepeatVisitTasks()
+      fetchRepeatVisitTasksData()
     }
-  }, [dateRange, fetchRepeatVisitTasks])
+  }, [dateRange, fetchRepeatVisitTasksData])
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)

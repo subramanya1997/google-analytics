@@ -105,6 +105,7 @@ class AuthenticationService:
                         "BigQuery", {}
                     )  # Note: "BigQuery" not "bigquery-config"
                     sftp_config = parsed_settings.get("SFTP Config", {})
+                    email_config = parsed_settings.get("SMTP Config", {})
 
                     # Process BigQuery config - service_account is stored as JSON string
                     bigquery_config = {}
@@ -136,10 +137,11 @@ class AuthenticationService:
                         "postgres_config": postgres_config,
                         "bigquery_config": bigquery_config,
                         "sftp_config": sftp_config,
+                        "email_config": email_config,
                     }
 
                     logger.info(
-                        f"📊 Configurations found - PostgreSQL: {'✅' if postgres_config else '❌'}, BigQuery: {'✅' if bigquery_config else '❌'}, SFTP: {'✅' if sftp_config else '❌'}"
+                        f"📊 Configurations found - PostgreSQL: {'✅' if postgres_config else '❌'}, BigQuery: {'✅' if bigquery_config else '❌'}, SFTP: {'✅' if sftp_config else '❌'}, SMTP: {'✅' if email_config else '❌'}"
                     )
 
                 except json.JSONDecodeError as e:
@@ -148,6 +150,7 @@ class AuthenticationService:
                         "postgres_config": {},
                         "bigquery_config": {},
                         "sftp_config": {},
+                        "email_config": {},
                     }
 
                 # Step 3: Validate configurations
@@ -174,9 +177,10 @@ class AuthenticationService:
                 postgres_config = formatted_settings.get("postgres_config", {})
                 bigquery_config = formatted_settings.get("bigquery_config", {})
                 sftp_config = formatted_settings.get("sftp_config", {})
+                email_config = formatted_settings.get("email_config", {})
 
                 if not self._upsert_tenant_configurations(
-                    account_id, postgres_config, bigquery_config, sftp_config, username
+                    account_id, postgres_config, bigquery_config, sftp_config, email_config, username
                 ):
                     return {
                         "success": False,
@@ -228,6 +232,7 @@ class AuthenticationService:
         postgres_config = settings_data.get("postgres_config", {})
         bigquery_config = settings_data.get("bigquery_config", {})
         sftp_config = settings_data.get("sftp_config", {})
+        email_config = settings_data.get("email_config", {})
 
         missing_configs = []
         invalid_configs = []
@@ -247,6 +252,11 @@ class AuthenticationService:
             missing_configs.append("sftp_config")
         elif not self._test_sftp_config(sftp_config):
             invalid_configs.append("sftp_config")
+
+        if not email_config:
+            missing_configs.append("email_config")
+        elif not self._test_email_config(email_config):
+            invalid_configs.append("email_config")
 
         return {
             "valid": len(missing_configs) == 0 and len(invalid_configs) == 0,
@@ -308,12 +318,50 @@ class AuthenticationService:
             logger.error(f"❌ SFTP config validation failed: {e}")
             return False
 
+    def _test_email_config(self, config: Dict[str, Any]) -> bool:
+        """Test email configuration."""
+        try:
+            logger.info(f"🔍 Testing email configuration for server: {config.get('server')}")
+            required_fields = ["server", "port", "from_address"]
+            if not all(field in config for field in required_fields):
+                logger.error(f"❌ Email config missing required fields: {required_fields}")
+                logger.error(f"❌ Available fields: {list(config.keys())}")
+                return False
+
+            # Validate port is a number
+            try:
+                port_value = config.get("port")
+                if isinstance(port_value, str):
+                    port = int(port_value)
+                else:
+                    port = int(port_value) if port_value else 0
+                    
+                if port <= 0 or port > 65535:
+                    logger.error(f"❌ Email config has invalid SMTP port: {port}")
+                    return False
+            except (ValueError, TypeError):
+                logger.error(f"❌ Email config SMTP port is not a valid number: {config.get('port')}")
+                return False
+
+            # Validate email format for from_address
+            from_address = config.get("from_address", "")
+            if "@" not in from_address or "." not in from_address:
+                logger.error(f"❌ Email config has invalid from_address format: {from_address}")
+                return False
+
+            logger.info(f"✅ Email configuration valid")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Email config validation failed: {e}")
+            return False
+
     def _upsert_tenant_configurations(
         self,
         tenant_id: str,
         postgres_config: Dict[str, Any],
         bigquery_config: Dict[str, Any],
         sftp_config: Dict[str, Any],
+        email_config: Dict[str, Any],
         username: str,
     ) -> bool:
         """
@@ -328,6 +376,8 @@ class AuthenticationService:
             postgres_config: PostgreSQL configuration from authentication API
             bigquery_config: BigQuery configuration from authentication API
             sftp_config: SFTP configuration from authentication API
+            email_config: Email/SMTP configuration from authentication API
+            username: Username for tenant identification
 
         Returns:
             True if successful, False otherwise
@@ -354,6 +404,7 @@ class AuthenticationService:
                     ),
                     "postgres_config": json.dumps(postgres_config),
                     "sftp_config": json.dumps(sftp_config),
+                    "email_config": json.dumps(email_config),
                 }
 
                 if result == 0:
@@ -364,12 +415,12 @@ class AuthenticationService:
                             INSERT INTO tenants (
                                 id, name, 
                                 bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
-                                postgres_config, sftp_config,
+                                postgres_config, sftp_config, email_config,
                                 is_active, created_at, updated_at
                             ) VALUES (
                                 :tenant_id, :name,
                                 :bigquery_project_id, :bigquery_dataset_id, :bigquery_credentials,
-                                :postgres_config, :sftp_config,
+                                :postgres_config, :sftp_config, :email_config,
                                 true, NOW(), NOW()
                             )
                         """
@@ -390,6 +441,7 @@ class AuthenticationService:
                                 bigquery_credentials = :bigquery_credentials,
                                 postgres_config = :postgres_config,
                                 sftp_config = :sftp_config,
+                                email_config = :email_config,
                                 is_active = true,
                                 updated_at = NOW()
                             WHERE id = :tenant_id

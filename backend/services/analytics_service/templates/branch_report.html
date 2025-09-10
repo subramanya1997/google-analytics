@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Sales Report</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f4f4f4;">
+    <!-- Main Container -->
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+        <tr>
+            <td style="padding: 20px;">
+                <!-- Email Content -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 900px; margin: 0 auto; background-color: #ffffff; border-radius: 8px;">
+                    
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 30px 30px 20px 30px; border-bottom: 2px solid #e0e0e0;">
+                            <h1 style="margin: 0 0 10px 0; font-size: 24px; color: #333333; font-weight: bold;">
+                                {{ location.locationName }}{% if location.city %} - {{ location.city }}{% if location.state %}, {{ location.state }}{% endif %}{% endif %}
+                            </h1>
+                            <p style="margin: 0; font-size: 16px; color: #666666;">
+                                Daily Sales Report - {{ report_date.strftime('%B %d, %Y') }}
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Summary Metrics -->
+                    <tr>
+                        <td style="padding: 30px;">
+                            <h2 style="margin: 0 0 20px 0; font-size: 20px; color: #333333;">Summary</h2>
+                            
+                            <!-- Metrics Table -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td width="50%" style="padding: 15px; background-color: #f8f9fa; border: 1px solid #e0e0e0; text-align: center; vertical-align: top;">
+                                        <div style="font-size: 14px; color: #666666; margin-bottom: 8px; font-weight: bold;">Total Purchases</div>
+                                        <div style="font-size: 28px; color: #007bff; font-weight: bold;">{{ summary.total_purchases }}</div>
+                                    </td>
+                                    <td width="50%" style="padding: 15px; background-color: #f8f9fa; border: 1px solid #e0e0e0; border-left: none; text-align: center; vertical-align: top;">
+                                        <div style="font-size: 14px; color: #666666; margin-bottom: 8px; font-weight: bold;">Total Revenue</div>
+                                        <div style="font-size: 28px; color: #28a745; font-weight: bold;">${{ "%.2f"|format(summary.total_revenue) }}</div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td width="50%" style="padding: 15px; background-color: #f8f9fa; border: 1px solid #e0e0e0; border-top: none; text-align: center; vertical-align: top;">
+                                        <div style="font-size: 14px; color: #666666; margin-bottom: 8px; font-weight: bold;">Cart Abandonment</div>
+                                        <div style="font-size: 28px; color: #ffc107; font-weight: bold;">{{ summary.total_cart_abandonment }}</div>
+                                    </td>
+                                    <td width="50%" style="padding: 15px; background-color: #f8f9fa; border: 1px solid #e0e0e0; border-left: none; border-top: none; text-align: center; vertical-align: top;">
+                                        <div style="font-size: 14px; color: #666666; margin-bottom: 8px; font-weight: bold;">Search Issues</div>
+                                        <div style="font-size: 28px; color: #dc3545; font-weight: bold;">{{ summary.total_search_issues }}</div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                    <!-- Purchase Tasks Section -->
+                    {% if tasks.purchases %}
+                    <tr>
+                        <td style="padding: 0 30px 30px 30px;">
+                            <h2 style="margin: 0 0 15px 0; font-size: 20px; color: #333333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">
+                                Purchase Follow-up Tasks ({{ summary.total_purchases }})
+                            </h2>
+                            
+                            <!-- Purchase Tasks Table -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border: 1px solid #e0e0e0;">
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0;">Customer Details</th>
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0;">Products</th>
+                                </tr>
+                                {% for purchase in tasks.purchases %}
+                                <tr{% if loop.index % 2 == 0 %} style="background-color: #f8f9fa;"{% endif %}>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        <strong style="color: #333333;">{{ purchase.customer_name or 'Unknown Customer' }}</strong><br>
+                                        Transaction: {{ purchase.transaction_id }}<br>
+                                        Total: ${{ "%.2f"|format(purchase.order_value) }}<br>
+                                        {% if purchase.email %}
+                                        Contact: <a href="mailto:{{ purchase.email }}" style="color: #007bff; text-decoration: none;">{{ purchase.email }}</a><br>
+                                        {% endif %}
+                                        {% if purchase.phone %}
+                                        Phone: {{ purchase.phone }}
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        {% if purchase.products %}
+                                            {% set products = purchase.products | json_parse %}
+                                            {% for product in products %}
+                                                {{ product.quantity or 1 }} x {{ product.item_name or 'Product' }}
+                                                {% if product.item_id %} ({{ product.item_id }}){% endif %}<br>
+                                            {% endfor %}
+                                        {% else %}
+                                            Purchase details available
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- Cart Abandonment Tasks Section -->
+                    {% if tasks.cart_abandonment %}
+                    <tr>
+                        <td style="padding: 0 30px 30px 30px;">
+                            <h2 style="margin: 0 0 15px 0; font-size: 20px; color: #333333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">
+                                Cart Abandonment Recovery Tasks ({{ summary.total_cart_abandonment }})
+                            </h2>
+                            
+                            <!-- Cart Abandonment Table -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border: 1px solid #e0e0e0;">
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0;">Customer Details</th>
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0;">Abandoned Products</th>
+                                </tr>
+                                {% for cart in tasks.cart_abandonment %}
+                                <tr{% if loop.index % 2 == 0 %} style="background-color: #f8f9fa;"{% endif %}>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        <strong style="color: #333333;">{{ cart.customer_name or 'Unknown Customer' }}</strong><br>
+                                        Cart Value: ${{ "%.2f"|format(cart.total_value) }}<br>
+                                        Items: {{ cart.items_count }}<br>
+                                        {% if cart.email %}
+                                        Contact: <a href="mailto:{{ cart.email }}" style="color: #007bff; text-decoration: none;">{{ cart.email }}</a><br>
+                                        {% endif %}
+                                        {% if cart.phone %}
+                                        Phone: {{ cart.phone }}
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        {% if cart.products %}
+                                            {% set products = cart.products | json_parse %}
+                                            {% for product in products %}
+                                                {{ product.quantity or 1 }} x {{ product.item_name or 'Product' }}
+                                                {% if product.item_id %} ({{ product.item_id }}){% endif %}<br>
+                                            {% endfor %}
+                                        {% else %}
+                                            Cart items available
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- Search Analysis Tasks Section -->
+                    {% if tasks.search_analysis %}
+                    <tr>
+                        <td style="padding: 0 30px 30px 30px;">
+                            <h2 style="margin: 0 0 15px 0; font-size: 20px; color: #333333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">
+                                Failed Search Recovery Tasks ({{ summary.total_search_issues }})
+                            </h2>
+                            
+                            <!-- Search Analysis Table -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border: 1px solid #e0e0e0;">
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0;">Search Details</th>
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0;">Customer</th>
+                                </tr>
+                                {% for search in tasks.search_analysis %}
+                                <tr{% if loop.index % 2 == 0 %} style="background-color: #f8f9fa;"{% endif %}>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        <strong>Search Term:</strong> {{ search.search_term }}<br>
+                                        <strong>Type:</strong> {{ search.search_type.title() }}<br>
+                                        <strong>Count:</strong> {{ search.search_count }}
+                                    </td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        <strong style="color: #333333;">{{ search.customer_name or 'Unknown Customer' }}</strong><br>
+                                        {% if search.email %}
+                                        Contact: <a href="mailto:{{ search.email }}" style="color: #007bff; text-decoration: none;">{{ search.email }}</a><br>
+                                        {% endif %}
+                                        {% if search.phone %}
+                                        Phone: {{ search.phone }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- Repeat Visit Tasks Section -->
+                    {% if tasks.repeat_visits %}
+                    <tr>
+                        <td style="padding: 0 30px 30px 30px;">
+                            <h2 style="margin: 0 0 15px 0; font-size: 20px; color: #333333; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">
+                                Repeat Visit Conversion Tasks ({{ summary.total_repeat_visits }})
+                            </h2>
+                            
+                            <!-- Repeat Visits Table -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border: 1px solid #e0e0e0;">
+                                <tr style="background-color: #f2f2f2;">
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0;">Customer Details</th>
+                                    <th style="padding: 12px; font-size: 14px; font-weight: bold; color: #333333; text-align: left; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0;">Activity</th>
+                                </tr>
+                                {% for visitor in tasks.repeat_visits %}
+                                <tr{% if loop.index % 2 == 0 %} style="background-color: #f8f9fa;"{% endif %}>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        <strong style="color: #333333;">{{ visitor.customer_name or 'Unknown Customer' }}</strong><br>
+                                        Pages Viewed: {{ visitor.page_views_count }}<br>
+                                        {% if visitor.email %}
+                                        Contact: <a href="mailto:{{ visitor.email }}" style="color: #007bff; text-decoration: none;">{{ visitor.email }}</a><br>
+                                        {% endif %}
+                                        {% if visitor.phone %}
+                                        Phone: {{ visitor.phone }}
+                                        {% endif %}
+                                    </td>
+                                    <td style="padding: 12px; border-bottom: 1px solid #e0e0e0; border-left: 1px solid #e0e0e0; vertical-align: top; line-height: 1.6;">
+                                        {% if visitor.products_details %}
+                                            <strong>Products Viewed:</strong><br>
+                                            {% set products = visitor.products_details | json_parse %}
+                                            {% for product in products %}
+                                                {{ product.title or 'Product' }}
+                                                {% if product.price %} - ${{ "%.2f"|format(product.price) }}{% endif %}<br>
+                                            {% endfor %}
+                                        {% else %}
+                                            High engagement visitor - {{ visitor.page_views_count }} pages viewed
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- No Tasks Message -->
+                    {% if not tasks.purchases and not tasks.cart_abandonment and not tasks.search_analysis and not tasks.repeat_visits %}
+                    <tr>
+                        <td style="padding: 0 30px 30px 30px;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f8f9fa; border: 1px solid #e0e0e0;">
+                                <tr>
+                                    <td style="padding: 30px; text-align: center; color: #666666;">
+                                        <h2 style="margin: 0 0 15px 0; font-size: 20px; color: #333333;">No Sales Tasks</h2>
+                                        <p style="margin: 0; font-size: 16px;">
+                                            Great news! No immediate sales tasks require attention for this branch on {{ report_date.strftime('%B %d, %Y') }}.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 30px; border-top: 1px solid #e0e0e0; background-color: #f8f9fa;">
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%">
+                                <tr>
+                                    <td style="text-align: center; color: #666666; font-size: 12px; line-height: 1.5;">
+                                        <p style="margin: 0 0 8px 0;"><strong>Report Generated:</strong> {{ generated_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                                        <p style="margin: 0 0 8px 0;">This is an automated branch report from the Sales Intelligence System.</p>
+                                        <p style="margin: 0;">This report covers activity on {{ report_date.strftime('%Y-%m-%d') }}.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                    
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

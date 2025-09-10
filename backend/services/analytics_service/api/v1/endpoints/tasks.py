@@ -8,13 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
 from services.analytics_service.api.dependencies import get_tenant_id
+from common.config import get_settings
 from services.analytics_service.database.dependencies import get_analytics_db_client
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
 
 router = APIRouter()
 
-DEFAULT_PAGE_SIZE = 50
-MAX_PAGE_SIZE = 1000
+# Get settings for pagination constants
+_settings = get_settings("analytics-service")
 
 # Task-specific endpoints
 @router.get("/purchases", response_model=Dict[str, Any])
@@ -22,7 +23,7 @@ async def get_purchase_tasks(
     tenant_id: str = Depends(get_tenant_id),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(
-        default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"
+        default=_settings.DEFAULT_PAGE_SIZE, ge=1, le=_settings.MAX_PAGE_SIZE, description="Items per page"
     ),
     query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
@@ -63,7 +64,7 @@ async def get_cart_abandonment_tasks(
     tenant_id: str = Depends(get_tenant_id),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(
-        default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"
+        default=_settings.DEFAULT_PAGE_SIZE, ge=1, le=_settings.MAX_PAGE_SIZE, description="Items per page"
     ),
     query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
@@ -104,7 +105,7 @@ async def get_search_analysis_tasks(
     tenant_id: str = Depends(get_tenant_id),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(
-        default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"
+        default=_settings.DEFAULT_PAGE_SIZE, ge=1, le=_settings.MAX_PAGE_SIZE, description="Items per page"
     ),
     query: Optional[str] = Query(default=None, description="Search query"),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
@@ -149,7 +150,7 @@ async def get_performance_tasks(
     tenant_id: str = Depends(get_tenant_id),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(
-        default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"
+        default=_settings.DEFAULT_PAGE_SIZE, ge=1, le=_settings.MAX_PAGE_SIZE, description="Items per page"
     ),
     location_id: Optional[str] = Query(default=None, description="Location filter"),
     start_date: Optional[str] = Query(default=None, description="Start date filter"),
@@ -186,7 +187,7 @@ async def get_repeat_visit_tasks(
     tenant_id: str = Depends(get_tenant_id),
     page: int = Query(default=1, ge=1, description="Page number"),
     limit: int = Query(
-        default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Items per page"
+        default=_settings.DEFAULT_PAGE_SIZE, ge=1, le=_settings.MAX_PAGE_SIZE, description="Items per page"
     ),
     query: Optional[str] = Query(
         default=None, description="Search query on user name, email, or company"

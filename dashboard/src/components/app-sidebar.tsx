@@ -25,6 +25,7 @@ import {
   AlertCircle,
   ShoppingBag,
   Database,
+  Mail,
 } from "lucide-react"
 
 const data = {
@@ -70,6 +71,11 @@ const data = {
         title: "Data Management",
         url: "/data-management",
         icon: Database,
+      },
+      {
+        title: "Email Management",
+        url: "/email-management",
+        icon: Mail,
       },
     ],
   },

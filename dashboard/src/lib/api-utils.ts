@@ -304,3 +304,70 @@ export async function startSync(tenantId: string) {
     body: JSON.stringify({ tenant_id: tenantId }),
   })
 }
+
+// =============== Email Management APIs ===============
+
+export async function fetchEmailConfig() {
+  return fetchFromAnalyticsService('email/config')
+}
+
+export async function fetchBranchEmailMappings() {
+  return fetchFromAnalyticsService('email/mappings')
+}
+
+export async function updateBranchEmailMappings(mappings: any[]) {
+  return fetchFromAnalyticsService('email/mappings', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(mappings),
+  })
+}
+
+export async function sendEmailReports(data: {
+  report_date: string
+  branch_codes?: string[]
+}) {
+  return fetchFromAnalyticsService('email/send-reports', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  })
+}
+
+export async function fetchEmailJobs(params: {
+  page?: number
+  limit?: number
+  status?: string
+}) {
+  const queryParams = new URLSearchParams()
+  if (params.page) queryParams.append('page', params.page.toString())
+  if (params.limit) queryParams.append('limit', params.limit.toString())
+  if (params.status) queryParams.append('status', params.status)
+  
+  const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+  return fetchFromAnalyticsService(`email/jobs${query}`)
+}
+
+export async function fetchEmailJobStatus(jobId: string) {
+  return fetchFromAnalyticsService(`email/jobs/${jobId}`)
+}
+
+export async function fetchEmailHistory(params: {
+  page?: number
+  limit?: number
+  status?: string
+  branch_code?: string
+}) {
+  const queryParams = new URLSearchParams()
+  if (params.page) queryParams.append('page', params.page.toString())
+  if (params.limit) queryParams.append('limit', params.limit.toString())
+  if (params.status) queryParams.append('status', params.status)
+  if (params.branch_code) queryParams.append('branch_code', params.branch_code)
+  
+  const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+  return fetchFromAnalyticsService(`email/history${query}`)
+}

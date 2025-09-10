@@ -122,3 +122,91 @@ export interface JobsResponse {
   limit: number
   offset: number
 }
+
+// ================================
+// EMAIL MANAGEMENT API TYPES
+// ================================
+
+export interface EmailConfig {
+  server: string
+  port: number | string
+  from_address: string
+  username?: string
+  password?: string
+  use_tls?: boolean
+  use_ssl?: boolean
+}
+
+export interface EmailConfigResponse {
+  tenant_id: string
+  config: EmailConfig | null
+  configured: boolean
+}
+
+export interface BranchEmailMapping {
+  id?: string
+  branch_code: string
+  branch_name?: string
+  sales_rep_email: string
+  sales_rep_name?: string
+  is_enabled: boolean
+  created_at?: string
+  updated_at?: string
+}
+
+export interface BranchEmailMappingUpdateResponse {
+  success: boolean
+  message: string
+  created: number
+  updated: number
+  total: number
+}
+
+export interface EmailJob {
+  job_id: string
+  status: string
+  tenant_id: string
+  report_date: string
+  target_branches: string[]
+  total_emails: number
+  emails_sent: number
+  emails_failed: number
+  error_message?: string
+  created_at: string
+  started_at?: string
+  completed_at?: string
+  message?: string
+}
+
+export interface EmailJobsResponse {
+  data: EmailJob[]
+  total: number
+  page: number
+  limit: number
+}
+
+export interface EmailHistory {
+  id: string
+  job_id?: string
+  branch_code: string
+  sales_rep_email: string
+  sales_rep_name?: string
+  subject: string
+  report_date: string
+  status: string
+  smtp_response?: string
+  error_message?: string
+  sent_at: string
+}
+
+export interface EmailHistoryResponse {
+  data: EmailHistory[]
+  total: number
+  page: number
+  limit: number
+}
+
+export interface SendReportsRequest {
+  report_date: string
+  branch_codes?: string[]
+}

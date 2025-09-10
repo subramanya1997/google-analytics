@@ -17,6 +17,9 @@ FUNCTIONS_DIR = os.path.join(DB_DIR, "functions")
 # Define the correct order for table creation to respect dependencies
 TABLE_CREATION_ORDER = [
     "tenants.sql",
+    "branch_email_mappings.sql",
+    "email_sending_jobs.sql",
+    "email_send_history.sql",
     "users.sql",
     "locations.sql",
     "processing_jobs.sql",

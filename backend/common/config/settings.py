@@ -38,6 +38,10 @@ class BaseServiceSettings(BaseSettings):
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 5
     
+    # API Pagination Configuration
+    DEFAULT_PAGE_SIZE: int = 50
+    MAX_PAGE_SIZE: int = 1000
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

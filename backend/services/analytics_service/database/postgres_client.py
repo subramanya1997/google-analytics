@@ -471,3 +471,479 @@ class AnalyticsPostgresClient:
         except Exception as e:
             logger.error(f"Error fetching complete dashboard data: {e}")
             raise
+
+    # ======================================
+    # EMAIL CONFIGURATION METHODS
+    # ======================================
+
+    def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+        """Get email configuration for a tenant."""
+        try:
+            with self.get_db_session() as session:
+                result = session.execute(
+                    text("SELECT email_config FROM tenants WHERE id = :tenant_id"),
+                    {"tenant_id": tenant_id}
+                ).scalar()
+                
+                if result:
+                    import json
+                    return json.loads(result) if isinstance(result, str) else result
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching email config for tenant {tenant_id}: {e}")
+            return None
+
+    # ======================================
+    # BRANCH EMAIL MAPPING METHODS
+    # ======================================
+
+    def get_branch_email_mappings(
+        self, tenant_id: str, branch_code: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get branch email mappings for a tenant."""
+        try:
+            with self.get_db_session() as session:
+                query = """
+                    SELECT id, branch_code, branch_name, sales_rep_email, 
+                           sales_rep_name, is_enabled, created_at, updated_at
+                    FROM branch_email_mappings
+                    WHERE tenant_id = :tenant_id
+                """
+                params = {"tenant_id": tenant_id}
+                
+                if branch_code:
+                    query += " AND branch_code = :branch_code"
+                    params["branch_code"] = branch_code
+                
+                query += " AND is_enabled = true ORDER BY branch_code, sales_rep_email"
+                
+                results = session.execute(text(query), params).fetchall()
+                
+                mappings = []
+                for row in results:
+                    mappings.append({
+                        "id": str(row.id),
+                        "branch_code": row.branch_code,
+                        "branch_name": row.branch_name,
+                        "sales_rep_email": row.sales_rep_email,
+                        "sales_rep_name": row.sales_rep_name,
+                        "is_enabled": row.is_enabled,
+                        "created_at": row.created_at,
+                        "updated_at": row.updated_at
+                    })
+                
+                return mappings
+                
+        except Exception as e:
+            logger.error(f"Error fetching branch email mappings: {e}")
+            return []
+
+    def update_branch_email_mappings(
+        self, tenant_id: str, mappings: List[Any]
+    ) -> Dict[str, int]:
+        """Update branch email mappings for a tenant."""
+        try:
+            with self.get_db_session() as session:
+                # First, disable all existing mappings
+                session.execute(
+                    text("""
+                        UPDATE branch_email_mappings 
+                        SET is_enabled = false, updated_at = NOW()
+                        WHERE tenant_id = :tenant_id
+                    """),
+                    {"tenant_id": tenant_id}
+                )
+                
+                created_count = 0
+                updated_count = 0
+                
+                for mapping in mappings:
+                    # Handle both Pydantic models and dictionaries
+                    if hasattr(mapping, 'branch_code'):
+                        # Pydantic model
+                        branch_code = mapping.branch_code
+                        branch_name = mapping.branch_name
+                        sales_rep_email = mapping.sales_rep_email
+                        sales_rep_name = mapping.sales_rep_name
+                        is_enabled = mapping.is_enabled
+                    else:
+                        # Dictionary
+                        branch_code = mapping["branch_code"]
+                        branch_name = mapping.get("branch_name")
+                        sales_rep_email = mapping["sales_rep_email"]
+                        sales_rep_name = mapping.get("sales_rep_name")
+                        is_enabled = mapping.get("is_enabled", True)
+                    
+                    # Check if mapping exists
+                    existing = session.execute(
+                        text("""
+                            SELECT id FROM branch_email_mappings
+                            WHERE tenant_id = :tenant_id 
+                            AND branch_code = :branch_code 
+                            AND sales_rep_email = :sales_rep_email
+                        """),
+                        {
+                            "tenant_id": tenant_id,
+                            "branch_code": branch_code,
+                            "sales_rep_email": sales_rep_email
+                        }
+                    ).scalar()
+                    
+                    if existing:
+                        # Update existing
+                        session.execute(
+                            text("""
+                                UPDATE branch_email_mappings SET
+                                    branch_name = :branch_name,
+                                    sales_rep_name = :sales_rep_name,
+                                    is_enabled = :is_enabled,
+                                    updated_at = NOW()
+                                WHERE id = :id
+                            """),
+                            {
+                                "id": existing,
+                                "branch_name": branch_name,
+                                "sales_rep_name": sales_rep_name,
+                                "is_enabled": is_enabled
+                            }
+                        )
+                        updated_count += 1
+                    else:
+                        # Create new
+                        session.execute(
+                            text("""
+                                INSERT INTO branch_email_mappings (
+                                    tenant_id, branch_code, branch_name,
+                                    sales_rep_email, sales_rep_name, is_enabled
+                                ) VALUES (
+                                    :tenant_id, :branch_code, :branch_name,
+                                    :sales_rep_email, :sales_rep_name, :is_enabled
+                                )
+                            """),
+                            {
+                                "tenant_id": tenant_id,
+                                "branch_code": branch_code,
+                                "branch_name": branch_name,
+                                "sales_rep_email": sales_rep_email,
+                                "sales_rep_name": sales_rep_name,
+                                "is_enabled": is_enabled
+                            }
+                        )
+                        created_count += 1
+                
+                session.commit()
+                
+                return {
+                    "created": created_count,
+                    "updated": updated_count,
+                    "total": created_count + updated_count
+                }
+                
+        except Exception as e:
+            logger.error(f"Error updating branch email mappings: {e}")
+            raise
+
+    # ======================================
+    # EMAIL JOB METHODS
+    # ======================================
+
+    def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new email sending job."""
+        try:
+            with self.get_db_session() as session:
+                result = session.execute(
+                    text("""
+                        INSERT INTO email_sending_jobs (
+                            tenant_id, job_id, status, report_date, 
+                            target_branches
+                        ) VALUES (
+                            :tenant_id, :job_id, :status, :report_date,
+                            :target_branches
+                        )
+                        RETURNING id, job_id, status
+                    """),
+                    {
+                        "tenant_id": job_data["tenant_id"],
+                        "job_id": job_data["job_id"],
+                        "status": job_data["status"],
+                        "report_date": job_data["report_date"],
+                        "target_branches": job_data["target_branches"]
+                    }
+                ).fetchone()
+                
+                session.commit()
+                
+                return {
+                    "id": str(result.id),
+                    "job_id": result.job_id,
+                    "status": result.status
+                }
+                
+        except Exception as e:
+            logger.error(f"Error creating email job: {e}")
+            raise
+
+    def update_email_job_status(
+        self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Update email job status and other fields."""
+        try:
+            with self.get_db_session() as session:
+                set_clause = "status = :status, updated_at = NOW()"
+                params = {"job_id": job_id, "status": status}
+                
+                if updates:
+                    for key, value in updates.items():
+                        if key in ["started_at", "completed_at", "total_emails", 
+                                 "emails_sent", "emails_failed", "error_message"]:
+                            set_clause += f", {key} = :{key}"
+                            params[key] = value
+                
+                result = session.execute(
+                    text(f"""
+                        UPDATE email_sending_jobs 
+                        SET {set_clause}
+                        WHERE job_id = :job_id
+                    """),
+                    params
+                )
+                
+                session.commit()
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logger.error(f"Error updating email job status: {e}")
+            return False
+
+    def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get email job status."""
+        try:
+            with self.get_db_session() as session:
+                result = session.execute(
+                    text("""
+                        SELECT job_id, status, report_date, target_branches,
+                               total_emails, emails_sent, emails_failed, error_message,
+                               created_at, started_at, completed_at
+                        FROM email_sending_jobs 
+                        WHERE tenant_id = :tenant_id AND job_id = :job_id
+                    """),
+                    {"tenant_id": tenant_id, "job_id": job_id}
+                ).fetchone()
+                
+                if result:
+                    return {
+                        "job_id": result.job_id,
+                        "status": result.status,
+                        "tenant_id": tenant_id,
+                        "report_date": result.report_date,
+                        "target_branches": result.target_branches or [],
+                        "total_emails": result.total_emails or 0,
+                        "emails_sent": result.emails_sent or 0,
+                        "emails_failed": result.emails_failed or 0,
+                        "error_message": result.error_message,
+                        "created_at": result.created_at,
+                        "started_at": result.started_at,
+                        "completed_at": result.completed_at
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error fetching email job status: {e}")
+            return None
+
+    def get_email_jobs(
+        self, 
+        tenant_id: str, 
+        page: int = 1, 
+        limit: int = 50,
+        status: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get email job history with pagination."""
+        try:
+            with self.get_db_session() as session:
+                # Build query
+                where_clause = "WHERE tenant_id = :tenant_id"
+                params = {"tenant_id": tenant_id}
+                
+                if status:
+                    where_clause += " AND status = :status"
+                    params["status"] = status
+                
+                # Get total count
+                count_result = session.execute(
+                    text(f"SELECT COUNT(*) FROM email_sending_jobs {where_clause}"),
+                    params
+                ).scalar()
+                
+                # Get paginated data
+                offset = (page - 1) * limit
+                params.update({"limit": limit, "offset": offset})
+                
+                results = session.execute(
+                    text(f"""
+                        SELECT job_id, status, report_date, target_branches,
+                               total_emails, emails_sent, emails_failed, error_message,
+                               created_at, started_at, completed_at
+                        FROM email_sending_jobs 
+                        {where_clause}
+                        ORDER BY created_at DESC
+                        LIMIT :limit OFFSET :offset
+                    """),
+                    params
+                ).fetchall()
+                
+                jobs = []
+                for row in results:
+                    jobs.append({
+                        "job_id": row.job_id,
+                        "status": row.status,
+                        "tenant_id": tenant_id,
+                        "report_date": row.report_date,
+                        "target_branches": row.target_branches or [],
+                        "total_emails": row.total_emails or 0,
+                        "emails_sent": row.emails_sent or 0,
+                        "emails_failed": row.emails_failed or 0,
+                        "error_message": row.error_message,
+                        "created_at": row.created_at,
+                        "started_at": row.started_at,
+                        "completed_at": row.completed_at
+                    })
+                
+                return {
+                    "data": jobs,
+                    "total": count_result,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": (page * limit) < count_result
+                }
+                
+        except Exception as e:
+            logger.error(f"Error fetching email jobs: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+
+    # ======================================
+    # EMAIL HISTORY METHODS
+    # ======================================
+
+    def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
+        """Log email send history record."""
+        try:
+            with self.get_db_session() as session:
+                # Ensure all required fields are present
+                data = {
+                    "tenant_id": history_data["tenant_id"],
+                    "job_id": history_data.get("job_id"),
+                    "branch_code": history_data["branch_code"],
+                    "sales_rep_email": history_data["sales_rep_email"],
+                    "sales_rep_name": history_data.get("sales_rep_name"),
+                    "subject": history_data["subject"],
+                    "report_date": history_data["report_date"],
+                    "status": history_data["status"],
+                    "smtp_response": history_data.get("smtp_response"),
+                    "error_message": history_data.get("error_message")  # Can be None
+                }
+                
+                session.execute(
+                    text("""
+                        INSERT INTO email_send_history (
+                            tenant_id, job_id, branch_code, sales_rep_email,
+                            sales_rep_name, subject, report_date, status,
+                            smtp_response, error_message
+                        ) VALUES (
+                            :tenant_id, :job_id, :branch_code, :sales_rep_email,
+                            :sales_rep_name, :subject, :report_date, :status,
+                            :smtp_response, :error_message
+                        )
+                    """),
+                    data
+                )
+                session.commit()
+                
+        except Exception as e:
+            logger.error(f"Error logging email send history: {e}")
+
+    def get_email_send_history(
+        self,
+        tenant_id: str,
+        page: int = 1,
+        limit: int = 50,
+        branch_code: Optional[str] = None,
+        status: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get email send history with pagination and filtering."""
+        try:
+            with self.get_db_session() as session:
+                # Build WHERE clause
+                where_conditions = ["tenant_id = :tenant_id"]
+                params = {"tenant_id": tenant_id}
+                
+                if branch_code:
+                    where_conditions.append("branch_code = :branch_code")
+                    params["branch_code"] = branch_code
+                    
+                if status:
+                    where_conditions.append("status = :status")
+                    params["status"] = status
+                    
+                if start_date:
+                    where_conditions.append("report_date >= :start_date")
+                    params["start_date"] = start_date
+                    
+                if end_date:
+                    where_conditions.append("report_date <= :end_date") 
+                    params["end_date"] = end_date
+                
+                where_clause = "WHERE " + " AND ".join(where_conditions)
+                
+                # Get total count
+                count_result = session.execute(
+                    text(f"SELECT COUNT(*) FROM email_send_history {where_clause}"),
+                    params
+                ).scalar()
+                
+                # Get paginated data
+                offset = (page - 1) * limit
+                params.update({"limit": limit, "offset": offset})
+                
+                results = session.execute(
+                    text(f"""
+                        SELECT id, job_id, branch_code, sales_rep_email, sales_rep_name,
+                               subject, report_date, status, smtp_response, error_message, sent_at
+                        FROM email_send_history
+                        {where_clause}
+                        ORDER BY sent_at DESC
+                        LIMIT :limit OFFSET :offset
+                    """),
+                    params
+                ).fetchall()
+                
+                history = []
+                for row in results:
+                    history.append({
+                        "id": str(row.id),
+                        "job_id": row.job_id,
+                        "branch_code": row.branch_code,
+                        "sales_rep_email": row.sales_rep_email,
+                        "sales_rep_name": row.sales_rep_name,
+                        "subject": row.subject,
+                        "report_date": row.report_date,
+                        "status": row.status,
+                        "smtp_response": row.smtp_response,
+                        "error_message": row.error_message,
+                        "sent_at": row.sent_at
+                    })
+                
+                return {
+                    "data": history,
+                    "total": count_result,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": (page * limit) < count_result
+                }
+                
+        except Exception as e:
+            logger.error(f"Error fetching email send history: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}

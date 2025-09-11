@@ -1,96 +1,156 @@
-.PHONY: all load_data export_report generate_report clean clean-all run_dashboard sftp_sync install install_dashboard build_dashboard start_dashboard install_backend run_backend
+.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean services_start service_analytics service_data service_auth stop_services clean logs
 
 # Variables
-PYTHON = python
-DATA_DIR = data
-USER_FILE = UserReport.xlsx
-LOCATIONS_FILE = Locations_List1750281613134.xlsx
-DB_FILE = db/branch_wise_location.db
-EXPORT_DIR = branch_reports
-DASHBOARD_DIR = dashboard
 BACKEND_DIR = backend
-CONFIG_FILE = configs/sftp_config.json
+DASHBOARD_DIR = dashboard
+SCRIPTS_DIR = $(BACKEND_DIR)/scripts
 
-all: load_data export_report generate_report
+# Default target
+all: help
 
-install:
-	@echo "Installing Python dependencies..."
-	pip install -r requirements.txt
+# Help target
+help:
+	@echo "Google Analytics Intelligence System - Makefile"
+	@echo ""
+	@echo "Available targets:"
+	@echo ""
+	@echo "Database Management:"
+	@echo "  db_setup        - Initialize database schema and functions"
+	@echo "  db_clean        - Clean/drop all database tables and functions"
+	@echo ""
+	@echo "Backend Services:"
+	@echo "  install_backend - Install Python dependencies with uv"
+	@echo "  services_start  - Start all three backend services"
+	@echo "  service_analytics - Start analytics service only (port 8001)"
+	@echo "  service_data    - Start data service only (port 8002)"
+	@echo "  service_auth    - Start auth service only (port 8003)"
+	@echo "  stop_services   - Stop all running services"
+	@echo ""
+	@echo "Frontend Dashboard:"
+	@echo "  install_dashboard - Install Node.js dependencies"
+	@echo "  run_dashboard   - Start development server"
+	@echo "  build_dashboard - Build for production"
+	@echo "  start_dashboard - Start production server"
+	@echo ""
+	@echo "Maintenance:"
+	@echo "  clean          - Clean logs and temporary files"
+	@echo "  logs           - View service logs"
+
+# ================================
+# DATABASE MANAGEMENT
+# ================================
+
+db_setup:
+	@echo "Setting up database schema and functions..."
+	cd $(BACKEND_DIR) && uv run python scripts/init_db.py
+
+db_clean:
+	@echo "Cleaning database (WARNING: This will delete all data)..."
+	cd $(BACKEND_DIR) && uv run python scripts/clear_db.py
+
+# ================================
+# BACKEND SERVICES
+# ================================
 
 install_backend:
 	@echo "Installing backend dependencies with uv..."
 	cd $(BACKEND_DIR) && uv sync --dev
 
-run_backend:
+services_start:
 	@echo "Starting all backend services..."
-	cd $(BACKEND_DIR) && ./docker-entrypoint.sh
+	@echo "Analytics Service: http://localhost:8001"
+	@echo "Data Service: http://localhost:8002" 
+	@echo "Auth Service: http://localhost:8003"
+	@echo ""
+	@echo "Press Ctrl+C to stop all services"
+	cd $(BACKEND_DIR) && \
+	(uv run uvicorn services.analytics_service:app --port 8001 --reload &) && \
+	(uv run uvicorn services.data_service:app --port 8002 --reload &) && \
+	(uv run uvicorn services.auth_service:app --port 8003 --reload &) && \
+	wait
 
-sftp_sync:
-	@echo "Running SFTP sync and data loading..."
-	$(PYTHON) scripts/sftp_sync_and_load.py --config $(CONFIG_FILE)
+service_analytics:
+	@echo "Starting Analytics Service on port 8001..."
+	@echo "API docs: http://localhost:8001/docs"
+	cd $(BACKEND_DIR) && uv run uvicorn services.analytics_service:app --port 8001 --reload
 
-sftp_sync_yesterday:
-	@echo "Running SFTP sync with yesterday's date..."
-	$(PYTHON) scripts/sftp_sync_and_load.py --config $(CONFIG_FILE) --use-yesterday
+service_data:
+	@echo "Starting Data Service on port 8002..."
+	@echo "API docs: http://localhost:8002/docs"
+	cd $(BACKEND_DIR) && uv run uvicorn services.data_service:app --port 8002 --reload
 
-sftp_download_only:
-	@echo "Downloading files from SFTP only..."
-	$(PYTHON) scripts/sftp_sync_and_load.py --config $(CONFIG_FILE) --download-only
+service_auth:
+	@echo "Starting Auth Service on port 8003..."
+	@echo "API docs: http://localhost:8003/docs"
+	cd $(BACKEND_DIR) && uv run uvicorn services.auth_service:app --port 8003 --reload
 
-load_data:
-	@echo "Loading data into the database..."
-	$(PYTHON) scripts/load_data.py \
-		--data-dir $(DATA_DIR) \
-		--excel-file $(USER_FILE) \
-		--locations-file $(LOCATIONS_FILE) \
-		--out $(DB_FILE)
+stop_services:
+	@echo "Stopping all backend services..."
+	@pkill -f "uvicorn.*analytics_service" || true
+	@pkill -f "uvicorn.*data_service" || true
+	@pkill -f "uvicorn.*auth_service" || true
+	@echo "All services stopped"
 
-export_report:
-	@echo "Exporting database to CSV..."
-	$(PYTHON) scripts/export_database.py --db-path $(DB_FILE) --format csv
-
-generate_report:
-	@echo "Generating branch-wise reports..."
-	$(PYTHON) scripts/generate_branch_wise_report.py --db-path $(DB_FILE)
-
-run_dashboard:
-	@echo "Starting the dashboard development server..."
-	cd $(DASHBOARD_DIR) && npm run dev
+# ================================
+# FRONTEND DASHBOARD
+# ================================
 
 install_dashboard:
 	@echo "Installing dashboard dependencies..."
 	cd $(DASHBOARD_DIR) && npm install
 
+run_dashboard:
+	@echo "Starting dashboard development server..."
+	@echo "Dashboard: http://localhost:3000"
+	cd $(DASHBOARD_DIR) && npm run dev
+
 build_dashboard:
 	@echo "Building dashboard for production..."
-	cd $(DASHBOARD_DIR) && npm run build -- --no-lint
+	cd $(DASHBOARD_DIR) && npm run build
 
 start_dashboard:
 	@echo "Starting dashboard production server..."
 	cd $(DASHBOARD_DIR) && npm start
 
+# ================================
+# DEVELOPMENT WORKFLOW
+# ================================
+
+dev: install_backend install_dashboard
+	@echo "Starting full development environment..."
+	@echo ""
+	@echo "This will start:"
+	@echo "- All backend services (ports 8001-8003)"
+	@echo "- Frontend dashboard (port 3000)"
+	@echo ""
+	@echo "Press Ctrl+C to stop all services"
+	@make -j2 services_start run_dashboard
+
+# ================================
+# MAINTENANCE
+# ================================
+
 clean:
-	@echo "Basic cleanup of generated files..."
-	rm -f $(DB_FILE)
-	rm -f $(EXPORT_DIR)/*.html
-	rm -rf logs/
+	@echo "Cleaning logs and temporary files..."
+	rm -rf $(BACKEND_DIR)/logs/*.log
+	rm -rf $(DASHBOARD_DIR)/.next
+	rm -rf $(DASHBOARD_DIR)/out
+	@echo "Cleanup completed"
 
-clean-all:
-	@echo "Running comprehensive cleanup..."
-	./scripts/cleanup_project.sh
+logs:
+	@echo "Viewing service logs..."
+	@echo "Available log files:"
+	@ls -la $(BACKEND_DIR)/logs/ | grep -E "\.(log|err)$$" || echo "No log files found"
+	@echo ""
+	@echo "Use 'tail -f backend/logs/<service>-error.log' to follow specific logs"
 
-# Combined operations
-full_sync: sftp_sync export_report generate_report
-	@echo "Full sync and report generation completed"
+# ================================
+# SETUP HELPERS
+# ================================
 
-full_sync_with_email: 
-	@echo "Running full sync with report generation and email..."
-	$(PYTHON) scripts/sftp_sync_and_load.py --config $(CONFIG_FILE) --generate-reports --send-emails
-
-send_reports:
-	@echo "Sending branch reports via email..."
-	$(PYTHON) scripts/send_branch_reports.py
-
-send_reports_dry_run:
-	@echo "Testing email configuration (dry run)..."
-	$(PYTHON) scripts/send_branch_reports.py --dry-run 
+setup: install_backend install_dashboard db_setup
+	@echo ""
+	@echo "Setup completed! Next steps:"
+	@echo "1. Configure your environment variables"
+	@echo "2. Run 'make dev' to start the development environment"
+	@echo "3. Visit http://localhost:3000 to access the dashboard" 

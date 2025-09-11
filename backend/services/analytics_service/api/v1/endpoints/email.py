@@ -192,11 +192,11 @@ async def send_reports(
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
     """
-    Send combined branch reports via email.
+    Send individual branch reports via email.
     
-    Generates personalized combined reports for the specified date and branches, 
+    Generates individual branch reports for the specified date and branches, 
     then sends them to the configured sales representatives. Each recipient gets 
-    a combined report containing only the branches they handle.
+    individual reports for each branch they handle.
     """
     try:
         # Initialize email service

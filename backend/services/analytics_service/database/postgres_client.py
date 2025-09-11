@@ -516,7 +516,7 @@ class AnalyticsPostgresClient:
                     query += " AND branch_code = :branch_code"
                     params["branch_code"] = branch_code
                 
-                query += "ORDER BY branch_code, sales_rep_email"
+                query += " ORDER BY branch_code, sales_rep_email"
                 
                 results = session.execute(text(query), params).fetchall()
                 

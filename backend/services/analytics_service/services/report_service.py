@@ -87,10 +87,10 @@ class ReportService:
                 "total_revenue": self._calculate_total_revenue(purchase_tasks.get("data", []))
             },
             "tasks": {
-                "purchases": purchase_tasks.get("data", [])[:10],  # Limit to top 10
-                "cart_abandonment": cart_tasks.get("data", [])[:10],
-                "search_analysis": search_tasks.get("data", [])[:10], 
-                "repeat_visits": repeat_tasks.get("data", [])[:10]
+                "purchases": purchase_tasks.get("data", []),
+                "cart_abandonment": cart_tasks.get("data", []),
+                "search_analysis": search_tasks.get("data", []), 
+                "repeat_visits": repeat_tasks.get("data", []),
             }
         }
         
@@ -101,59 +101,6 @@ class ReportService:
         
         return html_content
 
-    async def generate_combined_report(
-        self, 
-        tenant_id: str, 
-        report_date: date,
-        branch_codes: Optional[List[str]] = None
-    ) -> str:
-        """
-        Generate combined HTML report for multiple branches.
-        
-        Args:
-            tenant_id: Tenant ID
-            report_date: Date to generate report for
-            branch_codes: Optional list of specific branches, None for all
-            
-        Returns:
-            HTML report content
-        """
-        logger.info(f"Generating combined report for {len(branch_codes) if branch_codes else 'all'} branches on {report_date}")
-        
-        # Get all locations if branch_codes not specified
-        if not branch_codes:
-            locations = await run_sync_in_executor(
-                self.db_client.get_locations, tenant_id
-            )
-            branch_codes = [loc["locationId"] for loc in locations]
-        
-        # Generate individual reports for each branch
-        branch_reports = []
-        for branch_code in branch_codes:
-            try:
-                branch_report_html = await self.generate_branch_report(
-                    tenant_id, branch_code, report_date
-                )
-                branch_reports.append({
-                    "branch_code": branch_code,
-                    "html": branch_report_html
-                })
-            except Exception as e:
-                logger.error(f"Failed to generate report for branch {branch_code}: {e}")
-                continue
-        
-        # Create combined report data
-        combined_data = {
-            "report_date": report_date,
-            "generated_at": datetime.now(),
-            "branches": branch_reports,
-            "total_branches": len(branch_reports)
-        }
-        
-        # Generate HTML using template
-        html_content = self.template_service.render_combined_report(combined_data)
-        
-        return html_content
 
     def _get_location_info(self, tenant_id: str, branch_code: str) -> Optional[Dict[str, Any]]:
         """Get location information for a branch."""

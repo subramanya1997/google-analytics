@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Loader2, Check, AlertCircle, Play, ShieldAlert, User } from "lucide-react"
-import { authenticateWithCode as authWithCode, getSyncStatus as getSyncStatusApi, startSync as startSyncApi } from "@/lib/api-utils"
+import { authenticateWithCode as authWithCode, fetchDataAvailability, startSync as startSyncApi } from "@/lib/api-utils"
+import { useUser } from "@/contexts/user-context"
 
 type Status = "working" | "success" | "error"
 
@@ -39,16 +40,17 @@ interface AuthResponse {
   invalid_configs?: string[]
 }
 
-async function getSyncStatus(tenantId: string): Promise<{ started: boolean }> {
+async function checkDataAvailability(): Promise<{ hasData: boolean }> {
   try {
-    const resp = await getSyncStatusApi(tenantId)
-    if (!resp.ok) return { started: false }
+    const resp = await fetchDataAvailability()
+    if (!resp.ok) return { hasData: false }
     const data = await resp.json()
-    const started = (data && (data.started ?? data.syncStarted))
-    return { started: Boolean(started) }
+    
+    // Check if there's any data available (summary should have total_events > 0)
+    const hasData = data?.summary?.total_events > 0
+    return { hasData: Boolean(hasData) }
   } catch {
-    console.log("[oauth] sync status endpoint unavailable; assuming not started")
-    return { started: false }
+    return { hasData: false }
   }
 }
 
@@ -57,7 +59,6 @@ async function startSync(tenantId: string): Promise<boolean> {
     const resp = await startSyncApi(tenantId)
     return resp.ok
   } catch {
-    console.log("[oauth] sync start endpoint unavailable")
     return false
   }
 }
@@ -65,12 +66,13 @@ async function startSync(tenantId: string): Promise<boolean> {
 function OAuthCallbackContent() {
   const router = useRouter()
   const params = useSearchParams()
+  const { setUser } = useUser()
   const [status, setStatus] = useState<Status>("working")
   const [message, setMessage] = useState("Verifying your account…")
   const [tenantId, setTenantId] = useState<string | null>(null)
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
-  const [syncStarted, setSyncStarted] = useState<boolean | null>(null)
+  const [hasData, setHasData] = useState<boolean | null>(null)
   const [startingSync, setStartingSync] = useState(false)
   const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string } | null>(null)
 
@@ -95,10 +97,7 @@ function OAuthCallbackContent() {
       try {
         setMessage("Verifying your account…")
         const authResult = await authenticateWithCode(code)
-        if (cancelled) return
-        
-        console.log("[oauth] authentication result:", authResult)
-        
+        if (cancelled) return        
         // Handle authentication response
         if (!authResult.success) {
           // Check if it's a configuration issue (not a hard failure)
@@ -111,7 +110,15 @@ function OAuthCallbackContent() {
             setConfigIssues(issues)
             setMessage("Verification complete, but setup issues detected")
             setTenantId(authResult.tenant_id || null)
-            setUserInfo({ firstName: authResult.first_name || undefined, username: authResult.username || undefined })
+            const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
+            setUserInfo(userInfo)
+            
+            // Store user info in global context even with config issues
+            setUser({
+              firstName: authResult.first_name,
+              username: authResult.username,
+              tenantId: authResult.tenant_id
+            })
             return
           } else {
             // Hard authentication failure
@@ -122,22 +129,25 @@ function OAuthCallbackContent() {
         // Successful authentication
         const tId = authResult.tenant_id
         setTenantId(tId || null)
-        console.log("[oauth] authenticated user:", {
-          tenant_id: tId,
-          first_name: authResult.first_name,
-          username: authResult.username
+        const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
+        setUserInfo(userInfo)
+        
+        // Store user info in global context
+        setUser({
+          firstName: authResult.first_name,
+          username: authResult.username,
+          tenantId: tId
         })
-        setUserInfo({ firstName: authResult.first_name || undefined, username: authResult.username || undefined })
 
         // Since auth service already validated configurations, we can proceed
         if (tId) {
           setConfigOk(true)
           
-          // Check sync status
-          const sync = await getSyncStatus(tId)
-          setSyncStarted(sync.started)
+          // Check data availability
+          const dataCheck = await checkDataAvailability()
+          setHasData(dataCheck.hasData)
 
-          if (sync.started) {
+          if (dataCheck.hasData) {
             setStatus("success")
             setMessage("Setup complete. Redirecting to dashboard…")
             setTimeout(() => router.replace("/"), 1200)
@@ -161,7 +171,7 @@ function OAuthCallbackContent() {
     return () => {
       cancelled = true
     }
-  }, [params, router])
+  }, [params, router, setUser])
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
@@ -214,8 +224,8 @@ function OAuthCallbackContent() {
                 </Alert>
               )}
 
-              {/* Sync controls when config is ok but sync not started */}
-              {configOk && syncStarted === false && (
+              {/* Sync controls when config is ok but no data available */}
+              {configOk && hasData === false && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
                     Start your initial data sync to set up your workspace. This can take a few minutes.
@@ -228,8 +238,7 @@ function OAuthCallbackContent() {
                         const ok = await startSync(tenantId)
                         setStartingSync(false)
                         if (ok) {
-                          console.log("[oauth] sync started for", tenantId)
-                          setSyncStarted(true)
+                          setHasData(true) // Assume sync will generate data
                           setMessage("Sync initiated. Redirecting to dashboard…")
                           setTimeout(() => router.replace("/"), 1500)
                         } else {

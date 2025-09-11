@@ -2,6 +2,7 @@
 Authentication service business logic.
 """
 
+import asyncio
 import json
 from typing import Any, Dict
 
@@ -37,7 +38,7 @@ class AuthenticationService:
             base_url = self.settings.BASE_URL
             full_url = f"{base_url}/manage/auth/getappproperity"
 
-            logger.info(f"🔐 Starting authentication process")
+            logger.info(f"Starting authentication process")
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # First API call to get app property
@@ -74,7 +75,7 @@ class AuthenticationService:
 
                 # Step 2: Get settings using app instance ID and access token
                 settings_url = f"{base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
-                logger.info(f"📋 Fetching tenant configurations")
+                logger.info(f"Fetching tenant configurations")
 
                 settings_response = await client.get(
                     settings_url, headers={"Authorization": f"Bearer {access_token}"}
@@ -141,7 +142,7 @@ class AuthenticationService:
                     }
 
                     logger.info(
-                        f"📊 Configurations found - PostgreSQL: {'✅' if postgres_config else '❌'}, BigQuery: {'✅' if bigquery_config else '❌'}, SFTP: {'✅' if sftp_config else '❌'}, SMTP: {'✅' if email_config else '❌'}"
+                        f"Configurations found - PostgreSQL: {'Yes' if postgres_config else 'No'}, BigQuery: {'Yes' if bigquery_config else 'No'}, SFTP: {'Yes' if sftp_config else 'No'}, SMTP: {'Yes' if email_config else 'No'}"
                     )
 
                 except json.JSONDecodeError as e:
@@ -154,13 +155,13 @@ class AuthenticationService:
                     }
 
                 # Step 3: Validate configurations
-                logger.info(f"🔧 Starting configuration validation")
-                validation_result = self._validate_configurations(formatted_settings)
+                logger.info(f"Starting configuration validation")
+                validation_result = await self._validate_configurations_async(formatted_settings)
 
                 if validation_result["valid"]:
-                    logger.info(f"🎉 All configurations validated successfully")
+                    logger.info(f"All configurations validated successfully")
                 else:
-                    logger.error(f"❌ Configuration validation failed")
+                    logger.error(f"Configuration validation failed")
 
                 if not validation_result["valid"]:
                     return {
@@ -219,9 +220,9 @@ class AuthenticationService:
                 "username": None,
             }
 
-    def _validate_configurations(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _validate_configurations_async(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Validate all required configurations.
+        Validate all required configurations in parallel.
 
         Args:
             settings_data: Settings data from the API
@@ -237,26 +238,45 @@ class AuthenticationService:
         missing_configs = []
         invalid_configs = []
 
-        # Check if configs exist and are valid
+        # Create tasks for parallel execution
+        tasks = []
+        config_names = []
+
         if not postgres_config:
             missing_configs.append("postgres_config")
-        elif not self._test_postgres_connection(postgres_config):
-            invalid_configs.append("postgres_config")
+        else:
+            tasks.append(self._test_postgres_connection_async(postgres_config))
+            config_names.append("postgres_config")
 
         if not bigquery_config:
             missing_configs.append("bigquery_config")
-        elif not self._test_bigquery_config(bigquery_config):
-            invalid_configs.append("bigquery_config")
+        else:
+            tasks.append(self._test_bigquery_config_async(bigquery_config))
+            config_names.append("bigquery_config")
 
         if not sftp_config:
             missing_configs.append("sftp_config")
-        elif not self._test_sftp_config(sftp_config):
-            invalid_configs.append("sftp_config")
+        else:
+            tasks.append(self._test_sftp_config_async(sftp_config))
+            config_names.append("sftp_config")
 
         if not email_config:
             missing_configs.append("email_config")
-        elif not self._test_email_config(email_config):
-            invalid_configs.append("email_config")
+        else:
+            tasks.append(self._test_email_config_async(email_config))
+            config_names.append("email_config")
+
+        # Run all validation tasks in parallel
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Process results
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"Configuration validation failed for {config_names[i]}: {result}")
+                    invalid_configs.append(config_names[i])
+                elif not result:
+                    invalid_configs.append(config_names[i])
 
         return {
             "valid": len(missing_configs) == 0 and len(invalid_configs) == 0,
@@ -264,68 +284,76 @@ class AuthenticationService:
             "invalid_configs": invalid_configs,
         }
 
-    def _test_postgres_connection(self, config: Dict[str, Any]) -> bool:
-        """Test PostgreSQL connection."""
+    async def _test_postgres_connection_async(self, config: Dict[str, Any]) -> bool:
+        """Test PostgreSQL connection asynchronously."""
         try:
             logger.info(
-                f"🔍 Testing PostgreSQL connection to {config.get('host')}:{config.get('port')}"
+                f"Testing PostgreSQL connection to {config.get('host')}:{config.get('port')}"
             )
-            connection_string = f"postgresql://{config['user']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
-            engine = create_engine(connection_string)
-            with engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
-            logger.info(f"✅ PostgreSQL connection successful")
-            return True
+            
+            def test_connection():
+                connection_string = f"postgresql://{config['user']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
+                engine = create_engine(connection_string)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                return True
+            
+            # Run the blocking operation in a thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, test_connection)
+            
+            logger.info(f"PostgreSQL connection successful")
+            return result
         except Exception as e:
-            logger.error(f"❌ PostgreSQL connection test failed: {e}")
+            logger.error(f"PostgreSQL connection test failed: {e}")
             return False
 
-    def _test_bigquery_config(self, config: Dict[str, Any]) -> bool:
-        """Test BigQuery configuration."""
+    async def _test_bigquery_config_async(self, config: Dict[str, Any]) -> bool:
+        """Test BigQuery configuration asynchronously."""
         try:
             logger.info(
-                f"🔍 Testing BigQuery configuration for project: {config.get('project_id')}"
+                f"Testing BigQuery configuration for project: {config.get('project_id')}"
             )
             required_fields = ["project_id", "dataset_id", "service_account"]
             if not all(field in config for field in required_fields):
-                logger.error(f"❌ BigQuery config missing required fields")
+                logger.error(f"BigQuery config missing required fields")
                 return False
 
             service_account = config.get("service_account", {})
             required_sa_fields = ["type", "project_id", "private_key", "client_email"]
             if not all(field in service_account for field in required_sa_fields):
-                logger.error(f"❌ BigQuery service account missing required fields")
+                logger.error(f"BigQuery service account missing required fields")
                 return False
 
-            logger.info(f"✅ BigQuery configuration valid")
+            logger.info(f"BigQuery configuration valid")
             return True
         except Exception as e:
-            logger.error(f"❌ BigQuery config validation failed: {e}")
+            logger.error(f"BigQuery config validation failed: {e}")
             return False
 
-    def _test_sftp_config(self, config: Dict[str, Any]) -> bool:
-        """Test SFTP configuration."""
+    async def _test_sftp_config_async(self, config: Dict[str, Any]) -> bool:
+        """Test SFTP configuration asynchronously."""
         try:
-            logger.info(f"🔍 Testing SFTP configuration for host: {config.get('host')}")
+            logger.info(f"Testing SFTP configuration for host: {config.get('host')}")
             required_fields = ["host", "port", "username", "password"]
             if not all(field in config for field in required_fields):
-                logger.error(f"❌ SFTP config missing required fields")
+                logger.error(f"SFTP config missing required fields")
                 return False
 
-            logger.info(f"✅ SFTP configuration valid")
+            logger.info(f"SFTP configuration valid")
             return True
         except Exception as e:
-            logger.error(f"❌ SFTP config validation failed: {e}")
+            logger.error(f"SFTP config validation failed: {e}")
             return False
 
-    def _test_email_config(self, config: Dict[str, Any]) -> bool:
-        """Test email configuration."""
+    async def _test_email_config_async(self, config: Dict[str, Any]) -> bool:
+        """Test email configuration asynchronously."""
         try:
-            logger.info(f"🔍 Testing email configuration for server: {config.get('server')}")
+            logger.info(f"Testing email configuration for server: {config.get('server')}")
             required_fields = ["server", "port", "from_address"]
             if not all(field in config for field in required_fields):
-                logger.error(f"❌ Email config missing required fields: {required_fields}")
-                logger.error(f"❌ Available fields: {list(config.keys())}")
+                logger.error(f"Email config missing required fields: {required_fields}")
+                logger.error(f"Available fields: {list(config.keys())}")
                 return False
 
             # Validate port is a number
@@ -337,22 +365,22 @@ class AuthenticationService:
                     port = int(port_value) if port_value else 0
                     
                 if port <= 0 or port > 65535:
-                    logger.error(f"❌ Email config has invalid SMTP port: {port}")
+                    logger.error(f"Email config has invalid SMTP port: {port}")
                     return False
             except (ValueError, TypeError):
-                logger.error(f"❌ Email config SMTP port is not a valid number: {config.get('port')}")
+                logger.error(f"Email config SMTP port is not a valid number: {config.get('port')}")
                 return False
 
             # Validate email format for from_address
             from_address = config.get("from_address", "")
             if "@" not in from_address or "." not in from_address:
-                logger.error(f"❌ Email config has invalid from_address format: {from_address}")
+                logger.error(f"Email config has invalid from_address format: {from_address}")
                 return False
 
-            logger.info(f"✅ Email configuration valid")
+            logger.info(f"Email configuration valid")
             return True
         except Exception as e:
-            logger.error(f"❌ Email config validation failed: {e}")
+            logger.error(f"Email config validation failed: {e}")
             return False
 
     def _upsert_tenant_configurations(
@@ -428,7 +456,7 @@ class AuthenticationService:
                         config_data,
                     )
                     session.commit()
-                    logger.info(f"✅ Created new tenant: {username} ({tenant_id})")
+                    logger.info(f"Created new tenant: {username} ({tenant_id})")
                 else:
                     # Always update existing tenant with latest configurations from authentication API
                     session.execute(
@@ -450,7 +478,7 @@ class AuthenticationService:
                         config_data,
                     )
                     session.commit()
-                    logger.info(f"🔄 Updated tenant configurations: ({tenant_id})")
+                    logger.info(f"Updated tenant configurations: ({tenant_id})")
 
             return True
         except Exception as e:

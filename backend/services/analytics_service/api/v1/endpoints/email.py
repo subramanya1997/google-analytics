@@ -82,34 +82,105 @@ async def get_branch_email_mappings(
         )
 
 
-@router.put("/mappings", response_model=Dict[str, Any])
-async def update_branch_email_mappings(
-    mappings: List[BranchEmailMappingRequest],
+@router.post("/mappings", response_model=Dict[str, Any])
+async def create_branch_email_mapping(
+    mapping: BranchEmailMappingRequest,
     tenant_id: str = Depends(get_tenant_id),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
     """
-    Update branch to email mappings for the tenant.
-    
-    Replaces all existing mappings with the provided ones.
+    Create a new branch email mapping for the tenant.
     """
     try:
-        result = db_client.update_branch_email_mappings(tenant_id, mappings)
+        result = db_client.create_branch_email_mapping(tenant_id, mapping)
         
-        logger.info(f"Updated email mappings for tenant {tenant_id}: {result}")
+        logger.info(f"Created new email mapping for tenant {tenant_id}: {result}")
         
         return {
             "success": True,
-            "message": f"Updated {result['total']} mappings",
-            "created": result.get('created', 0),
-            "updated": result.get('updated', 0),
-            "total": result.get('total', 0)
+            "message": "Successfully created mapping",
+            "mapping_id": result.get("mapping_id")
         }
         
     except Exception as e:
-        logger.error(f"Error updating email mappings for tenant {tenant_id}: {e}")
+        logger.error(f"Error creating email mapping for tenant {tenant_id}: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Failed to update email mappings: {str(e)}"
+            status_code=500, detail=f"Failed to create email mapping: {str(e)}"
+        )
+
+
+@router.put("/mappings/{mapping_id}", response_model=Dict[str, Any])
+async def update_branch_email_mapping(
+    mapping_id: str,
+    mapping: BranchEmailMappingRequest,
+    tenant_id: str = Depends(get_tenant_id),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+):
+    """
+    Update a specific branch email mapping by ID.
+    
+    Updates the mapping identified by the given ID for the current tenant.
+    """
+    try:
+        result = db_client.update_branch_email_mapping(tenant_id, mapping_id, mapping)
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Branch email mapping with ID {mapping_id} not found"
+            )
+        
+        logger.info(f"Updated email mapping {mapping_id} for tenant {tenant_id}")
+        
+        return {
+            "success": True,
+            "message": f"Successfully updated mapping with ID {mapping_id}",
+            "mapping_id": mapping_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating email mapping {mapping_id} for tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update email mapping: {str(e)}"
+        )
+
+
+@router.delete("/mappings/{mapping_id}", response_model=Dict[str, Any])
+async def delete_branch_email_mapping(
+    mapping_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+):
+    """
+    Delete a specific branch email mapping by ID.
+    
+    Removes the mapping identified by the given ID for the current tenant.
+    """
+    try:
+        result = db_client.delete_branch_email_mapping(tenant_id, mapping_id)
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Branch email mapping with ID {mapping_id} not found"
+            )
+        
+        logger.info(f"Deleted email mapping {mapping_id} for tenant {tenant_id}")
+        
+        return {
+            "success": True,
+            "message": f"Successfully deleted mapping with ID {mapping_id}",
+            "mapping_id": mapping_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting email mapping {mapping_id} for tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete email mapping: {str(e)}"
         )
 
 

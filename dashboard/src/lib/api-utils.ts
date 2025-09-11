@@ -1,5 +1,6 @@
 import { DateRange } from "react-day-picker"
 import { format } from "date-fns"
+import { BranchEmailMapping } from "@/types"
 
 // =============== Core Utilities ===============
 
@@ -282,7 +283,7 @@ export async function createIngestionJob(data: {
 // =============== Auth Service APIs ===============
 
 export async function authenticateWithCode(code: string) {
-  return fetchFromAuthService('/authenticate', {
+  return fetchFromAuthService('authenticate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -292,7 +293,7 @@ export async function authenticateWithCode(code: string) {
 }
 
 export async function getSyncStatus(tenantId: string) {
-  return fetchFromAuthService(`/tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`)
+  return fetchFromAuthService(`tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`)
 }
 
 export async function startSync(tenantId: string) {
@@ -315,13 +316,29 @@ export async function fetchBranchEmailMappings() {
   return fetchFromAnalyticsService('email/mappings')
 }
 
-export async function updateBranchEmailMappings(mappings: any[]) {
-  return fetchFromAnalyticsService('email/mappings', {
+export async function updateBranchEmailMapping(mappingId: string, mapping: BranchEmailMapping) {
+  return fetchFromAnalyticsService(`email/mappings/${mappingId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(mappings),
+    body: JSON.stringify(mapping),
+  })
+}
+
+export async function createBranchEmailMapping(mapping: Omit<BranchEmailMapping, 'id'>) {
+  return fetchFromAnalyticsService('email/mappings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(mapping),
+  })
+}
+
+export async function deleteBranchEmailMapping(mappingId: string) {
+  return fetchFromAnalyticsService(`email/mappings/${mappingId}`, {
+    method: 'DELETE',
   })
 }
 

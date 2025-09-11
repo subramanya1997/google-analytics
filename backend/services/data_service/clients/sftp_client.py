@@ -28,7 +28,6 @@ class SFTPClient:
         self.username = sftp_config.get("username")
         self.password = sftp_config.get("password")
         self.remote_path = sftp_config.get("remote_path", "")
-        self.data_dir = sftp_config.get("data_dir", "")
         self.user_file = sftp_config.get("user_file", "UserReport.xlsx")
         self.locations_file = sftp_config.get("locations_file", "Locations_List.xlsx")
 
@@ -77,8 +76,6 @@ class SFTPClient:
 
         if self.remote_path:
             path_parts.append(self.remote_path)
-        if self.data_dir:
-            path_parts.append(self.data_dir)
         if filename:
             path_parts.append(filename)
 

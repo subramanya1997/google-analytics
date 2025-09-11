@@ -51,15 +51,11 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const isAuthenticated = !!user?.tenantId && !!user?.accessToken
 
   const logout = async () => {
-    let logoutApiSuccess = false
-    
     if (user?.accessToken) {
       try {
         const response = await logoutWithToken(user.accessToken)
 
-        if (response.ok) {
-          logoutApiSuccess = true
-        } else {
+        if (!response.ok) {
           const errorData = await response.json().catch(() => ({ message: 'Unknown error' }))
           console.warn('Logout API failed:', response.status, errorData.message || response.statusText)
         }

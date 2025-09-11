@@ -39,7 +39,7 @@ export function BranchMappingsTable({
       <div className="mb-4">
         <h3 className="flex items-center gap-2 text-lg font-semibold">
           <Users className="h-5 w-5" />
-          Branch Email Mappings
+          Branch Members
         </h3>
       </div>
       

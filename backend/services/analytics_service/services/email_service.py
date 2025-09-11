@@ -115,16 +115,15 @@ class EmailService:
             if not target_branches:
                 raise Exception("No branches found to send reports to")
 
-            # Send personalized combined reports
+            # Send individual branch reports
             total_emails = 0
             emails_sent = 0
             emails_failed = 0
             
-            logger.info(f"Generating personalized combined reports for branches: {target_branches}")
+            logger.info(f"Generating individual branch reports for branches: {target_branches}")
             
             try:
-                # Group branches by recipient email
-                recipient_branches = {}
+                # Send individual reports for each branch
                 for branch_code in target_branches:
                     branch_mappings = await asyncio.get_event_loop().run_in_executor(
                         None, self.db_client.get_branch_email_mappings, tenant_id, branch_code
@@ -132,66 +131,51 @@ class EmailService:
                     
                     for mapping in branch_mappings:
                         if mapping.get("is_enabled", True):
-                            recipient_key = mapping["sales_rep_email"]
-                            if recipient_key not in recipient_branches:
-                                recipient_branches[recipient_key] = {
-                                    "mapping": mapping,
-                                    "branches": []
-                                }
-                            recipient_branches[recipient_key]["branches"].append(branch_code)
-                
-                # Generate and send personalized combined report for each recipient
-                for recipient_email, recipient_data in recipient_branches.items():
-                    mapping = recipient_data["mapping"]
-                    recipient_specific_branches = recipient_data["branches"]
-                    
-                    total_emails += 1
-                    
-                    try:
-                        # Generate combined report with only branches this recipient handles
-                        personalized_report_html = await self.report_service.generate_combined_report(
-                            tenant_id, request.report_date, recipient_specific_branches
-                        )
-                        
-                        await self._send_combined_email(
-                            email_config,
-                            mapping,
-                            personalized_report_html,
-                            request.report_date,
-                            recipient_specific_branches,
-                            job_id,
-                            tenant_id
-                        )
-                        emails_sent += 1
-                        logger.info(f"Sent personalized combined report to {recipient_email} for branches: {recipient_specific_branches}")
-                        
-                    except Exception as email_error:
-                        emails_failed += 1
-                        logger.error(f"Failed to send personalized combined email to {recipient_email}: {email_error}")
-                        
-                        # Log failed email
-                        error_branch_count = len(recipient_specific_branches)
-                        error_branch_text = "branch" if error_branch_count == 1 else "branches"
-                        error_subject = f"Daily Branch Sales Report - {request.report_date.strftime('%Y-%m-%d')} ({error_branch_count} {error_branch_text})"
-                        
-                        await asyncio.get_event_loop().run_in_executor(
-                            None, 
-                            self.db_client.log_email_send_history,
-                            {
-                                "tenant_id": tenant_id,
-                                "job_id": job_id,
-                                "branch_code": ", ".join(recipient_specific_branches),
-                                "sales_rep_email": mapping["sales_rep_email"],
-                                "sales_rep_name": mapping.get("sales_rep_name"),
-                                "subject": error_subject,
-                                "report_date": request.report_date,
-                                "status": "failed",
-                                "error_message": str(email_error)
-                            }
-                        )
+                            total_emails += 1
+                            
+                            try:
+                                # Generate individual branch report
+                                branch_report_html = await self.report_service.generate_branch_report(
+                                    tenant_id, branch_code, request.report_date
+                                )
+                                
+                                await self._send_branch_email(
+                                    email_config,
+                                    mapping,
+                                    branch_report_html,
+                                    request.report_date,
+                                    branch_code,
+                                    job_id,
+                                    tenant_id
+                                )
+                                emails_sent += 1
+                                logger.info(f"Sent branch report to {mapping['sales_rep_email']} for branch: {branch_code}")
+                                
+                            except Exception as email_error:
+                                emails_failed += 1
+                                logger.error(f"Failed to send branch email to {mapping['sales_rep_email']} for branch {branch_code}: {email_error}")
+                                
+                                # Log failed email
+                                error_subject = f"Daily Branch Sales Report - {request.report_date.strftime('%Y-%m-%d')} - {branch_code}"
+                                
+                                await asyncio.get_event_loop().run_in_executor(
+                                    None, 
+                                    self.db_client.log_email_send_history,
+                                    {
+                                        "tenant_id": tenant_id,
+                                        "job_id": job_id,
+                                        "branch_code": branch_code,
+                                        "sales_rep_email": mapping["sales_rep_email"],
+                                        "sales_rep_name": mapping.get("sales_rep_name"),
+                                        "subject": error_subject,
+                                        "report_date": request.report_date,
+                                        "status": "failed",
+                                        "error_message": str(email_error)
+                                    }
+                                )
             
-            except Exception as combined_error:
-                logger.error(f"Error generating personalized combined reports: {combined_error}")
+            except Exception as report_error:
+                logger.error(f"Error generating individual branch reports: {report_error}")
 
             # Update job completion status
             completion_data = {
@@ -228,42 +212,40 @@ class EmailService:
             )
 
 
-    async def _send_combined_email(
+    async def _send_branch_email(
         self,
         email_config: Dict[str, Any],
         mapping: Dict[str, Any],
-        combined_report_html: str,
+        branch_report_html: str,
         report_date,
-        branch_codes: List[str],
+        branch_code: str,
         job_id: str,
         tenant_id: str
     ) -> None:
         """
-        Send combined email with multiple branches.
+        Send individual branch email.
         
         Args:
             email_config: SMTP configuration
             mapping: Email recipient mapping
-            combined_report_html: Generated combined HTML report
+            branch_report_html: Generated branch HTML report
             report_date: Date of the report
-            branch_codes: List of branch codes included in the report
+            branch_code: Branch code for the report
             job_id: Job ID for tracking
             tenant_id: Tenant ID
         """
         # Create email message
         msg = MIMEMultipart('related')
         
-        # Email headers for combined report
-        branch_count = len(branch_codes)
-        branch_text = "branch" if branch_count == 1 else "branches"
-        subject = f"Daily Branch Sales Report - {report_date.strftime('%Y-%m-%d')} ({branch_count} {branch_text})"
+        # Email headers for individual branch report
+        subject = f"Daily Branch Sales Report - {report_date.strftime('%Y-%m-%d')} - {branch_code}"
         
         msg['From'] = email_config.get('from_address')
         msg['To'] = mapping['sales_rep_email']
         msg['Subject'] = subject
         
         # Attach HTML content
-        msg.attach(MIMEText(combined_report_html, 'html'))
+        msg.attach(MIMEText(branch_report_html, 'html'))
         
         # Send via SMTP
         smtp_server = None
@@ -305,7 +287,7 @@ class EmailService:
                 {
                     "tenant_id": tenant_id,
                     "job_id": job_id,
-                    "branch_code": ", ".join(branch_codes),  # Multiple branches in one record
+                    "branch_code": branch_code,
                     "sales_rep_email": mapping["sales_rep_email"],
                     "sales_rep_name": mapping.get("sales_rep_name"),
                     "subject": subject,

@@ -44,7 +44,53 @@ class TemplateService:
         """
         try:
             template = self.env.get_template('branch_report.html')
-            html_content = template.render(**report_data)
+            
+            # Transform data to match template expectations
+            location = report_data.get("location", {})
+            tasks = report_data.get("tasks", {})
+            summary = report_data.get("summary", {})
+            
+            # Prepare template data
+            template_data = {
+                "location": {
+                    "warehouse_code": location.get("locationId", ""),
+                    "warehouse_name": location.get("locationName", "Unknown"),
+                    "city": location.get("city", ""),
+                    "state": location.get("state", "")
+                },
+                "report_date": report_data.get("report_date"),
+                "datetime": datetime,  # Pass datetime module for template use
+                "data": {
+                    "purchases": {
+                        "total": summary.get("total_purchases", 0),
+                        "total_revenue": summary.get("total_revenue", 0),
+                        "unique_customers": len(set(p.get("user_id", "") for p in tasks.get("purchases", []) if p.get("user_id"))),
+                        "avg_order_value": summary.get("total_revenue", 0) / max(summary.get("total_purchases", 1), 1),
+                        "samples": self._transform_purchase_samples(tasks.get("purchases", []))
+                    },
+                    "cart_abandonment": {
+                        "total": summary.get("total_cart_abandonment", 0),
+                        "unique_customers": len(set(c.get("user_id", "") for c in tasks.get("cart_abandonment", []) if c.get("user_id"))),
+                        "total_value": sum(float(c.get("cart_value", 0)) for c in tasks.get("cart_abandonment", [])),
+                        "avg_value": sum(float(c.get("cart_value", 0)) for c in tasks.get("cart_abandonment", [])) / max(summary.get("total_cart_abandonment", 1), 1),
+                        "samples": self._transform_cart_samples(tasks.get("cart_abandonment", []))
+                    },
+                    "search_no_results": {
+                        "unique_terms": summary.get("total_search_issues", 0),
+                        "total_searches": sum(s.get("search_count", 0) for s in tasks.get("search_analysis", [])),
+                        "affected_sessions": len(set(s.get("session_id", "") for s in tasks.get("search_analysis", []) if s.get("session_id"))),
+                        "unique_users": len(set(s.get("user_id", "") for s in tasks.get("search_analysis", []) if s.get("user_id"))),
+                        "samples": self._transform_search_samples(tasks.get("search_analysis", []))
+                    },
+                    "repeat_visits": {
+                        "total": summary.get("total_repeat_visits", 0),
+                        "avg_pages": sum(r.get("pages_viewed", 0) for r in tasks.get("repeat_visits", [])) / max(summary.get("total_repeat_visits", 1), 1),
+                        "samples": self._transform_repeat_samples(tasks.get("repeat_visits", []))
+                    }
+                }
+            }
+            
+            html_content = template.render(**template_data)
             return html_content
             
         except Exception as e:
@@ -52,25 +98,6 @@ class TemplateService:
             # Return fallback HTML
             return self._render_fallback_branch_report(report_data)
 
-    def render_combined_report(self, combined_data: Dict[str, Any]) -> str:
-        """
-        Render combined report HTML template.
-        
-        Args:
-            combined_data: Combined report data with multiple branches
-            
-        Returns:
-            Rendered HTML content
-        """
-        try:
-            template = self.env.get_template('combined_report.html')
-            html_content = template.render(**combined_data)
-            return html_content
-            
-        except Exception as e:
-            logger.error(f"Error rendering combined report template: {e}")
-            # Return fallback HTML
-            return self._render_fallback_combined_report(combined_data)
 
     def _currency_filter(self, value: Any) -> str:
         """Format value as currency."""
@@ -195,40 +222,150 @@ class TemplateService:
 """
         return html
 
-    def _render_fallback_combined_report(self, combined_data: Dict[str, Any]) -> str:
-        """Render fallback HTML for combined report when template fails."""
-        report_date = combined_data.get("report_date", datetime.now().date())
-        branches = combined_data.get("branches", [])
+
+    def _transform_purchase_samples(self, purchases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Transform purchase data to match template format."""
+        samples = []
+        for purchase in purchases:
+            sample = {
+                "customer_name": purchase.get("customer_name", "Unknown"),
+                "company_name": purchase.get("company", ""),  # May need to get from user data
+                "trans_id": purchase.get("transaction_id", ""),
+                "revenue": float(purchase.get("order_value", 0)),
+                "email": purchase.get("email", ""),
+                "phone": purchase.get("phone") or purchase.get("office_phone", ""),
+                "products": []
+            }
+            
+            # Parse products - already in JSON format from database
+            products = purchase.get("products", [])
+            if isinstance(products, str):
+                try:
+                    products = json.loads(products)
+                except:
+                    products = []
+            
+            if isinstance(products, list):
+                for item in products:
+                    sample["products"].append({
+                        "quantity": int(item.get("quantity", 1)),
+                        "item_name": item.get("item_name", "Unknown"),
+                        "item_id": item.get("item_id", "")
+                    })
+            
+            samples.append(sample)
         
-        html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Combined Sales Report - {report_date}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }}
-        .container {{ max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .header {{ text-align: center; border-bottom: 2px solid #dee2e6; padding-bottom: 20px; margin-bottom: 30px; }}
-        .branch-report {{ margin-bottom: 40px; padding: 20px; border: 1px solid #dee2e6; border-radius: 8px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Combined Branch Sales Report</h1>
-            <p>Report Date: {report_date}</p>
-            <p>Total Branches: {len(branches)}</p>
-        </div>
+        return samples
+
+    def _transform_cart_samples(self, carts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Transform cart abandonment data to match template format."""
+        samples = []
+        for cart in carts:
+            sample = {
+                "cart_id": cart.get("session_id", ""),
+                "customer_name": cart.get("customer_name", "Unknown"),
+                "company_name": cart.get("company", ""),  # May need to get from user data
+                "cart_value": float(cart.get("total_value", 0)),
+                "email": cart.get("email", ""),
+                "phone": cart.get("phone") or cart.get("office_phone", ""),
+                "products": []
+            }
+            
+            # Parse products - already in JSON format from database
+            products = cart.get("products", [])
+            if isinstance(products, str):
+                try:
+                    products = json.loads(products)
+                except:
+                    products = []
+            
+            if isinstance(products, list):
+                for item in products:
+                    sample["products"].append({
+                        "quantity": int(item.get("quantity", 1)),
+                        "item_name": item.get("item_name", "Unknown"),
+                        "item_id": item.get("item_id", "")
+                    })
+            
+            samples.append(sample)
         
-        {"".join(f'<div class="branch-report">{branch["html"]}</div>' for branch in branches)}
+        return samples
+
+    def _transform_search_samples(self, searches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Transform search data to match template format."""
+        # Group by search term
+        term_groups = {}
+        for search in searches:
+            term = search.get("search_term", "")
+            if term not in term_groups:
+                term_groups[term] = {
+                    "term": term,
+                    "total_searches": 0,
+                    "unique_sessions": set(),
+                    "user_details": []
+                }
+            
+            term_groups[term]["total_searches"] += 1
+            if search.get("session_id"):
+                term_groups[term]["unique_sessions"].add(search["session_id"])
+            
+            if search.get("customer_name"):
+                term_groups[term]["user_details"].append({
+                    "name": search.get("customer_name", ""),
+                    "company": search.get("company", ""),
+                    "email": search.get("email", ""),
+                    "phone": search.get("phone", "")
+                })
         
-        <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #666;">
-            <p>Combined report generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-        return html
+        # Convert to list format
+        samples = []
+        for term, data in term_groups.items():
+            samples.append({
+                "term": data["term"],
+                "total_searches": data["total_searches"],
+                "unique_sessions": len(data["unique_sessions"]),
+                "user_details": data["user_details"]
+            })
+        
+        return sorted(samples, key=lambda x: x["total_searches"], reverse=True)[:10]
+
+    def _transform_repeat_samples(self, visits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Transform repeat visit data to match template format."""
+        samples = []
+        for visit in visits:
+            pages_summary = []
+            
+            # Parse visited pages if available
+            pages_json = visit.get("pages_json", "")
+            if pages_json:
+                try:
+                    pages = json.loads(pages_json) if isinstance(pages_json, str) else pages_json
+                    # Group by URL
+                    url_counts = {}
+                    for page in pages:
+                        url = page.get("url", "")
+                        title = page.get("title", "Unknown")
+                        if url not in url_counts:
+                            url_counts[url] = {"count": 0, "title": title, "url": url}
+                        url_counts[url]["count"] += 1
+                    
+                    # Sort by count and take top 5
+                    pages_summary = sorted(
+                        url_counts.values(), 
+                        key=lambda x: x["count"], 
+                        reverse=True
+                    )[:5]
+                except:
+                    pass
+            
+            sample = {
+                "customer": visit.get("customer_name", "Unknown"),
+                "email": visit.get("email", ""),
+                "company": visit.get("company", ""),
+                "pages_viewed": visit.get("pages_viewed", 0),
+                "pages_summary": pages_summary
+            }
+            
+            samples.append(sample)
+        
+        return samples

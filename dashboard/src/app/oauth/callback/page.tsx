@@ -45,7 +45,6 @@ function OAuthCallbackContent() {
   const { setUser } = useUser()
   const [status, setStatus] = useState<Status>("working")
   const [message, setMessage] = useState("Verifying your account…")
-  const [tenantId, setTenantId] = useState<string | null>(null)
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
   const [hasData, setHasData] = useState<boolean | null>(null)
@@ -109,7 +108,6 @@ function OAuthCallbackContent() {
             ]
             setConfigIssues(issues)
             setMessage("Verification complete, but setup issues detected")
-            setTenantId(authResult.tenant_id || null)
             const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
             setUserInfo(userInfo)
             
@@ -128,7 +126,6 @@ function OAuthCallbackContent() {
         
         // Successful authentication
         const tId = authResult.tenant_id
-        setTenantId(tId || null)
         const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
         setUserInfo(userInfo)
         
@@ -231,7 +228,7 @@ function OAuthCallbackContent() {
               {configOk && hasData === false && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    No data found. You'll be redirected to the data management page to set up your initial data sync.
+                    No data found. You&apos;ll be redirected to the data management page to set up your initial data sync.
                   </p>
                 </div>
               )}

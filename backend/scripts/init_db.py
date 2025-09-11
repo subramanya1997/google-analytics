@@ -2,11 +2,14 @@ import os
 import sys
 from sqlalchemy import text
 from loguru import logger
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Add the project's root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.database.session import get_engine
+from common.database.session import get_engine, ensure_database_exists
 
 # Define paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,6 +37,12 @@ TABLE_CREATION_ORDER = [
 def main():
     """Main function to initialize the database."""
     logger.info("Starting database initialization...")
+    
+    # First, ensure the database exists
+    logger.info("Ensuring database exists...")
+    if not ensure_database_exists():
+        logger.error("Failed to ensure database exists")
+        return
     
     try:
         engine = get_engine()

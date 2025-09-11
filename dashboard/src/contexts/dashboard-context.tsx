@@ -54,8 +54,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
       const controller = new AbortController()
       const timeoutId = setTimeout(() => {
-        controller.abort(new Error('Request timeout after 2.5 seconds'))
-      }, 2500)
+        controller.abort()
+      }, 10000) // Increased to 10 seconds
       
       let data: Location[] = []
       
@@ -76,9 +76,15 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timeoutId)
         
         // Handle AbortError specifically
-        if (error instanceof Error && error.name === 'AbortError') {
+        if (error instanceof Error && (error.name === 'AbortError' || error.message.includes('aborted'))) {
           console.warn('Location fetch was aborted (likely due to timeout)')
           return // Don't throw AbortError, just return silently
+        }
+        
+        // Handle timeout errors
+        if (error instanceof Error && error.message.includes('timeout')) {
+          console.warn('Location fetch timed out')
+          return // Don't throw timeout errors, just return silently
         }
         
         throw error
@@ -92,9 +98,32 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         // ignore storage errors
       }
     } catch (error) {
-      // Only log non-abort errors
-      if (!(error instanceof Error && error.name === 'AbortError')) {
+      // Only log non-abort and non-timeout errors
+      if (error instanceof Error) {
+        if (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('timeout')) {
+          console.warn('Location fetch was cancelled or timed out')
+        } else {
+          console.error('Error fetching locations:', error)
+        }
+      } else {
         console.error('Error fetching locations:', error)
+      }
+      
+      // Try to load from cache as fallback if we don't have any locations
+      if (locations.length === 0) {
+        try {
+          const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
+          if (raw) {
+            const parsed = JSON.parse(raw) as { data: Location[]; cachedAt: number }
+            if (Array.isArray(parsed.data) && parsed.data.length > 0) {
+              console.info('Loaded locations from cache as fallback')
+              setLocations(parsed.data)
+              setLocationsCacheTime(parsed.cachedAt)
+            }
+          }
+        } catch {
+          // ignore cache errors
+        }
       }
     } finally {
       isFetchingRef.current = false

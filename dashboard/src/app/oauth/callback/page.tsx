@@ -1,34 +1,17 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Loader2, Check, AlertCircle, Play, ShieldAlert, User } from "lucide-react"
-import { authenticateWithCode as authWithCode, fetchDataAvailability, startSync as startSyncApi } from "@/lib/api-utils"
+import { Loader2, Check, AlertCircle, ShieldAlert, User } from "lucide-react"
+import { authenticateWithCode, fetchDataAvailability } from "@/lib/api-utils"
 import { useUser } from "@/contexts/user-context"
 
 type Status = "working" | "success" | "error"
 
 export const dynamic = "force-dynamic"
-
-async function authenticateWithCode(code: string): Promise<AuthResponse> {
-  const response = await authWithCode(code)
-
-  if (!response.ok) {
-    let detail = ""
-    try { 
-      const errorData = await response.json()
-      detail = errorData?.detail || errorData?.message || "" 
-    } catch {}
-    throw new Error(detail || "Authentication failed")
-  }
-
-  return await response.json()
-}
-
-// Session verification is handled by the auth service authenticate endpoint
 
 interface AuthResponse {
   success: boolean
@@ -36,6 +19,7 @@ interface AuthResponse {
   tenant_id?: string
   first_name?: string
   username?: string
+  access_token?: string
   missing_configs?: string[]
   invalid_configs?: string[]
 }
@@ -54,14 +38,6 @@ async function checkDataAvailability(): Promise<{ hasData: boolean }> {
   }
 }
 
-async function startSync(tenantId: string): Promise<boolean> {
-  try {
-    const resp = await startSyncApi(tenantId)
-    return resp.ok
-  } catch {
-    return false
-  }
-}
 
 function OAuthCallbackContent() {
   const router = useRouter()
@@ -73,13 +49,16 @@ function OAuthCallbackContent() {
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
   const [hasData, setHasData] = useState<boolean | null>(null)
-  const [startingSync, setStartingSync] = useState(false)
   const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string } | null>(null)
+  const authRequestMade = useRef(false)
 
   useEffect(() => {
+    // Get values immediately at the start
     const code = params.get("code")
     const error = params.get("error")
     const errorDescription = params.get("error_description")
+    const currentRouter = router
+    const currentSetUser = setUser
 
     if (error) {
       setStatus("error")
@@ -92,12 +71,33 @@ function OAuthCallbackContent() {
       return
     }
 
+    // Prevent multiple executions
+    if (authRequestMade.current) {
+      return
+    }
+    authRequestMade.current = true
+    
     let cancelled = false
     ;(async () => {
       try {
         setMessage("Verifying your account…")
-        const authResult = await authenticateWithCode(code)
-        if (cancelled) return        
+        
+        // Call the authentication API
+        const response = await authenticateWithCode(code)
+        if (cancelled) return
+        
+        if (!response.ok) {
+          let detail = ""
+          try { 
+            const errorData = await response.json()
+            detail = errorData?.detail || errorData?.message || "" 
+          } catch {}
+          throw new Error(detail || "Authentication failed")
+        }
+        
+        const authResult: AuthResponse = await response.json()
+        if (cancelled) return
+        
         // Handle authentication response
         if (!authResult.success) {
           // Check if it's a configuration issue (not a hard failure)
@@ -114,7 +114,7 @@ function OAuthCallbackContent() {
             setUserInfo(userInfo)
             
             // Store user info in global context even with config issues
-            setUser({
+            currentSetUser({
               firstName: authResult.first_name,
               username: authResult.username,
               tenantId: authResult.tenant_id
@@ -133,10 +133,11 @@ function OAuthCallbackContent() {
         setUserInfo(userInfo)
         
         // Store user info in global context
-        setUser({
+        currentSetUser({
           firstName: authResult.first_name,
           username: authResult.username,
-          tenantId: tId
+          tenantId: tId,
+          accessToken: authResult.access_token
         })
 
         // Since auth service already validated configurations, we can proceed
@@ -150,15 +151,16 @@ function OAuthCallbackContent() {
           if (dataCheck.hasData) {
             setStatus("success")
             setMessage("Setup complete. Redirecting to dashboard…")
-            setTimeout(() => router.replace("/"), 1200)
+            setTimeout(() => currentRouter.replace("/"), 1200)
           } else {
             setStatus("success")
-            setMessage("Verification complete. You can start the initial data sync.")
+            setMessage("Verification complete. Redirecting to data management…")
+            setTimeout(() => currentRouter.replace("/data-management"), 1200)
           }
         } else {
           setStatus("success")
           setMessage("Verification complete. Redirecting…")
-          setTimeout(() => router.replace("/"), 1200)
+          setTimeout(() => currentRouter.replace("/"), 1200)
         }
       } catch (err: unknown) {
         if (cancelled) return
@@ -171,7 +173,8 @@ function OAuthCallbackContent() {
     return () => {
       cancelled = true
     }
-  }, [params, router, setUser])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Empty dependency array to ensure it only runs once
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
@@ -224,41 +227,12 @@ function OAuthCallbackContent() {
                 </Alert>
               )}
 
-              {/* Sync controls when config is ok but no data available */}
+              {/* Info message when config is ok but no data available */}
               {configOk && hasData === false && (
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground">
-                    Start your initial data sync to set up your workspace. This can take a few minutes.
+                    No data found. You'll be redirected to the data management page to set up your initial data sync.
                   </p>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={async () => {
-                        if (!tenantId) return
-                        setStartingSync(true)
-                        const ok = await startSync(tenantId)
-                        setStartingSync(false)
-                        if (ok) {
-                          setHasData(true) // Assume sync will generate data
-                          setMessage("Sync initiated. Redirecting to dashboard…")
-                          setTimeout(() => router.replace("/"), 1500)
-                        } else {
-                          setStatus("error")
-                          setMessage("Failed to start sync. Please try again or contact support.")
-                        }
-                      }}
-                      disabled={startingSync}
-                    >
-                      {startingSync ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" /> Starting…
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-2" /> Start Sync
-                        </>
-                      )}
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>

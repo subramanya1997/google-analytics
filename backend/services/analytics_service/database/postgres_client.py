@@ -539,109 +539,131 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching branch email mappings: {e}")
             return []
 
-    def update_branch_email_mappings(
-        self, tenant_id: str, mappings: List[Any]
-    ) -> Dict[str, int]:
-        """Update branch email mappings for a tenant."""
+    def create_branch_email_mapping(
+        self, tenant_id: str, mapping: Any
+    ) -> Dict[str, Any]:
+        """Create a new branch email mapping."""
         try:
             with self.get_db_session() as session:
-                # First, disable all existing mappings
-                session.execute(
+                # Handle both Pydantic models and dictionaries
+                if hasattr(mapping, 'branch_code'):
+                    # Pydantic model
+                    branch_code = mapping.branch_code
+                    branch_name = mapping.branch_name
+                    sales_rep_email = mapping.sales_rep_email
+                    sales_rep_name = mapping.sales_rep_name
+                    is_enabled = mapping.is_enabled
+                else:
+                    # Dictionary
+                    branch_code = mapping["branch_code"]
+                    branch_name = mapping.get("branch_name")
+                    sales_rep_email = mapping["sales_rep_email"]
+                    sales_rep_name = mapping.get("sales_rep_name")
+                    is_enabled = mapping.get("is_enabled", True)
+                
+                result = session.execute(
                     text("""
-                        UPDATE branch_email_mappings 
-                        SET is_enabled = false, updated_at = NOW()
-                        WHERE tenant_id = :tenant_id
+                        INSERT INTO branch_email_mappings (
+                            tenant_id, branch_code, branch_name,
+                            sales_rep_email, sales_rep_name, is_enabled
+                        ) VALUES (
+                            :tenant_id, :branch_code, :branch_name,
+                            :sales_rep_email, :sales_rep_name, :is_enabled
+                        )
+                        RETURNING id
                     """),
-                    {"tenant_id": tenant_id}
-                )
-                
-                created_count = 0
-                updated_count = 0
-                
-                for mapping in mappings:
-                    # Handle both Pydantic models and dictionaries
-                    if hasattr(mapping, 'branch_code'):
-                        # Pydantic model
-                        branch_code = mapping.branch_code
-                        branch_name = mapping.branch_name
-                        sales_rep_email = mapping.sales_rep_email
-                        sales_rep_name = mapping.sales_rep_name
-                        is_enabled = mapping.is_enabled
-                    else:
-                        # Dictionary
-                        branch_code = mapping["branch_code"]
-                        branch_name = mapping.get("branch_name")
-                        sales_rep_email = mapping["sales_rep_email"]
-                        sales_rep_name = mapping.get("sales_rep_name")
-                        is_enabled = mapping.get("is_enabled", True)
-                    
-                    # Check if mapping exists
-                    existing = session.execute(
-                        text("""
-                            SELECT id FROM branch_email_mappings
-                            WHERE tenant_id = :tenant_id 
-                            AND branch_code = :branch_code 
-                            AND sales_rep_email = :sales_rep_email
-                        """),
-                        {
-                            "tenant_id": tenant_id,
-                            "branch_code": branch_code,
-                            "sales_rep_email": sales_rep_email
-                        }
-                    ).scalar()
-                    
-                    if existing:
-                        # Update existing
-                        session.execute(
-                            text("""
-                                UPDATE branch_email_mappings SET
-                                    branch_name = :branch_name,
-                                    sales_rep_name = :sales_rep_name,
-                                    is_enabled = :is_enabled,
-                                    updated_at = NOW()
-                                WHERE id = :id
-                            """),
-                            {
-                                "id": existing,
-                                "branch_name": branch_name,
-                                "sales_rep_name": sales_rep_name,
-                                "is_enabled": is_enabled
-                            }
-                        )
-                        updated_count += 1
-                    else:
-                        # Create new
-                        session.execute(
-                            text("""
-                                INSERT INTO branch_email_mappings (
-                                    tenant_id, branch_code, branch_name,
-                                    sales_rep_email, sales_rep_name, is_enabled
-                                ) VALUES (
-                                    :tenant_id, :branch_code, :branch_name,
-                                    :sales_rep_email, :sales_rep_name, :is_enabled
-                                )
-                            """),
-                            {
-                                "tenant_id": tenant_id,
-                                "branch_code": branch_code,
-                                "branch_name": branch_name,
-                                "sales_rep_email": sales_rep_email,
-                                "sales_rep_name": sales_rep_name,
-                                "is_enabled": is_enabled
-                            }
-                        )
-                        created_count += 1
+                    {
+                        "tenant_id": tenant_id,
+                        "branch_code": branch_code,
+                        "branch_name": branch_name,
+                        "sales_rep_email": sales_rep_email,
+                        "sales_rep_name": sales_rep_name,
+                        "is_enabled": is_enabled
+                    }
+                ).fetchone()
                 
                 session.commit()
                 
                 return {
-                    "created": created_count,
-                    "updated": updated_count,
-                    "total": created_count + updated_count
+                    "mapping_id": str(result.id)
                 }
                 
         except Exception as e:
-            logger.error(f"Error updating branch email mappings: {e}")
+            logger.error(f"Error creating branch email mapping: {e}")
+            raise
+
+    def update_branch_email_mapping(
+        self, tenant_id: str, mapping_id: str, mapping: Any
+    ) -> bool:
+        """Update a specific branch email mapping by ID."""
+        try:
+            with self.get_db_session() as session:
+                # Handle both Pydantic models and dictionaries
+                if hasattr(mapping, 'branch_code'):
+                    # Pydantic model
+                    branch_code = mapping.branch_code
+                    branch_name = mapping.branch_name
+                    sales_rep_email = mapping.sales_rep_email
+                    sales_rep_name = mapping.sales_rep_name
+                    is_enabled = mapping.is_enabled
+                else:
+                    # Dictionary
+                    branch_code = mapping["branch_code"]
+                    branch_name = mapping.get("branch_name")
+                    sales_rep_email = mapping["sales_rep_email"]
+                    sales_rep_name = mapping.get("sales_rep_name")
+                    is_enabled = mapping.get("is_enabled", True)
+                
+                result = session.execute(
+                    text("""
+                        UPDATE branch_email_mappings SET
+                            branch_code = :branch_code,
+                            branch_name = :branch_name,
+                            sales_rep_email = :sales_rep_email,
+                            sales_rep_name = :sales_rep_name,
+                            is_enabled = :is_enabled,
+                            updated_at = NOW()
+                        WHERE tenant_id = :tenant_id AND id = :mapping_id
+                    """),
+                    {
+                        "tenant_id": tenant_id,
+                        "mapping_id": mapping_id,
+                        "branch_code": branch_code,
+                        "branch_name": branch_name,
+                        "sales_rep_email": sales_rep_email,
+                        "sales_rep_name": sales_rep_name,
+                        "is_enabled": is_enabled
+                    }
+                )
+                
+                session.commit()
+                
+                # Return True if a row was updated, False if mapping wasn't found
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logger.error(f"Error updating branch email mapping {mapping_id}: {e}")
+            raise
+
+    def delete_branch_email_mapping(self, tenant_id: str, mapping_id: str) -> bool:
+        """Delete a specific branch email mapping by ID."""
+        try:
+            with self.get_db_session() as session:
+                result = session.execute(
+                    text("""
+                        DELETE FROM branch_email_mappings
+                        WHERE tenant_id = :tenant_id AND id = :mapping_id
+                    """),
+                    {"tenant_id": tenant_id, "mapping_id": mapping_id}
+                )
+                
+                session.commit()
+                
+                # Return True if a row was deleted, False if mapping wasn't found
+                return result.rowcount > 0
+                
+        except Exception as e:
+            logger.error(f"Error deleting branch email mapping {mapping_id}: {e}")
             raise
 
     # ======================================

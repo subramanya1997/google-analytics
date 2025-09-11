@@ -53,7 +53,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       setLoadingLocations(true)
 
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 2500)
+      const timeoutId = setTimeout(() => {
+        controller.abort(new Error('Request timeout after 2.5 seconds'))
+      }, 2500)
       
       let data: Location[] = []
       
@@ -72,18 +74,28 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         lastFetchAtRef.current = now
       } catch (error) {
         clearTimeout(timeoutId)
+        
+        // Handle AbortError specifically
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn('Location fetch was aborted (likely due to timeout)')
+          return // Don't throw AbortError, just return silently
+        }
+        
         throw error
       }
 
       try {
-        if (data) {
+        if (data && data.length > 0) {
           sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ data: data, cachedAt: now }))
         }
       } catch {
         // ignore storage errors
       }
     } catch (error) {
-      console.error('Error fetching locations:', error)
+      // Only log non-abort errors
+      if (!(error instanceof Error && error.name === 'AbortError')) {
+        console.error('Error fetching locations:', error)
+      }
     } finally {
       isFetchingRef.current = false
       setLoadingLocations(false)

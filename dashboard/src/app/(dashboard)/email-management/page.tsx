@@ -1,68 +1,14 @@
 "use client"
 
 import React, { useEffect, useState, useCallback } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Skeleton } from "@/components/ui/skeleton"
-import { DateRangeSelector } from "@/components/ui/date-range-selector"
-import { Input } from "@/components/ui/input"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { Textarea } from "@/components/ui/textarea"
-import { Calendar } from "@/components/ui/calendar"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { 
-  Mail, 
-  Send, 
-  Clock, 
-  CheckCircle, 
-  XCircle, 
-  AlertCircle,
-  ChevronRight,
-  RefreshCw,
-  Settings,
-  Users,
-  MapPin,
-  Plus,
-  Edit,
-  Trash2,
-  Calendar as CalendarIcon
-} from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
 import { 
   fetchEmailConfig,
   fetchBranchEmailMappings,
-  updateBranchEmailMappings,
+  updateBranchEmailMapping,
+  createBranchEmailMapping,
+  deleteBranchEmailMapping,
   fetchLocations,
   sendEmailReports,
   fetchEmailJobs,
@@ -77,12 +23,26 @@ import {
   EmailHistory,
   EmailHistoryResponse
 } from "@/types"
-import type { DateRange } from "react-day-picker"
+import {
+  BranchMappingsTable,
+  SendReportsDialog,
+  EmailActivitySection,
+  BranchMappingDialog
+} from "@/components/email-management"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export default function EmailManagementPage() {
   // Email Configuration State
   const [emailConfig, setEmailConfig] = useState<EmailConfigResponse | null>(null)
-  const [loadingConfig, setLoadingConfig] = useState(true)
   
   // Branch Mappings State
   const [branchMappings, setBranchMappings] = useState<BranchEmailMapping[]>([])
@@ -134,10 +94,16 @@ export default function EmailManagementPage() {
   })
   const [savingMapping, setSavingMapping] = useState(false)
 
+  // Send Reports Dialog State
+  const [sendReportsDialogOpen, setSendReportsDialogOpen] = useState(false)
+
+  // Delete Confirmation Dialog State
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [mappingToDelete, setMappingToDelete] = useState<BranchEmailMapping | null>(null)
+
   // Fetch Email Configuration
   const fetchEmailConfigData = useCallback(async () => {
     try {
-      setLoadingConfig(true)
       const response = await fetchEmailConfig()
       
       if (!response.ok) {
@@ -149,8 +115,6 @@ export default function EmailManagementPage() {
     } catch (error) {
       console.error('Error fetching email config:', error)
       toast.error('Failed to load email configuration')
-    } finally {
-      setLoadingConfig(false)
     }
   }, [])
 
@@ -165,7 +129,6 @@ export default function EmailManagementPage() {
       }
       
       const data: BranchEmailMapping[] = await response.json()
-      console.log('Fetched branch mappings:', data)
       setBranchMappings(data)
     } catch (error) {
       console.error('Error fetching branch mappings:', error)
@@ -258,6 +221,25 @@ export default function EmailManagementPage() {
     ])
   }, [fetchEmailConfigData, fetchMappingsData, fetchLocationsData, fetchJobsData, fetchHistoryData])
 
+  // Listen for the custom events from layout wrapper
+  useEffect(() => {
+    const handleOpenMappingDialog = () => {
+      openMappingDialog()
+    }
+
+    const handleOpenSendReportsDialog = () => {
+      setSendReportsDialogOpen(true)
+    }
+
+    window.addEventListener('openMappingDialog', handleOpenMappingDialog)
+    window.addEventListener('openSendReportsDialog', handleOpenSendReportsDialog)
+    
+    return () => {
+      window.removeEventListener('openMappingDialog', handleOpenMappingDialog)
+      window.removeEventListener('openSendReportsDialog', handleOpenSendReportsDialog)
+    }
+  }, [])  // Empty dependency array since functions are stable
+
   // Handle Send Reports
   const handleSendReports = async () => {
     if (!sendDate) {
@@ -341,23 +323,15 @@ export default function EmailManagementPage() {
     try {
       setSavingMapping(true)
       
-      // For updates, we need to send the full list with the updated mapping
-      // For now, we'll add the new mapping to existing ones
-      let updatedMappings: BranchEmailMapping[]
+      let response: Response
       
-      if (editingMapping) {
+      if (editingMapping && editingMapping.id) {
         // Update existing mapping
-        updatedMappings = branchMappings.map(mapping => 
-          mapping.id === editingMapping.id 
-            ? { ...mappingForm, id: mapping.id }
-            : mapping
-        )
+        response = await updateBranchEmailMapping(editingMapping.id, mappingForm)
       } else {
-        // Add new mapping
-        updatedMappings = [...branchMappings, mappingForm]
+        // Create new mapping
+        response = await createBranchEmailMapping(mappingForm)
       }
-
-      const response = await updateBranchEmailMappings(updatedMappings)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -382,16 +356,21 @@ export default function EmailManagementPage() {
   }
 
   const handleDeleteMapping = async (mapping: BranchEmailMapping) => {
-    if (!confirm(`Are you sure you want to delete the mapping for ${mapping.branch_code}?`)) {
+    setMappingToDelete(mapping)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDeleteMapping = async () => {
+    if (!mappingToDelete) return
+
+    if (!mappingToDelete.id) {
+      toast.error('Cannot delete mapping: missing ID')
+      setDeleteDialogOpen(false)
       return
     }
 
     try {
-      const updatedMappings = branchMappings
-        .filter(m => m.id !== mapping.id)
-        .map(m => ({ ...m, is_enabled: m.id === mapping.id ? false : m.is_enabled }))
-
-      const response = await updateBranchEmailMappings(updatedMappings)
+      const response = await deleteBranchEmailMapping(mappingToDelete.id)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -400,65 +379,12 @@ export default function EmailManagementPage() {
 
       toast.success('Mapping deleted successfully')
       await fetchMappingsData()
+      setDeleteDialogOpen(false)
+      setMappingToDelete(null)
       
     } catch (error) {
       console.error('Error deleting mapping:', error)
       toast.error(`Failed to delete mapping: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-
-  // Status badge component
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          Completed
-        </Badge>
-      case 'failed':
-        return <Badge variant="destructive">
-          <XCircle className="h-3 w-3 mr-1" />
-          Failed
-        </Badge>
-      case 'processing':
-        return <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
-          <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
-          Processing
-        </Badge>
-      case 'queued':
-        return <Badge variant="outline">
-          <Clock className="h-3 w-3 mr-1" />
-          Queued
-        </Badge>
-      case 'sent':
-        return <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-          <CheckCircle className="h-3 w-3 mr-1" />
-          Sent
-        </Badge>
-      default:
-        return <Badge variant="outline">
-          <AlertCircle className="h-3 w-3 mr-1" />
-          {status}
-        </Badge>
-    }
-  }
-
-  // Format duration
-  const formatDuration = (startDate?: string, endDate?: string) => {
-    if (!startDate || !endDate) return 'N/A'
-    
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    const durationMs = end.getTime() - start.getTime()
-    const durationMinutes = Math.floor(durationMs / (1000 * 60))
-    
-    if (durationMinutes < 60) {
-      return `${durationMinutes}m`
-    } else {
-      const hours = Math.floor(durationMinutes / 60)
-      const minutes = durationMinutes % 60
-      return `${hours}h ${minutes}m`
     }
   }
 
@@ -487,744 +413,89 @@ export default function EmailManagementPage() {
     })
   }
 
-  // Pagination calculations
-  const totalJobPages = Math.ceil(totalJobs / itemsPerPage)
-  const totalHistoryPages = Math.ceil(totalHistory / itemsPerPage)
-
   return (
     <div className="space-y-4">
       {/* Branch Email Mappings Section */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Users className="h-5 w-5" />
-                Branch Email Mappings
-              </CardTitle>
-            </div>
-            <Button onClick={() => openMappingDialog()} size="sm">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Mapping
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingMappings ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <Skeleton key={i} className="h-16" />
-              ))}
-            </div>
-          ) : branchMappings.length > 0 ? (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Branch Code</TableHead>
-                    <TableHead>Branch Name</TableHead>
-                    <TableHead>Sales Rep</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-20">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {branchMappings.map((mapping) => (
-                    <TableRow 
-                      key={mapping.id || `${mapping.branch_code}-${mapping.sales_rep_email}`}
-                      className={!mapping.is_enabled ? 'opacity-60' : ''}
-                    >
-                      <TableCell>
-                        <Badge variant="outline" className="font-mono">
-                          {mapping.branch_code}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{mapping.branch_name || 'N/A'}</TableCell>
-                      <TableCell>{mapping.sales_rep_name || 'N/A'}</TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {mapping.sales_rep_email}
-                      </TableCell>
-                      <TableCell>
-                        {mapping.is_enabled ? (
-                          <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Inactive
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openMappingDialog(mapping)}
-                            title="Edit mapping"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteMapping(mapping)}
-                            className="text-destructive hover:text-destructive"
-                            title="Delete mapping"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="text-center py-8">
-              <Users className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-              <p className="text-muted-foreground mb-4">No branch mappings configured</p>
-              <Button onClick={() => openMappingDialog()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add First Mapping
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <BranchMappingsTable
+        branchMappings={branchMappings}
+        loadingMappings={loadingMappings}
+        onEditMapping={openMappingDialog}
+        onDeleteMapping={handleDeleteMapping}
+      />
 
-      {/* Email Configuration and Send Reports Section */}
-      <div className="grid gap-4 lg:grid-cols-4">
-        {/* Email Configuration Status - Compact */}
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Settings className="h-4 w-4" />
-              Config
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {loadingConfig ? (
-              <div className="space-y-2">
-                <Skeleton className="h-3 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-              </div>
-            ) : emailConfig ? (
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">SMTP</span>
-                  {emailConfig.configured ? (
-                    <Badge variant="default" className="bg-green-100 text-green-800 border-green-200 text-xs">
-                      <CheckCircle className="h-2.5 w-2.5 mr-1" />
-                      Ready
-                    </Badge>
-                  ) : (
-                    <Badge variant="destructive" className="text-xs">
-                      <XCircle className="h-2.5 w-2.5 mr-1" />
-                      Setup Required
-                    </Badge>
-                  )}
-                </div>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Mappings</span>
-                  <Badge variant="outline" className="text-xs">
-                    <Users className="h-2.5 w-2.5 mr-1" />
-                    {branchMappings.filter(m => m.is_enabled).length}/{branchMappings.length}
-                  </Badge>
-                </div>
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm">Configuration error</p>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Send Reports Section */}
-        <Card className="lg:col-span-3">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Send className="h-5 w-5" />
-              Send Email Reports
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <Label>Report Date</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {sendDate ? format(sendDate, 'PPP') : 'Select date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={sendDate}
-                    onSelect={(date) => date && setSendDate(date)}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Target Branches</Label>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => {
-                    if (selectedBranches.length === locations.length) {
-                      setSelectedBranches([])
-                    } else {
-                      setSelectedBranches(locations.map(l => l.locationId))
-                    }
-                  }}
-                >
-                  {selectedBranches.length === locations.length ? 'Deselect All' : 'Select All'}
-                </Button>
-              </div>
-              
-              {loadingLocations ? (
-                <div className="space-y-2">
-                  {[1, 2, 3].map(i => (
-                    <Skeleton key={i} className="h-8" />
-                  ))}
-                </div>
-              ) : (
-                <div className="max-h-32 overflow-y-auto border rounded-md p-2 space-y-1">
-                  {locations.map((location) => (
-                    <div key={location.locationId} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={location.locationId}
-                        checked={selectedBranches.includes(location.locationId)}
-                        onCheckedChange={(checked) => 
-                          handleBranchSelectionChange(location.locationId, !!checked)
-                        }
-                      />
-                      <Label htmlFor={location.locationId} className="flex items-center gap-1 text-sm cursor-pointer">
-                        <MapPin className="h-3 w-3" />
-                        <span className="font-mono text-xs">{location.locationId}</span>
-                        <span>{location.locationName}</span>
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              <p className="text-xs text-muted-foreground">
-                {selectedBranches.length === 0 
-                  ? 'None selected - will send to all branches'
-                  : `${selectedBranches.length} of ${locations.length} selected`
-                }
-              </p>
-            </div>
-
-            <Button 
-              onClick={handleSendReports}
-              disabled={isSendingReports || !sendDate || !emailConfig?.configured}
-              className="w-full"
-            >
-              {isSendingReports ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Sending Reports...
-                </>
-              ) : (
-                <>
-                  <Send className="h-4 w-4 mr-2" />
-                  Send Email Reports
-                </>
-              )}
-            </Button>
-            
-            {!emailConfig?.configured && (
-              <p className="text-xs text-destructive">
-                Please configure SMTP settings in the authentication service first
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Email Activity Section */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-lg">
-                <Mail className="h-5 w-5" />
-                Email Activity
-              </CardTitle>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  fetchJobsData(currentJobsPage)
-                  fetchHistoryData(currentHistoryPage)
-                  toast.success('Email activity refreshed')
-                }}
-                className="flex items-center gap-1"
-              >
-                <RefreshCw className="h-3 w-3" />
-                Refresh
-              </Button>
-              <div className="h-4 w-px bg-border" />
-              <Button
-                variant={activeTab === 'jobs' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveTab('jobs')}
-              >
-                <Users className="h-4 w-4 mr-2" />
-                Jobs
-              </Button>
-              <Button
-                variant={activeTab === 'history' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setActiveTab('history')}
-              >
-                <Mail className="h-4 w-4 mr-2" />
-                History
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        
-        <CardContent>
-          {activeTab === 'jobs' ? (
-            // Jobs Tab
-            <div className="space-y-4">
-              {loadingJobs ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-16" />
-                  ))}
-                </div>
-              ) : jobs.length > 0 ? (
-                <>
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Job ID</TableHead>
-                          <TableHead>Report Date</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Branches</TableHead>
-                          <TableHead>Emails</TableHead>
-                          <TableHead>Duration</TableHead>
-                          <TableHead>Created</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {jobs.map((job) => (
-                          <React.Fragment key={job.job_id}>
-                            <TableRow 
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => toggleJobExpansion(job.job_id)}
-                            >
-                              <TableCell className="w-12">
-                                <ChevronRight 
-                                  className={`h-4 w-4 transition-transform ${
-                                    expandedJobs.has(job.job_id) ? 'rotate-90' : ''
-                                  }`}
-                                />
-                              </TableCell>
-                              <TableCell className="font-mono text-sm font-medium">
-                                {job.job_id}
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {format(new Date(job.report_date), 'MMM d, yyyy')}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {getStatusBadge(job.status)}
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {job.target_branches.length > 0 ? 
-                                    `${job.target_branches.length} selected` : 
-                                    'All branches'
-                                  }
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {job.emails_sent}/{job.total_emails}
-                                  {job.emails_failed > 0 && (
-                                    <span className="text-destructive ml-1">
-                                      ({job.emails_failed} failed)
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm font-medium">
-                                  {formatDuration(job.started_at, job.completed_at)}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm text-muted-foreground">
-                                  {format(new Date(job.created_at), 'MMM d, HH:mm')}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {expandedJobs.has(job.job_id) && (
-                              <TableRow>
-                                <TableCell colSpan={8} className="bg-muted/30 p-0">
-                                  <div className="px-6 py-4 border-t border-border/50">
-                                    <div className="space-y-4">
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                          <Label className="text-sm font-medium text-muted-foreground">Processing Details</Label>
-                                          <div className="mt-1 space-y-1">
-                                            <p className="text-sm">Started: {job.started_at ? format(new Date(job.started_at), 'MMM d, HH:mm:ss') : 'Not started'}</p>
-                                            <p className="text-sm">Completed: {job.completed_at ? format(new Date(job.completed_at), 'MMM d, HH:mm:ss') : 'Not completed'}</p>
-                                          </div>
-                                        </div>
-                                        
-                                        {job.target_branches.length > 0 && (
-                                          <div>
-                                            <Label className="text-sm font-medium text-muted-foreground">Target Branches</Label>
-                                            <div className="mt-1 flex flex-wrap gap-1">
-                                              {job.target_branches.map((branch) => (
-                                                <Badge key={branch} variant="outline" className="text-xs">
-                                                  {branch}
-                                                </Badge>
-                                              ))}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                      
-                                      {job.error_message && (
-                                        <div>
-                                          <Label className="text-sm font-medium text-destructive">Error Message</Label>
-                                          <div className="mt-1 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                                            <p className="text-sm text-destructive">{job.error_message}</p>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+      <EmailActivitySection
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        jobs={jobs}
+        loadingJobs={loadingJobs}
+        currentJobsPage={currentJobsPage}
+        totalJobs={totalJobs}
+        itemsPerPage={itemsPerPage}
+        fetchJobsData={fetchJobsData}
+        emailHistory={emailHistory}
+        loadingHistory={loadingHistory}
+        currentHistoryPage={currentHistoryPage}
+        totalHistory={totalHistory}
+        fetchHistoryData={fetchHistoryData}
+        expandedJobs={expandedJobs}
+        expandedHistory={expandedHistory}
+        toggleJobExpansion={toggleJobExpansion}
+        toggleHistoryExpansion={toggleHistoryExpansion}
+      />
 
-                  {/* Jobs Pagination */}
-                  {totalJobPages > 1 && (
-                    <div className="flex items-center justify-between pt-4">
-                      <p className="text-sm text-muted-foreground">
-                        Showing {currentJobsPage * itemsPerPage + 1} to {Math.min((currentJobsPage + 1) * itemsPerPage, totalJobs)} of {totalJobs} jobs
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchJobsData(currentJobsPage - 1)}
-                          disabled={currentJobsPage === 0}
-                        >
-                          Previous
-                        </Button>
-                        <span className="text-sm">
-                          Page {currentJobsPage + 1} of {totalJobPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchJobsData(currentJobsPage + 1)}
-                          disabled={currentJobsPage === totalJobPages - 1}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <Clock className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">No email jobs found</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            // History Tab
-            <div className="space-y-4">
-              {loadingHistory ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-16" />
-                  ))}
-                </div>
-              ) : emailHistory.length > 0 ? (
-                <>
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12"></TableHead>
-                          <TableHead>Branch</TableHead>
-                          <TableHead>Recipient</TableHead>
-                          <TableHead>Subject</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Report Date</TableHead>
-                          <TableHead>Sent At</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {emailHistory.map((history) => (
-                          <React.Fragment key={history.id}>
-                            <TableRow 
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => toggleHistoryExpansion(history.id)}
-                            >
-                              <TableCell className="w-12">
-                                <ChevronRight 
-                                  className={`h-4 w-4 transition-transform ${
-                                    expandedHistory.has(history.id) ? 'rotate-90' : ''
-                                  }`}
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  {history.branch_code}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  <div className="font-medium">{history.sales_rep_name || 'Unknown'}</div>
-                                  <div className="text-muted-foreground">{history.sales_rep_email}</div>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm font-medium max-w-xs truncate">
-                                  {history.subject}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {getStatusBadge(history.status)}
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm">
-                                  {format(new Date(history.report_date), 'MMM d, yyyy')}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="text-sm text-muted-foreground">
-                                  {format(new Date(history.sent_at), 'MMM d, HH:mm:ss')}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                            {expandedHistory.has(history.id) && (
-                              <TableRow>
-                                <TableCell colSpan={7} className="bg-muted/30 p-0">
-                                  <div className="px-6 py-4 border-t border-border/50">
-                                    <div className="space-y-4">
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div>
-                                          <Label className="text-sm font-medium text-muted-foreground">Email Details</Label>
-                                          <div className="mt-1 space-y-1">
-                                            <p className="text-sm"><strong>Job ID:</strong> {history.job_id || 'N/A'}</p>
-                                            <p className="text-sm"><strong>Full Subject:</strong> {history.subject}</p>
-                                            {history.smtp_response && (
-                                              <p className="text-sm"><strong>SMTP Response:</strong> {history.smtp_response}</p>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                      
-                                      {history.error_message && (
-                                        <div>
-                                          <Label className="text-sm font-medium text-destructive">Error Message</Label>
-                                          <div className="mt-1 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                                            <p className="text-sm text-destructive">{history.error_message}</p>
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </React.Fragment>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-
-                  {/* History Pagination */}
-                  {totalHistoryPages > 1 && (
-                    <div className="flex items-center justify-between pt-4">
-                      <p className="text-sm text-muted-foreground">
-                        Showing {currentHistoryPage * itemsPerPage + 1} to {Math.min((currentHistoryPage + 1) * itemsPerPage, totalHistory)} of {totalHistory} emails
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchHistoryData(currentHistoryPage - 1)}
-                          disabled={currentHistoryPage === 0}
-                        >
-                          Previous
-                        </Button>
-                        <span className="text-sm">
-                          Page {currentHistoryPage + 1} of {totalHistoryPages}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => fetchHistoryData(currentHistoryPage + 1)}
-                          disabled={currentHistoryPage === totalHistoryPages - 1}
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <Mail className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-                  <p className="text-muted-foreground">No email history found</p>
-                </div>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Send Reports Dialog */}
+      <SendReportsDialog
+        open={sendReportsDialogOpen}
+        onOpenChange={setSendReportsDialogOpen}
+        sendDate={sendDate}
+        setSendDate={setSendDate}
+        selectedBranches={selectedBranches}
+        setSelectedBranches={setSelectedBranches}
+        locations={locations}
+        loadingLocations={loadingLocations}
+        emailConfig={emailConfig}
+        isSendingReports={isSendingReports}
+        onSendReports={handleSendReports}
+        onBranchSelectionChange={handleBranchSelectionChange}
+      />
 
       {/* Branch Mapping Management Dialog */}
-      <Dialog open={mappingDialogOpen} onOpenChange={setMappingDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {editingMapping ? 'Edit Branch Mapping' : 'Add Branch Mapping'}
-            </DialogTitle>
-            <DialogDescription>
-              {editingMapping ? 'Update the branch email mapping details.' : 'Create a new branch to sales representative mapping.'}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="branch_code">Branch Code *</Label>
-              <Select
-                value={mappingForm.branch_code}
-                onValueChange={(value) => {
-                  setMappingForm({ ...mappingForm, branch_code: value })
-                  // Auto-fill branch name if location exists
-                  const location = locations.find(l => l.locationId === value)
-                  if (location && !mappingForm.branch_name) {
-                    setMappingForm(prev => ({ 
-                      ...prev, 
-                      branch_code: value,
-                      branch_name: location.locationName 
-                    }))
-                  }
-                }}
-                disabled={!!editingMapping}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select branch" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((location) => (
-                    <SelectItem key={location.locationId} value={location.locationId}>
-                      {location.locationId} - {location.locationName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      <BranchMappingDialog
+        open={mappingDialogOpen}
+        onOpenChange={setMappingDialogOpen}
+        editingMapping={editingMapping}
+        mappingForm={mappingForm}
+        setMappingForm={setMappingForm}
+        locations={locations}
+        savingMapping={savingMapping}
+        onSaveMapping={handleSaveMapping}
+      />
 
-            <div>
-              <Label htmlFor="branch_name">Branch Name</Label>
-              <Input
-                id="branch_name"
-                value={mappingForm.branch_name}
-                onChange={(e) => setMappingForm({ ...mappingForm, branch_name: e.target.value })}
-                placeholder="Branch display name"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="sales_rep_email">Sales Rep Email *</Label>
-              <Input
-                id="sales_rep_email"
-                type="email"
-                value={mappingForm.sales_rep_email}
-                onChange={(e) => setMappingForm({ ...mappingForm, sales_rep_email: e.target.value })}
-                placeholder="sales@company.com"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="sales_rep_name">Sales Rep Name</Label>
-              <Input
-                id="sales_rep_name"
-                value={mappingForm.sales_rep_name}
-                onChange={(e) => setMappingForm({ ...mappingForm, sales_rep_name: e.target.value })}
-                placeholder="Sales representative name"
-              />
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="is_enabled"
-                checked={mappingForm.is_enabled}
-                onCheckedChange={(checked) => setMappingForm({ ...mappingForm, is_enabled: !!checked })}
-              />
-              <Label htmlFor="is_enabled" className="text-sm">
-                Enable this mapping
-              </Label>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setMappingDialogOpen(false)}
-              disabled={savingMapping}
-            >
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Branch Mapping</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the mapping for <strong>{mappingToDelete?.branch_code}</strong>? 
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)}>
               Cancel
-            </Button>
-            <Button
-              onClick={handleSaveMapping}
-              disabled={savingMapping || !mappingForm.branch_code || !mappingForm.sales_rep_email}
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDeleteMapping}
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {savingMapping ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  {editingMapping ? 'Update' : 'Add'} Mapping
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

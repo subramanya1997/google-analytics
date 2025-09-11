@@ -16,7 +16,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
+  SidebarFooter,
 } from "@/components/ui/sidebar"
+import { NavUser } from "@/components/nav-user"
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -78,8 +80,9 @@ const data = {
         icon: Mail,
       },
     ],
-  },
+  }
 }
+
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
@@ -139,6 +142,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         })()}
       </SidebarContent>
       <SidebarRail />
+      <SidebarFooter>
+        <NavUser />
+      </SidebarFooter>
     </Sidebar>
   )
 }

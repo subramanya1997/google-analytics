@@ -48,8 +48,7 @@ export function DateRangeSelector({
   }, [dateRange])
 
   const handleDateChange = (newRange: DateRange | undefined) => {
-    console.log('Date selection changed:', newRange)
-    
+
     // Update local state immediately for responsive UI
     setDate(newRange)
     

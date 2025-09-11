@@ -75,7 +75,6 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
   const fetchUserHistoryData = async () => {
     // Check if we already have data cached
     if (userHistory.user || userHistory.purchaseHistory.length > 0) {
-      console.log('Using cached user history data')
       return
     }
     
@@ -92,14 +91,6 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
     }
     
     const sessionId = actualTask.sessionId || null
-    
-    console.log('Fetching history for:', { 
-      userId, 
-      sessionId, 
-      taskType: actualTask.type, 
-      taskId: actualTask.id,
-      customer: actualTask.customer 
-    })
     
     try {
       let response: Response | null = null

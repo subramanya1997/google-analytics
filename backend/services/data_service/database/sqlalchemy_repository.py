@@ -341,42 +341,31 @@ class SqlAlchemyRepository:
             }
 
     def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
-        """Get both data availability summary and detailed breakdown - SINGLE ULTRA-FAST call!"""
+        """Get data availability summary using optimized function."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
         with Session(self.engine) as session:
-            # SINGLE combined function call - gets BOTH summary and breakdown!
+            # Call simplified function that only returns summary data
             combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
-            results = session.execute(combined_query, {"tenant_id": tenant_uuid_str}).mappings().all()
+            result = session.execute(combined_query, {"tenant_id": tenant_uuid_str}).mappings().first()
             
-            # Process results - first row is summary, rest are breakdown
-            summary_data = None
-            breakdown = {}
-            breakdown_count = 0
-            
-            for row in results:
-                if row.result_type == 'summary':
-                    summary_data = {
-                        "earliest_date": row.earliest_date.isoformat() if row.earliest_date else None,
-                        "latest_date": row.latest_date.isoformat() if row.latest_date else None,
-                        "total_events": int(row.event_count)
-                    }
-                elif row.result_type == 'breakdown':
-                    date_str = row.event_date.isoformat()
-                    if date_str not in breakdown:
-                        breakdown[date_str] = {}
-                    breakdown[date_str][row.event_type] = row.event_count
-                    breakdown_count += 1
-            
-            logger.info(f"Data availability: {breakdown_count} breakdown entries, {summary_data['total_events'] if summary_data else 0} total events (SINGLE FUNCTION CALL!)")
-            
-            return {
-                "summary": summary_data or {
+            if result:
+                summary_data = {
+                    "earliest_date": result.earliest_date.isoformat() if result.earliest_date else None,
+                    "latest_date": result.latest_date.isoformat() if result.latest_date else None,
+                    "total_events": int(result.event_count)
+                }
+                logger.info(f"Data availability: {summary_data['total_events']} total events")
+            else:
+                summary_data = {
                     "earliest_date": None,
                     "latest_date": None,
                     "total_events": 0
-                },
-                "breakdown": breakdown
+                }
+                logger.info("Data availability: No data found")
+            
+            return {
+                "summary": summary_data,
             }
 
     def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:

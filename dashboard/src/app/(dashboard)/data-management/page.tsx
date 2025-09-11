@@ -71,8 +71,8 @@ export default function DataManagementPage() {
       
       const data = await response.json()
       
-      // API always returns combined response with both summary and breakdown
-      if (data.summary && data.breakdown) {
+      // API returns response with summary data
+      if (data.summary) {
         setDataAvailability(data.summary)
       } else {
         // Fallback for unexpected response format

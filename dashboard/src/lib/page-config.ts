@@ -31,6 +31,10 @@ export const pageConfig: Record<string, PageInfo> = {
   "/data-management": {
     title: "Data Management",
     subtitle: "Manage data ingestion and view system status"
+  },
+  "/email-management": {
+    title: "Email Management",
+    subtitle: "Manage email configurations and send reports"
   }
 }
 

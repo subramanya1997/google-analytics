@@ -23,11 +23,15 @@ import { useUser } from "@/contexts/user-context"
 
 export function NavUser() {
   const { isMobile } = useSidebar()
-  const { user } = useUser()
+  const { user, logout } = useUser()
   
   // Fallback to default values if no user data
   const displayName = user?.firstName || user?.username || "User"
   const displayEmail = user?.username || "user@example.com"
+
+  const handleLogout = async () => {
+    await logout()
+  }
 
   return (
     <SidebarMenu>
@@ -64,7 +68,7 @@ export function NavUser() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
               Log out
             </DropdownMenuItem>

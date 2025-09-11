@@ -191,13 +191,14 @@ class AuthenticationService:
                         "username": username,
                     }
 
-                # Step 5: Return success response
+                # Step 5: Return success response with access token
                 return {
                     "success": True,
                     "message": "Authentication successful",
                     "tenant_id": account_id,
                     "first_name": first_name,
                     "username": username,
+                    "access_token": access_token,
                 }
 
         except httpx.RequestError as e:
@@ -484,3 +485,77 @@ class AuthenticationService:
         except Exception as e:
             logger.error(f"Failed to upsert tenant configurations for {tenant_id}: {e}")
             return False
+
+    async def logout_with_token(self, access_token: str) -> Dict[str, Any]:
+        """
+        Logout user by invalidating the access token.
+
+        Args:
+            access_token: The access token to invalidate
+
+        Returns:
+            Dict containing logout result
+        """
+        try:
+            base_url = self.settings.BASE_URL
+            logout_url = f"{base_url}/manage/auth/logout"
+
+            logger.info(f"Starting logout process")
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                logout_response = await client.get(
+                    logout_url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+                if logout_response.status_code != 200:
+                    logger.error(f"Logout failed with status {logout_response.status_code}")
+                    
+                    if logout_response.status_code == 404:
+                        return {
+                            "success": False,
+                            "message": "Logout endpoint not found - the external service may not support logout",
+                        }
+                    elif logout_response.status_code == 401:
+                        return {
+                            "success": False,
+                            "message": "Invalid token - logout failed due to authentication error",
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "message": f"Logout failed with status {logout_response.status_code}",
+                        }
+
+                logger.info(f"Logout successful")
+                return {
+                    "success": True,
+                    "message": "Logout successful",
+                }
+
+        except httpx.RequestError as e:
+            logger.error(f"HTTP request failed during logout: {e}")
+            logger.error(f"Base URL being used: {self.settings.BASE_URL}")
+            return {
+                "success": False,
+                "message": f"Logout service unavailable: {str(e)}",
+            }
+        except Exception as e:
+            logger.error(f"Logout failed: {e}")
+            return {
+                "success": False,
+                "message": "Internal server error during logout",
+            }
+
+    def get_login_url(self) -> str:
+        """
+        Get the login URL for OAuth authentication.
+
+        Returns:
+            The complete login URL for the external OAuth service
+        """
+        base_url = self.settings.BASE_URL
+        # Based on the URL you provided, the admin login should be at /admin/
+        login_url = f"{base_url}/admin/"
+        
+        return login_url

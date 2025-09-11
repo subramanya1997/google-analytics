@@ -86,7 +86,11 @@ export async function fetchFromAuthService(endpoint: string, options?: RequestIn
   
   return await fetch(url, {
     credentials: "include",
+    cache: "no-store", // Disable caching for auth requests
     ...options,
+    headers: {
+      ...options?.headers,
+    }
   })
 }
 
@@ -292,17 +296,19 @@ export async function authenticateWithCode(code: string) {
   })
 }
 
-export async function getSyncStatus(tenantId: string) {
-  return fetchFromAuthService(`tenant/sync/status?tenant_id=${encodeURIComponent(tenantId)}`)
-}
-
-export async function startSync(tenantId: string) {
-  return fetchFromAuthService('/tenant/sync/start', {
+export async function logoutWithToken(accessToken: string) {
+  return fetchFromAuthService('logout', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ tenant_id: tenantId }),
+    body: JSON.stringify({ access_token: accessToken }),
+  })
+}
+
+export async function getLoginUrl() {
+  return fetchFromAuthService('login-url', {
+    method: 'GET',
   })
 }
 

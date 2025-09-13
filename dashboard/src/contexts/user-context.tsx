@@ -3,13 +3,61 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { logoutWithToken, getLoginUrl, validateToken } from '@/lib/api-utils'
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+const SESSION_TIMEOUTS = {
+  MAX_AGE: 24 * 60 * 60 * 1000,           // 24 hours - maximum session age
+  VALIDATE_ON_LOAD: 60 * 60 * 1000,      // 1 hour - validate on load if older
+  VALIDATE_IF_OLDER: 2 * 60 * 60 * 1000, // 2 hours - validate periodically if older
+  MIN_VALIDATE_GAP: 15 * 60 * 1000,      // 15 minutes - minimum gap between validations
+  PERIODIC_CHECK: 30 * 60 * 1000,        // 30 minutes - periodic check interval
+  COOKIE_EXPIRY_HOURS: 7 * 24,          // 7 days - cookie expiry
+  LOAD_DELAY: 1000,                      // 1 second - delay for background validation
+  MAX_VALIDATION_FAILURES: 3             // Maximum validation failures before disabling
+}
+
+// ============================================================================
+// Cookie Utilities
+// ============================================================================
+
+const setCookie = (name: string, value: string, hours: number = SESSION_TIMEOUTS.COOKIE_EXPIRY_HOURS) => {
+  if (typeof window === 'undefined') return
+  const expires = new Date()
+  expires.setTime(expires.getTime() + (hours * 60 * 60 * 1000))
+  document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Strict`
+}
+
+const getCookie = (name: string): string | null => {
+  if (typeof window === 'undefined') return null
+  const nameEQ = name + "="
+  const ca = document.cookie.split(';')
+  for(let i = 0; i < ca.length; i++) {
+    let c = ca[i]
+    while (c.charAt(0) === ' ') c = c.substring(1, c.length)
+    if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length)
+  }
+  return null
+}
+
+const deleteCookie = (name: string) => {
+  if (typeof window === 'undefined') return
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
 interface UserInfo {
   firstName?: string
   username?: string
+  businessName?: string
   tenantId?: string
   accessToken?: string
-  loginTime?: number  // Timestamp when user logged in
-  lastValidated?: number  // Timestamp when token was last validated
+  loginTime?: number
+  lastValidated?: number
 }
 
 interface UserContextType {
@@ -19,193 +67,221 @@ interface UserContextType {
   logout: () => Promise<void>
   validateSession: () => Promise<boolean>
   isValidating: boolean
+  isLoading: boolean
 }
+
+// ============================================================================
+// Context
+// ============================================================================
 
 const UserContext = createContext<UserContextType | undefined>(undefined)
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<UserInfo | null>(null)
   const [isValidating, setIsValidating] = useState(false)
-  const [validationPromise, setValidationPromise] = useState<Promise<boolean> | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [validationFailureCount, setValidationFailureCount] = useState(0)
+  
+  // Use ref to prevent multiple concurrent validations
+  const validationInProgress = useRef(false)
   const validateSessionRef = useRef<(() => Promise<boolean>) | null>(null)
 
-  // Session validation function
+  // ============================================================================
+  // Storage Operations
+  // ============================================================================
+  
+  const persistUserData = useCallback((userData: UserInfo | null) => {
+    try {
+      if (userData) {
+        const dataString = JSON.stringify(userData)
+        localStorage.setItem('user_info', dataString)
+        setCookie('session_backup', dataString)
+      } else {
+        localStorage.removeItem('user_info')
+        deleteCookie('session_backup')
+      }
+    } catch (error) {
+      console.error('Error persisting user data:', error)
+    }
+  }, [])
+
+  // ============================================================================
+  // Session Validation
+  // ============================================================================
+
   const validateSession = useCallback(async (): Promise<boolean> => {
-    if (!user?.accessToken) {
+    // Early returns for invalid states
+    if (!user?.accessToken || validationInProgress.current) {
       return false
     }
 
-    // If validation has failed too many times, disable it to prevent spam
-    if (validationFailureCount >= 3) {
+    // Check if validation is disabled due to repeated failures
+    if (validationFailureCount >= SESSION_TIMEOUTS.MAX_VALIDATION_FAILURES) {
       console.log('Token validation disabled due to repeated failures')
-      return true // Assume valid to prevent logout loops
+      return true
     }
 
-    // If there's already a validation in progress, wait for it
-    if (validationPromise) {
-      console.log('Validation already in progress, waiting for result...')
-      return await validationPromise
-    }
-
-    // Check if we need to validate (don't validate too frequently)
+    // Check if we should skip validation (too recent)
     const now = Date.now()
-    const lastValidated = user.lastValidated || 0
-    const timeSinceValidation = now - lastValidated
-    
-    // Only validate if it's been more than 15 minutes since last validation
-    // or if we've never validated before
-    if (timeSinceValidation < 15 * 60 * 1000 && user.lastValidated) {
-      return true // Assume still valid if recently validated
+    const timeSinceLastValidation = now - (user.lastValidated || 0)
+    if (user.lastValidated && timeSinceLastValidation < SESSION_TIMEOUTS.MIN_VALIDATE_GAP) {
+      return true
     }
 
-    // Create validation promise to prevent concurrent validations
-    const validationTask = async (): Promise<boolean> => {
-      setIsValidating(true)
-      try {
-        const response = await validateToken(user.accessToken!)
-        
-        if (!response.ok) {
-          console.error('Token validation request failed:', response.status)
-          
-          // Don't immediately log out on validation failures - the token might still be valid
-          // Only log out on 401 (unauthorized) errors
-          if (response.status === 401) {
-            console.warn('Token is unauthorized, logging out user')
-            setUser(null)
-            return false
-          }
-          
-          // For other errors (network issues, service unavailable), assume token is still valid
-          // but don't update the lastValidated timestamp and increment failure count
-          console.warn('Token validation failed but keeping user logged in due to potential network/service issues')
-          setValidationFailureCount(prev => prev + 1)
-          return true
-        }
+    // Perform validation
+    validationInProgress.current = true
+    setIsValidating(true)
 
-        const data = await response.json()
-        
-        if (data.valid) {
-          // Update user info with fresh data and validation timestamp
-          const updatedUser = {
-            ...user,
-            firstName: data.first_name || user.firstName,
-            username: data.username || user.username,
-            tenantId: data.tenant_id || user.tenantId,
-            lastValidated: now
-          }
-          setUserState(updatedUser)
-          
-          // Update localStorage
-          try {
-            localStorage.setItem('user_info', JSON.stringify(updatedUser))
-          } catch (error) {
-            console.error('Error saving updated user info to localStorage:', error)
-          }
-          
-          // Reset failure count on successful validation
-          setValidationFailureCount(0)
-          return true
-        } else {
-          console.warn('Token is invalid:', data.message)
-          // Only log out if the validation explicitly says the token is invalid
-          if (data.message && data.message.toLowerCase().includes('invalid')) {
-            setUser(null)
-            return false
-          }
-          
-          // For other validation failures, keep user logged in but don't update timestamp
-          console.warn('Token validation uncertain, keeping user logged in')
-          setValidationFailureCount(prev => prev + 1)
-          return true
+    try {
+      const response = await validateToken(user.accessToken)
+      
+      if (!response.ok) {
+        // Only logout on explicit 401 unauthorized
+        if (response.status === 401) {
+          console.warn('Token is unauthorized, logging out user')
+          setUser(null)
+          return false
         }
-      } catch (error) {
-        console.error('Session validation error:', error)
-        // Don't clear session on network errors, just return false
-        return false
-      } finally {
-        setIsValidating(false)
-        setValidationPromise(null) // Clear the promise when done
+        
+        // For other errors, increment failure count but keep user logged in
+        setValidationFailureCount(prev => prev + 1)
+        console.warn('Token validation failed but keeping user logged in')
+        return true
       }
+
+      const data = await response.json()
+      
+      if (data.valid) {
+        // Update user info with fresh data
+        const updatedUser: UserInfo = {
+          ...user,
+          firstName: data.first_name || user.firstName,
+          username: data.username || user.username,
+          businessName: data.business_name || user.businessName,
+          tenantId: data.tenant_id || user.tenantId,
+          lastValidated: now
+        }
+        
+        setUserState(updatedUser)
+        persistUserData(updatedUser)
+        setValidationFailureCount(0)
+        return true
+      } else {
+        // Token explicitly invalid
+        if (data.message?.toLowerCase().includes('invalid')) {
+          setUser(null)
+          return false
+        }
+        
+        // Uncertain validation result
+        setValidationFailureCount(prev => prev + 1)
+        return true
+      }
+    } catch (error) {
+      console.error('Session validation error:', error)
+      // Don't logout on network errors
+      return true
+    } finally {
+      setIsValidating(false)
+      validationInProgress.current = false
     }
+  }, [user, validationFailureCount, persistUserData])
 
-    // Set the promise and execute validation
-    const promise = validationTask()
-    setValidationPromise(promise)
-    return await promise
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.accessToken, user?.lastValidated, validationPromise, validationFailureCount])
-  // Note: We intentionally don't include 'user' in dependencies to avoid infinite re-renders
-  // since user is an object that changes on every render. We only depend on specific properties.
-
-  // Update the ref whenever validateSession changes
+  // Update ref when validateSession changes
   useEffect(() => {
     validateSessionRef.current = validateSession
   }, [validateSession])
 
-  // Load user info from localStorage on mount
+  // ============================================================================
+  // Session Loading (runs once on mount)
+  // ============================================================================
+
   useEffect(() => {
-    const loadUser = () => {
+    const loadSession = async () => {
+      setIsLoading(true)
+      
       try {
-        const storedUser = localStorage.getItem('user_info')
-        if (storedUser) {
-          const parsedUser: UserInfo = JSON.parse(storedUser)
-          setUserState(parsedUser)
+        // Try localStorage first
+        let storedUser = localStorage.getItem('user_info')
+        
+        // Fallback to cookie if localStorage is empty
+        if (!storedUser) {
+          const cookieSession = getCookie('session_backup')
+          if (cookieSession) {
+            console.log('Restoring session from cookie backup')
+            storedUser = cookieSession
+            // Restore to localStorage
+            localStorage.setItem('user_info', storedUser)
+          }
+        }
+        
+        if (!storedUser) {
+          console.log('No session found')
+          return
+        }
+
+        const parsedUser: UserInfo = JSON.parse(storedUser)
+        const sessionAge = Date.now() - (parsedUser.loginTime || 0)
+        
+        // Check if session is too old
+        if (sessionAge > SESSION_TIMEOUTS.MAX_AGE) {
+          console.log('Session expired (>24 hours)')
+          persistUserData(null)
+          return
+        }
+        
+        // Restore session
+        setUserState(parsedUser)
+        console.log('Session restored', {
+          age: Math.round(sessionAge / 1000 / 60) + ' minutes',
+          needsValidation: sessionAge > SESSION_TIMEOUTS.VALIDATE_ON_LOAD
+        })
+        
+        // Validate in background if session is old
+        if (parsedUser.accessToken && sessionAge > SESSION_TIMEOUTS.VALIDATE_ON_LOAD) {
+          setTimeout(() => {
+            validateSessionRef.current?.()
+          }, SESSION_TIMEOUTS.LOAD_DELAY)
         }
       } catch (error) {
-        console.error('Error loading user info from localStorage:', error)
-        localStorage.removeItem('user_info') // Clear corrupted data
+        console.error('Error loading session:', error)
+        persistUserData(null)
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    loadUser()
-  }, []) // Only run on mount
+    loadSession()
+  }, [persistUserData])
 
-  // Separate effect to validate session after user is loaded
-  useEffect(() => {
-    if (!user?.accessToken || !user?.loginTime) return
+  // ============================================================================
+  // Periodic Validation
+  // ============================================================================
 
-    // Check if session should be considered expired
-    const now = Date.now()
-    const sessionAge = now - user.loginTime
-    
-    // If session is older than 2 hours, validate the token
-    if (sessionAge > 2 * 60 * 60 * 1000) {
-      console.log('Session older than 2 hours, validating token...')
-      // Validate with a delay to prevent race conditions
-      const timeoutId = setTimeout(async () => {
-        if (validateSessionRef.current) {
-          const isValid = await validateSessionRef.current()
-          if (!isValid) {
-            console.log('Session validation failed, user will be logged out')
-          }
-        }
-      }, 2000)
-      
-      return () => clearTimeout(timeoutId)
-    }
-  }, [user?.accessToken, user?.loginTime]) // Removed validateSession dependency
-
-  // Periodic token validation (every 15 minutes)
   useEffect(() => {
     if (!user?.accessToken) return
 
-    const interval = setInterval(async () => {
-      console.log('Performing periodic token validation...')
-      if (validateSessionRef.current) {
-        const isValid = await validateSessionRef.current()
-        if (!isValid) {
-          console.log('Periodic validation failed, session will be cleared')
-        }
+    const interval = setInterval(() => {
+      const sessionAge = Date.now() - (user.loginTime || 0)
+      const timeSinceValidation = Date.now() - (user.lastValidated || 0)
+      
+      // Only validate old sessions that haven't been validated recently
+      if (sessionAge > SESSION_TIMEOUTS.VALIDATE_IF_OLDER && 
+          timeSinceValidation > SESSION_TIMEOUTS.MIN_VALIDATE_GAP) {
+        console.log('Periodic validation check')
+        validateSessionRef.current?.()
       }
-    }, 30 * 60 * 1000) // 30 minutes - less frequent to reduce load
+    }, SESSION_TIMEOUTS.PERIODIC_CHECK)
 
     return () => clearInterval(interval)
-  }, [user?.accessToken]) // Removed validateSession dependency
+  }, [user?.accessToken, user?.loginTime, user?.lastValidated])
 
-  // Save user info to localStorage when it changes
-  const setUser = (userInfo: UserInfo | null) => {
-    // Add login timestamp when setting new user info
+  // ============================================================================
+  // User Management
+  // ============================================================================
+
+  const setUser = useCallback((userInfo: UserInfo | null) => {
+    // Add timestamps for new sessions
     if (userInfo && !userInfo.loginTime) {
       userInfo = {
         ...userInfo,
@@ -215,37 +291,26 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
     
     setUserState(userInfo)
-    try {
-      if (userInfo) {
-        localStorage.setItem('user_info', JSON.stringify(userInfo))
-      } else {
-        localStorage.removeItem('user_info')
-      }
-    } catch (error) {
-      console.error('Error saving user info to localStorage:', error)
-    }
-  }
+    persistUserData(userInfo)
+  }, [persistUserData])
 
-  const isAuthenticated = !!user?.tenantId && !!user?.accessToken
-
-  const logout = async () => {
+  const logout = useCallback(async () => {
+    // Attempt to logout from backend
     if (user?.accessToken) {
       try {
         const response = await logoutWithToken(user.accessToken)
-
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: 'Unknown error' }))
-          console.warn('Logout API failed:', response.status, errorData.message || response.statusText)
+          console.warn('Backend logout failed:', response.status)
         }
       } catch (error) {
-        console.warn('Logout API error:', error)
+        console.warn('Logout error:', error)
       }
     }
     
-    // Clear user data regardless of logout API success
+    // Clear local session
     setUser(null)
     
-    // Redirect to login URL from backend
+    // Redirect to login
     if (typeof window !== 'undefined') {
       try {
         const response = await getLoginUrl()
@@ -253,16 +318,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
           const data = await response.json()
           window.location.href = data.login_url
         } else {
-          // Fallback: redirect to local login page which will fetch the URL
           window.location.href = '/oauth/login'
         }
-      } catch (error) {
-        console.error('Error getting login URL:', error)
-        // Fallback: redirect to local login page
+      } catch {
         window.location.href = '/oauth/login'
       }
     }
-  }
+  }, [user?.accessToken, setUser])
+
+  // ============================================================================
+  // Context Value
+  // ============================================================================
+
+  const isAuthenticated = !!(user?.tenantId && user?.accessToken)
 
   return (
     <UserContext.Provider 
@@ -272,7 +340,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated,
         logout,
         validateSession,
-        isValidating
+        isValidating,
+        isLoading
       }}
     >
       {children}

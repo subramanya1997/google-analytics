@@ -28,6 +28,7 @@ export function NavUser() {
   // Fallback to default values if no user data
   const displayName = user?.firstName || user?.username || "User"
   const displayEmail = user?.username || "user@example.com"
+  const displayBusinessName = user?.businessName || "Business Name"
 
   const handleLogout = async () => {
     await logout()
@@ -45,7 +46,7 @@ export function NavUser() {
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{displayName}</span>
                 <span className="text-muted-foreground truncate text-xs">
-                  {displayEmail}
+                  {displayBusinessName}
                 </span>
               </div>
               <MoreVertical className="ml-auto size-4" />
@@ -57,6 +58,14 @@ export function NavUser() {
             align="end"
             sideOffset={4}
           >
+            <DropdownMenuLabel className="p-0 font-normal">
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{displayBusinessName}</span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <div className="grid flex-1 text-left text-sm leading-tight">

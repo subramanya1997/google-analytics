@@ -19,6 +19,7 @@ interface AuthResponse {
   tenant_id?: string
   first_name?: string
   username?: string
+  business_name?: string
   access_token?: string
   missing_configs?: string[]
   invalid_configs?: string[]
@@ -48,7 +49,7 @@ function OAuthCallbackContent() {
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
   const [hasData, setHasData] = useState<boolean | null>(null)
-  const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string } | null>(null)
+  const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string; businessName?: string } | null>(null)
   const authRequestMade = useRef(false)
 
   useEffect(() => {
@@ -108,13 +109,14 @@ function OAuthCallbackContent() {
             ]
             setConfigIssues(issues)
             setMessage("Verification complete, but setup issues detected")
-            const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
+            const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined, businessName: authResult.business_name || undefined }
             setUserInfo(userInfo)
             
             // Store user info in global context even with config issues
             currentSetUser({
               firstName: authResult.first_name,
               username: authResult.username,
+              businessName: authResult.business_name,
               tenantId: authResult.tenant_id
             })
             return
@@ -126,13 +128,14 @@ function OAuthCallbackContent() {
         
         // Successful authentication
         const tId = authResult.tenant_id
-        const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined }
+        const userInfo = { firstName: authResult.first_name || undefined, username: authResult.username || undefined, businessName: authResult.business_name || undefined }
         setUserInfo(userInfo)
         
         // Store user info in global context
         currentSetUser({
           firstName: authResult.first_name,
           username: authResult.username,
+          businessName: authResult.business_name,
           tenantId: tId,
           accessToken: authResult.access_token
         })

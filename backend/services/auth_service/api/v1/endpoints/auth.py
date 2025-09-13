@@ -27,6 +27,7 @@ class AuthResponse(BaseModel):
     tenant_id: Optional[str] = None
     first_name: Optional[str] = None
     username: Optional[str] = None
+    business_name: Optional[str] = None
     access_token: Optional[str] = None
     missing_configs: Optional[List[str]] = None
     invalid_configs: Optional[List[str]] = None
@@ -65,6 +66,7 @@ class ValidateTokenResponse(BaseModel):
     tenant_id: Optional[str] = None
     first_name: Optional[str] = None
     username: Optional[str] = None
+    business_name: Optional[str] = None
 
 
 @router.post("/authenticate", response_model=AuthResponse)

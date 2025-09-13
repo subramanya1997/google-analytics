@@ -99,7 +99,21 @@ async def main():
                         sql_content = f.read()
                         if sql_content.strip(): #  Ensure content is not empty
                             logger.info(f"Executing {os.path.basename(filepath)}...")
-                            await connection.execute(text(sql_content))
+                            
+                            # Check if this is a function file (contains dollar-quoted strings)
+                            if '$function$' in sql_content or '$body$' in sql_content or 'CREATE OR REPLACE FUNCTION' in sql_content.upper():
+                                # For function files, execute the entire content as one statement
+                                logger.debug(f"Executing function file {os.path.basename(filepath)} as single statement")
+                                await connection.execute(text(sql_content))
+                            else:
+                                # Split SQL content by semicolons to handle multiple statements
+                                statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
+                                
+                                for i, statement in enumerate(statements):
+                                    if statement:
+                                        logger.debug(f"Executing statement {i+1}/{len(statements)} from {os.path.basename(filepath)}")
+                                        await connection.execute(text(statement))
+                            
                             logger.info(f"Successfully executed {os.path.basename(filepath)}.")
                         else:
                             logger.warning(f"Skipping empty file: {os.path.basename(filepath)}")

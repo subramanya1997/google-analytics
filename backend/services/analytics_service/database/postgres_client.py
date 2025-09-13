@@ -590,12 +590,13 @@ class AnalyticsPostgresClient:
                         "sales_rep_name": sales_rep_name,
                         "is_enabled": is_enabled
                     }
-                ).fetchone()
+                )
+                row = result.fetchone()
                 
                 await session.commit()
                 
                 return {
-                    "mapping_id": str(result.id)
+                    "mapping_id": str(row.id)
                 }
                 
         except Exception as e:
@@ -702,14 +703,15 @@ class AnalyticsPostgresClient:
                         "report_date": job_data["report_date"],
                         "target_branches": job_data["target_branches"]
                     }
-                ).fetchone()
+                )
+                row = result.fetchone()
                 
                 await session.commit()
                 
                 return {
-                    "id": str(result.id),
-                    "job_id": result.job_id,
-                    "status": result.status
+                    "id": str(row.id),
+                    "job_id": row.job_id,
+                    "status": row.status
                 }
                 
         except Exception as e:
@@ -761,22 +763,23 @@ class AnalyticsPostgresClient:
                         WHERE tenant_id = :tenant_id AND job_id = :job_id
                     """),
                     {"tenant_id": tenant_id, "job_id": job_id}
-                ).fetchone()
+                )
+                row = result.fetchone()
                 
-                if result:
+                if row:
                     return {
-                        "job_id": result.job_id,
-                        "status": result.status,
+                        "job_id": row.job_id,
+                        "status": row.status,
                         "tenant_id": tenant_id,
-                        "report_date": result.report_date,
-                        "target_branches": result.target_branches or [],
-                        "total_emails": result.total_emails or 0,
-                        "emails_sent": result.emails_sent or 0,
-                        "emails_failed": result.emails_failed or 0,
-                        "error_message": result.error_message,
-                        "created_at": result.created_at,
-                        "started_at": result.started_at,
-                        "completed_at": result.completed_at
+                        "report_date": row.report_date,
+                        "target_branches": row.target_branches or [],
+                        "total_emails": row.total_emails or 0,
+                        "emails_sent": row.emails_sent or 0,
+                        "emails_failed": row.emails_failed or 0,
+                        "error_message": row.error_message,
+                        "created_at": row.created_at,
+                        "started_at": row.started_at,
+                        "completed_at": row.completed_at
                     }
                 return None
                 

@@ -283,12 +283,32 @@ class SFTPClient:
             if available_cols:
                 df = df[available_cols]
 
-            # Ensure user_id is present and convert to string
+            # Convert ID and code fields to strings to match database schema
+            string_fields = [
+                "user_id", "user_erp_id", "warehouse_code", 
+                "cimm_buying_company_id", "buying_company_erp_id",
+                "zip", "office_phone", "cell_phone", "fax"
+            ]
+            
+            for field in string_fields:
+                if field in df.columns:
+                    df[field] = df[field].astype(str)
+                    # Clean up 'nan' strings
+                    df.loc[df[field] == "nan", field] = None
+            
+            # Convert datetime fields
+            datetime_fields = ["registered_date", "last_login_date"]
+            for field in datetime_fields:
+                if field in df.columns:
+                    # Convert to datetime, handling various formats
+                    df[field] = pd.to_datetime(df[field], errors='coerce')
+                    # Convert NaT to None for database compatibility
+                    df[field] = df[field].where(pd.notna(df[field]), None)
+            
+            # Ensure user_id is present and valid
             if "user_id" in df.columns:
-                df["user_id"] = df["user_id"].astype(str)
                 df = df.dropna(subset=["user_id"])
                 df = df[df["user_id"].str.strip() != ""]
-                df = df[df["user_id"] != "nan"]  # Remove 'nan' strings
 
             logger.info(
                 f"Successfully processed {len(df)} users with columns: {list(df.columns)}"
@@ -390,12 +410,24 @@ class SFTPClient:
             if available_cols:
                 df = df[available_cols]
 
-            # Ensure warehouse_id is present and convert to string
+            # Convert ID and code fields to strings to match database schema
+            string_fields = [
+                "warehouse_id", "warehouse_code", "zip",
+                "latitude", "longitude", "phone_number", "fax",
+                "subset_id", "wfl_phase_id", "ac", "branch_location_id",
+                "toll_free_number", "cne_batch_id", "external_system_ref_id"
+            ]
+            
+            for field in string_fields:
+                if field in df.columns:
+                    df[field] = df[field].astype(str)
+                    # Clean up 'nan' strings
+                    df.loc[df[field] == "nan", field] = None
+            
+            # Ensure warehouse_id is present and valid
             if "warehouse_id" in df.columns:
-                df["warehouse_id"] = df["warehouse_id"].astype(str)
                 df = df.dropna(subset=["warehouse_id"])
                 df = df[df["warehouse_id"].str.strip() != ""]
-                df = df[df["warehouse_id"] != "nan"]  # Remove 'nan' strings
 
             logger.info(
                 f"Successfully processed {len(df)} locations with columns: {list(df.columns)}"

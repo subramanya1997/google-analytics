@@ -10,7 +10,6 @@ from loguru import logger
 
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
 from services.analytics_service.services.template_service import TemplateService
-from services.analytics_service.utils import run_sync_in_executor
 
 
 class ReportService:
@@ -44,9 +43,7 @@ class ReportService:
         date_str = report_date.strftime('%Y-%m-%d')
         
         # Get branch/location information
-        location_info = await run_sync_in_executor(
-            self._get_location_info, tenant_id, branch_code
-        )
+        location_info = await self._get_location_info(tenant_id, branch_code)
         
         if not location_info:
             raise Exception(f"Location information not found for branch {branch_code}")
@@ -102,10 +99,10 @@ class ReportService:
         return html_content
 
 
-    def _get_location_info(self, tenant_id: str, branch_code: str) -> Optional[Dict[str, Any]]:
+    async def _get_location_info(self, tenant_id: str, branch_code: str) -> Optional[Dict[str, Any]]:
         """Get location information for a branch."""
         try:
-            locations = self.db_client.get_locations(tenant_id)
+            locations = await self.db_client.get_locations(tenant_id)
             for location in locations:
                 if location.get("locationId") == branch_code:
                     return location
@@ -118,8 +115,7 @@ class ReportService:
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
         """Get purchase tasks asynchronously."""
-        return await run_sync_in_executor(
-            self.db_client.get_purchase_tasks,
+        return await self.db_client.get_purchase_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
 
@@ -127,8 +123,7 @@ class ReportService:
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
         """Get cart abandonment tasks asynchronously."""
-        return await run_sync_in_executor(
-            self.db_client.get_cart_abandonment_tasks,
+        return await self.db_client.get_cart_abandonment_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
 
@@ -136,8 +131,7 @@ class ReportService:
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
         """Get search analysis tasks asynchronously."""
-        return await run_sync_in_executor(
-            self.db_client.get_search_analysis_tasks,
+        return await self.db_client.get_search_analysis_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str, False
         )
 
@@ -145,8 +139,7 @@ class ReportService:
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
         """Get repeat visit tasks asynchronously."""
-        return await run_sync_in_executor(
-            self.db_client.get_repeat_visit_tasks,
+        return await self.db_client.get_repeat_visit_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
 

@@ -71,18 +71,11 @@ class IngestionService:
                 "locations_processed": 0,
             }
 
-            # Process events from BigQuery in thread pool to avoid blocking
+            # Process events from BigQuery
             if "events" in request.data_types:
                 try:
                     logger.info(f"Processing events for job {job_id}")
-                    # Run the synchronous event processing in a thread pool
-                    loop = asyncio.get_event_loop()
-                    event_results = await loop.run_in_executor(
-                        self._executor, 
-                        self._process_events_sync, 
-                        tenant_id, 
-                        request
-                    )
+                    event_results = await self._process_events_async(tenant_id, request)
                     results.update(event_results)
 
                 except Exception as e:
@@ -130,25 +123,26 @@ class IngestionService:
             logger.error(f"Failed processing job {job_id}: {e}")
             raise
 
-    def _process_events_sync(
+    async def _process_events_async(
         self, tenant_id: str, request: CreateIngestionJobRequest
     ) -> Dict[str, int]:
-        """Process all event types from BigQuery (runs in thread pool)."""
+        """Process all event types from BigQuery asynchronously."""
         try:
-            # Create a new repository instance for this thread to avoid connection sharing
-            thread_repo = SqlAlchemyRepository()
-            
             # Initialize BigQuery client using tenant configuration from database
-            bigquery_client = get_tenant_bigquery_client(tenant_id)
+            bigquery_client = await get_tenant_bigquery_client(tenant_id)
 
             if not bigquery_client:
                 raise ValueError(
                     f"BigQuery configuration not found for tenant {tenant_id}"
                 )
 
-            # Get all events for date range
-            events_by_type = bigquery_client.get_date_range_events(
-                request.start_date.isoformat(), request.end_date.isoformat()
+            # Get all events for date range - run sync operation in thread pool
+            loop = asyncio.get_event_loop()
+            events_by_type = await loop.run_in_executor(
+                self._executor,
+                bigquery_client.get_date_range_events,
+                request.start_date.isoformat(),
+                request.end_date.isoformat()
             )
 
             results = {}
@@ -157,14 +151,14 @@ class IngestionService:
             for event_type, events_data in events_by_type.items():
                 try:
                     if events_data:
-                        # Need to run async method in sync context
-                        count = asyncio.run(thread_repo.replace_event_data(
+                        # Use async method directly
+                        count = await self.repo.replace_event_data(
                             tenant_id,
                             event_type,
                             request.start_date,
                             request.end_date,
                             events_data,
-                        ))
+                        )
                         results[event_type] = count
                         logger.info(f"Processed {count} {event_type} events")
                     else:
@@ -181,26 +175,16 @@ class IngestionService:
             logger.error(f"Error processing BigQuery events: {e}")
             raise
 
-    def _upsert_users_sync(self, tenant_id: str, users_data: list) -> int:
-        """Synchronous user upsert operation (runs in thread pool)."""
-        # Create a new repository instance for this thread
-        thread_repo = SqlAlchemyRepository()
-        return asyncio.run(thread_repo.upsert_users(tenant_id, users_data))
-    
-    def _upsert_locations_sync(self, tenant_id: str, locations_data: list) -> int:
-        """Synchronous location upsert operation (runs in thread pool)."""
-        # Create a new repository instance for this thread
-        thread_repo = SqlAlchemyRepository()
-        return asyncio.run(thread_repo.upsert_locations(tenant_id, locations_data))
 
     async def _process_users(self, tenant_id: str) -> int:
         """Process users from SFTP."""
         try:
             # Create a fresh Azure SFTP client using tenant configuration from database
-            sftp_client = get_tenant_sftp_client(tenant_id)
+            sftp_client = await get_tenant_sftp_client(tenant_id)
 
             if not sftp_client:
-                raise ValueError(f"SFTP configuration not found for tenant {tenant_id}")
+                logger.warning(f"SFTP configuration not found for tenant {tenant_id}, skipping user processing")
+                return 0
 
             # Get users data (Azure client handles connections internally)
             users_data = await sftp_client.get_latest_users_data()
@@ -225,18 +209,15 @@ class IngestionService:
                             else (value is None or str(value) == "nan")
                         ):
                             cleaned_record[key] = None
+                        elif isinstance(value, pd.Timestamp):
+                            # Convert pandas Timestamp to Python datetime
+                            cleaned_record[key] = value.to_pydatetime()
                         else:
                             cleaned_record[key] = value
                     cleaned_users.append(cleaned_record)
 
-                # Run the database operation in thread pool to avoid blocking
-                loop = asyncio.get_event_loop()
-                count = await loop.run_in_executor(
-                    self._executor,
-                    self._upsert_users_sync,
-                    tenant_id,
-                    cleaned_users
-                )
+                # Use async database operation directly
+                count = await self.repo.upsert_users(tenant_id, cleaned_users)
                 logger.info(f"Processed {count} users from SFTP")
                 return count
             else:
@@ -258,12 +239,16 @@ class IngestionService:
 
             # First try to get from SFTP using tenant configuration
             try:
-                sftp_client = get_tenant_sftp_client(tenant_id)
+                sftp_client = await get_tenant_sftp_client(tenant_id)
                 if sftp_client:
                     logger.info(
                         f"Attempting to get locations from SFTP for tenant {tenant_id}"
                     )
                     locations_data = await sftp_client.get_latest_locations_data()
+                else:
+                    logger.warning(
+                        f"SFTP configuration not found for tenant {tenant_id}, skipping location processing"
+                    )
             except Exception as e:
                 logger.warning(
                     f"Failed to get locations from SFTP for tenant {tenant_id}: {e}"
@@ -291,18 +276,15 @@ class IngestionService:
                             else (value is None or str(value) == "nan")
                         ):
                             cleaned_record[key] = None
+                        elif isinstance(value, pd.Timestamp):
+                            # Convert pandas Timestamp to Python datetime
+                            cleaned_record[key] = value.to_pydatetime()
                         else:
                             cleaned_record[key] = value
                     cleaned_locations.append(cleaned_record)
                 
-                # Run the database operation in thread pool to avoid blocking
-                loop = asyncio.get_event_loop()
-                count = await loop.run_in_executor(
-                    self._executor,
-                    self._upsert_locations_sync,
-                    tenant_id,
-                    cleaned_locations
-                )
+                # Use async database operation directly
+                count = await self.repo.upsert_locations(tenant_id, cleaned_locations)
                 logger.info(f"Processed {count} locations from SFTP")
                 return count
             else:

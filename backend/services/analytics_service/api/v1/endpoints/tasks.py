@@ -36,7 +36,7 @@ async def get_purchase_tasks(
         # Database client injected via dependency
 
         # Fetch purchase tasks
-        result = db_client.get_purchase_tasks(
+        result = await db_client.get_purchase_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -77,7 +77,7 @@ async def get_cart_abandonment_tasks(
         # Database client injected via dependency
 
         # Fetch cart abandonment tasks
-        result = db_client.get_cart_abandonment_tasks(
+        result = await db_client.get_cart_abandonment_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -121,7 +121,7 @@ async def get_search_analysis_tasks(
         # Database client injected via dependency
 
         # Fetch search analysis tasks
-        result = db_client.get_search_analysis_tasks(
+        result = await db_client.get_search_analysis_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -162,7 +162,7 @@ async def get_performance_tasks(
         # Database client injected via dependency
 
         # Fetch performance tasks
-        result = db_client.get_performance_tasks(
+        result = await db_client.get_performance_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -202,7 +202,7 @@ async def get_repeat_visit_tasks(
         # Database client injected via dependency
 
         # Fetch repeat visit tasks
-        result = db_client.get_repeat_visit_tasks(
+        result = await db_client.get_repeat_visit_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,

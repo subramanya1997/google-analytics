@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 
 import {
@@ -94,8 +95,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <div className="flex items-center justify-between px-2 py-2 group-data-[collapsible=icon]:justify-center">
-          <Link href="/" prefetch className="text-xl font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Impaqx Analytics
+          <Link href="/" prefetch className="flex items-center group-data-[collapsible=icon]:hidden">
+            <Image
+              src="/extremeb2b-logo.png"
+              alt="ExtremeB2B"
+              width={140}
+              height={40}
+              className="h-8 w-auto"
+              priority
+            />
           </Link>
           <SidebarTrigger className="ml-2 group-data-[collapsible=icon]:ml-0 hidden md:flex" />
         </div>

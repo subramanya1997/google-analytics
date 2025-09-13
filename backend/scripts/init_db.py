@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from sqlalchemy import text
 from loguru import logger
 from dotenv import load_dotenv
@@ -9,7 +10,7 @@ load_dotenv()
 # Add the project's root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.database.session import get_engine, ensure_database_exists
+from common.database.session import get_async_engine, ensure_database_exists
 
 # Define paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ TABLE_CREATION_ORDER = [
     "no_search_results.sql"
 ]
 
-def main():
+async def main():
     """Main function to initialize the database."""
     logger.info("Starting database initialization...")
     
@@ -45,7 +46,7 @@ def main():
         return
     
     try:
-        engine = get_engine()
+        engine = get_async_engine()
     except Exception as e:
         logger.error(f"Failed to get database engine: {e}")
         return
@@ -90,30 +91,30 @@ def main():
         logger.warning("No SQL files found to execute.")
         return
 
-    with engine.connect() as connection:
+    async with engine.begin() as connection:
         try:
-            with connection.begin():  # Starts a transaction
-                for filepath in sql_files_to_execute:
-                    try:
-                        with open(filepath, 'r', encoding='utf-8') as f:
-                            sql_content = f.read()
-                            if sql_content.strip(): #  Ensure content is not empty
-                                logger.info(f"Executing {os.path.basename(filepath)}...")
-                                connection.execute(text(sql_content))
-                                logger.info(f"Successfully executed {os.path.basename(filepath)}.")
-                            else:
-                                logger.warning(f"Skipping empty file: {os.path.basename(filepath)}")
+            for filepath in sql_files_to_execute:
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        sql_content = f.read()
+                        if sql_content.strip(): #  Ensure content is not empty
+                            logger.info(f"Executing {os.path.basename(filepath)}...")
+                            await connection.execute(text(sql_content))
+                            logger.info(f"Successfully executed {os.path.basename(filepath)}.")
+                        else:
+                            logger.warning(f"Skipping empty file: {os.path.basename(filepath)}")
 
-                    except Exception as e:
-                        logger.error(f"Error executing file {filepath}: {e}")
-                        raise  # This will trigger the rollback of the transaction
+                except Exception as e:
+                    logger.error(f"Error executing file {filepath}: {e}")
+                    raise  # This will trigger the rollback of the transaction
             logger.info("Database initialization completed successfully.")
         except Exception as e:
             logger.error(f"Database initialization failed. Transaction rolled back. Error: {e}")
+            raise
 
 if __name__ == "__main__":
     # Configure logger
     logger.add(sys.stderr, format="{time} {level} {message}", filter="my_module", level="INFO")
     logger.add("init_db.log", rotation="500 MB") # For logging to a file
 
-    main()
+    asyncio.run(main())

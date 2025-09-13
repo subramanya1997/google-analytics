@@ -7,9 +7,8 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from sqlalchemy import text
-from sqlalchemy.orm import Session
 
-from common.database import SessionLocal
+from common.database import get_async_db_session
 
 class AnalyticsPostgresClient:
     """PostgreSQL client for analytics operations."""
@@ -18,22 +17,19 @@ class AnalyticsPostgresClient:
         """Initialize PostgreSQL client."""
         logger.info("Initialized Analytics PostgreSQL client")
 
-    def get_db_session(self) -> Session:
-        """Get a database session."""
-        return SessionLocal()
-
-    def test_connection(self) -> Dict[str, Any]:
+    async def test_connection(self) -> Dict[str, Any]:
         """Test the PostgreSQL connection."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Try to query tenants table
-                result = session.execute(
+                result = await session.execute(
                     text("SELECT COUNT(*) FROM tenants LIMIT 1")
-                ).scalar()
+                )
+                count = result.scalar()
                 return {
                     "success": True,
                     "message": "Connection successful",
-                    "data": {"count": result},
+                    "data": {"count": count},
                 }
         except Exception as e:
             error_message = str(e)
@@ -45,20 +41,21 @@ class AnalyticsPostgresClient:
             }
 
     # Location operations
-    def get_locations(self, tenant_id: str) -> List[Dict[str, Any]]:
+    async def get_locations(self, tenant_id: str) -> List[Dict[str, Any]]:
         """Get all locations with activity."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Get locations that have page view activity using the optimized function
                 time_start = time.time()
-                locations_with_activity = session.execute(
+                result = await session.execute(
                     text(
                         """
                     SELECT * FROM get_locations_with_activity_table(:tenant_id)
                 """
                     ),
                     {"tenant_id": tenant_id},
-                ).fetchall()
+                )
+                locations_with_activity = result.fetchall()
                 time_end = time.time()
                 logger.info(
                     f"Time taken to fetch locations: {time_end - time_start} seconds"
@@ -82,7 +79,7 @@ class AnalyticsPostgresClient:
             return []
 
     # Analytics operations
-    def get_dashboard_stats(
+    async def get_dashboard_stats(
         self,
         tenant_id: str,
         location_id: Optional[str] = None,
@@ -101,8 +98,8 @@ class AnalyticsPostgresClient:
                     "failedSearches": 0,
                 }
 
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_dashboard_overview_stats(:p_tenant_id, :p_start_date, :p_end_date, :p_location_id)
@@ -114,9 +111,10 @@ class AnalyticsPostgresClient:
                         "p_end_date": end_date,
                         "p_location_id": location_id,
                     },
-                ).scalar()
+                )
+                stats = result.scalar()
 
-                return result or {}
+                return stats or {}
 
         except Exception as e:
             logger.error(f"Error fetching dashboard stats: {e}")
@@ -130,7 +128,7 @@ class AnalyticsPostgresClient:
             }
 
     # Task list operations using RPC functions
-    def get_purchase_tasks(
+    async def get_purchase_tasks(
         self,
         tenant_id: str,
         page: int,
@@ -142,9 +140,9 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get purchase analysis tasks with pagination and filtering."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Use the existing RPC function from functions.sql
-                result = session.execute(
+                result = await session.execute(
                     text(
                         """
                     SELECT get_purchase_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
@@ -159,9 +157,10 @@ class AnalyticsPostgresClient:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                     },
-                ).scalar()
+                )
+                tasks = result.scalar()
 
-                return result or {
+                return tasks or {
                     "data": [],
                     "total": 0,
                     "page": page,
@@ -173,7 +172,7 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching purchase tasks: {e}")
             raise
 
-    def get_cart_abandonment_tasks(
+    async def get_cart_abandonment_tasks(
         self,
         tenant_id: str,
         page: int,
@@ -185,8 +184,8 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get cart abandonment tasks using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_cart_abandonment_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
@@ -201,9 +200,10 @@ class AnalyticsPostgresClient:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                     },
-                ).scalar()
+                )
+                tasks = result.scalar()
 
-                return result or {
+                return tasks or {
                     "data": [],
                     "total": 0,
                     "page": page,
@@ -215,7 +215,7 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching cart abandonment tasks via RPC: {e}")
             raise
 
-    def get_search_analysis_tasks(
+    async def get_search_analysis_tasks(
         self,
         tenant_id: str,
         page: int,
@@ -228,8 +228,8 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get search analysis tasks using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted)
@@ -245,9 +245,10 @@ class AnalyticsPostgresClient:
                         "p_end_date": end_date,
                         "p_include_converted": include_converted,
                     },
-                ).scalar()
+                )
+                tasks = result.scalar()
 
-                return result or {
+                return tasks or {
                     "data": [],
                     "total": 0,
                     "page": page,
@@ -259,7 +260,7 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching search analysis tasks via RPC: {e}")
             raise
 
-    def get_repeat_visit_tasks(
+    async def get_repeat_visit_tasks(
         self,
         tenant_id: str,
         page: int,
@@ -271,8 +272,8 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get repeat visit tasks using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_repeat_visit_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
@@ -287,9 +288,10 @@ class AnalyticsPostgresClient:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                     },
-                ).scalar()
+                )
+                tasks = result.scalar()
 
-                return result or {
+                return tasks or {
                     "data": [],
                     "total": 0,
                     "page": page,
@@ -301,7 +303,7 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching repeat visit tasks via RPC: {e}")
             raise
 
-    def get_performance_tasks(
+    async def get_performance_tasks(
         self,
         tenant_id: str,
         page: int,
@@ -312,8 +314,8 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get performance tasks using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_performance_tasks(:p_tenant_id, :p_page, :p_limit, :p_location_id, :p_start_date, :p_end_date)
@@ -327,9 +329,10 @@ class AnalyticsPostgresClient:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                     },
-                ).scalar()
+                )
+                tasks = result.scalar()
 
-                return result or {
+                return tasks or {
                     "data": [],
                     "total": 0,
                     "page": page,
@@ -341,22 +344,23 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching performance tasks via RPC: {e}")
             raise
 
-    def get_session_history(
+    async def get_session_history(
         self, tenant_id: str, session_id: str
     ) -> List[Dict[str, Any]]:
         """Get the event history for a specific session using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_session_history(:p_tenant_id, :p_session_id)
                 """
                     ),
                     {"p_tenant_id": tenant_id, "p_session_id": session_id},
-                ).scalar()
+                )
+                history = result.scalar()
 
-                return result or []
+                return history or []
 
         except Exception as e:
             logger.error(
@@ -364,32 +368,33 @@ class AnalyticsPostgresClient:
             )
             raise
 
-    def get_user_history(self, tenant_id: str, user_id: str) -> List[Dict[str, Any]]:
+    async def get_user_history(self, tenant_id: str, user_id: str) -> List[Dict[str, Any]]:
         """Get the event history for a specific user using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_user_history(:p_tenant_id, :p_user_id)
                 """
                     ),
                     {"p_tenant_id": tenant_id, "p_user_id": user_id},
-                ).scalar()
+                )
+                history = result.scalar()
 
-                return result or []
+                return history or []
 
         except Exception as e:
             logger.error(f"Error fetching user history for user {user_id}: {e}")
             raise
 
-    def get_location_stats_bulk(
+    async def get_location_stats_bulk(
         self, tenant_id: str, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
         """Get bulk statistics for all locations using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_location_stats_bulk(:p_tenant_id, :p_start_date, :p_end_date)
@@ -400,15 +405,16 @@ class AnalyticsPostgresClient:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                     },
-                ).scalar()
+                )
+                history = result.scalar()
 
-                return result or []
+                return history or []
 
         except Exception as e:
             logger.error(f"Error fetching bulk location stats: {e}")
             raise
 
-    def get_chart_data(
+    async def get_chart_data(
         self,
         tenant_id: str,
         start_date: str,
@@ -418,8 +424,8 @@ class AnalyticsPostgresClient:
     ) -> List[Dict[str, Any]]:
         """Get time-series chart data using the RPC function."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_chart_data(:p_tenant_id, :p_start_date, :p_end_date, :p_granularity, :p_location_id)
@@ -432,15 +438,16 @@ class AnalyticsPostgresClient:
                         "p_granularity": granularity,
                         "p_location_id": location_id,
                     },
-                ).scalar()
+                )
+                history = result.scalar()
 
-                return result or []
+                return history or []
 
         except Exception as e:
             logger.error(f"Error fetching chart data: {e}")
             raise
 
-    def get_complete_dashboard_data(
+    async def get_complete_dashboard_data(
         self,
         tenant_id: str,
         start_date: str,
@@ -450,8 +457,8 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get complete dashboard data in a single optimized call."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text(
                         """
                     SELECT get_complete_dashboard_data(:p_tenant_id, :p_start_date, :p_end_date, :p_granularity, :p_location_id)
@@ -464,9 +471,10 @@ class AnalyticsPostgresClient:
                         "p_granularity": granularity,
                         "p_location_id": location_id,
                     },
-                ).scalar()
+                )
+                dashboard_data = result.scalar()
 
-                return result or {"metrics": {}, "chartData": [], "locationStats": []}
+                return dashboard_data or {"metrics": {}, "chartData": [], "locationStats": []}
 
         except Exception as e:
             logger.error(f"Error fetching complete dashboard data: {e}")
@@ -476,18 +484,19 @@ class AnalyticsPostgresClient:
     # EMAIL CONFIGURATION METHODS
     # ======================================
 
-    def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+    async def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get email configuration for a tenant."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text("SELECT email_config FROM tenants WHERE id = :tenant_id"),
                     {"tenant_id": tenant_id}
-                ).scalar()
+                )
+                email_config = result.scalar()
                 
-                if result:
+                if email_config:
                     import json
-                    return json.loads(result) if isinstance(result, str) else result
+                    return json.loads(email_config) if isinstance(email_config, str) else email_config
                 return None
                 
         except Exception as e:
@@ -498,12 +507,12 @@ class AnalyticsPostgresClient:
     # BRANCH EMAIL MAPPING METHODS
     # ======================================
 
-    def get_branch_email_mappings(
+    async def get_branch_email_mappings(
         self, tenant_id: str, branch_code: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get branch email mappings for a tenant."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 query = """
                     SELECT id, branch_code, branch_name, sales_rep_email, 
                            sales_rep_name, is_enabled, created_at, updated_at
@@ -518,7 +527,8 @@ class AnalyticsPostgresClient:
                 
                 query += " ORDER BY branch_code, sales_rep_email"
                 
-                results = session.execute(text(query), params).fetchall()
+                result = await session.execute(text(query), params)
+                results = result.fetchall()
                 
                 mappings = []
                 for row in results:
@@ -539,12 +549,12 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching branch email mappings: {e}")
             return []
 
-    def create_branch_email_mapping(
+    async def create_branch_email_mapping(
         self, tenant_id: str, mapping: Any
     ) -> Dict[str, Any]:
         """Create a new branch email mapping."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Handle both Pydantic models and dictionaries
                 if hasattr(mapping, 'branch_code'):
                     # Pydantic model
@@ -561,7 +571,7 @@ class AnalyticsPostgresClient:
                     sales_rep_name = mapping.get("sales_rep_name")
                     is_enabled = mapping.get("is_enabled", True)
                 
-                result = session.execute(
+                result = await session.execute(
                     text("""
                         INSERT INTO branch_email_mappings (
                             tenant_id, branch_code, branch_name,
@@ -582,7 +592,7 @@ class AnalyticsPostgresClient:
                     }
                 ).fetchone()
                 
-                session.commit()
+                await session.commit()
                 
                 return {
                     "mapping_id": str(result.id)
@@ -592,12 +602,12 @@ class AnalyticsPostgresClient:
             logger.error(f"Error creating branch email mapping: {e}")
             raise
 
-    def update_branch_email_mapping(
+    async def update_branch_email_mapping(
         self, tenant_id: str, mapping_id: str, mapping: Any
     ) -> bool:
         """Update a specific branch email mapping by ID."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Handle both Pydantic models and dictionaries
                 if hasattr(mapping, 'branch_code'):
                     # Pydantic model
@@ -614,7 +624,7 @@ class AnalyticsPostgresClient:
                     sales_rep_name = mapping.get("sales_rep_name")
                     is_enabled = mapping.get("is_enabled", True)
                 
-                result = session.execute(
+                result = await session.execute(
                     text("""
                         UPDATE branch_email_mappings SET
                             branch_code = :branch_code,
@@ -636,7 +646,7 @@ class AnalyticsPostgresClient:
                     }
                 )
                 
-                session.commit()
+                await session.commit()
                 
                 # Return True if a row was updated, False if mapping wasn't found
                 return result.rowcount > 0
@@ -645,11 +655,11 @@ class AnalyticsPostgresClient:
             logger.error(f"Error updating branch email mapping {mapping_id}: {e}")
             raise
 
-    def delete_branch_email_mapping(self, tenant_id: str, mapping_id: str) -> bool:
+    async def delete_branch_email_mapping(self, tenant_id: str, mapping_id: str) -> bool:
         """Delete a specific branch email mapping by ID."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text("""
                         DELETE FROM branch_email_mappings
                         WHERE tenant_id = :tenant_id AND id = :mapping_id
@@ -657,7 +667,7 @@ class AnalyticsPostgresClient:
                     {"tenant_id": tenant_id, "mapping_id": mapping_id}
                 )
                 
-                session.commit()
+                await session.commit()
                 
                 # Return True if a row was deleted, False if mapping wasn't found
                 return result.rowcount > 0
@@ -670,11 +680,11 @@ class AnalyticsPostgresClient:
     # EMAIL JOB METHODS
     # ======================================
 
-    def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new email sending job."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text("""
                         INSERT INTO email_sending_jobs (
                             tenant_id, job_id, status, report_date, 
@@ -694,7 +704,7 @@ class AnalyticsPostgresClient:
                     }
                 ).fetchone()
                 
-                session.commit()
+                await session.commit()
                 
                 return {
                     "id": str(result.id),
@@ -706,12 +716,12 @@ class AnalyticsPostgresClient:
             logger.error(f"Error creating email job: {e}")
             raise
 
-    def update_email_job_status(
+    async def update_email_job_status(
         self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update email job status and other fields."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 set_clause = "status = :status, updated_at = NOW()"
                 params = {"job_id": job_id, "status": status}
                 
@@ -722,7 +732,7 @@ class AnalyticsPostgresClient:
                             set_clause += f", {key} = :{key}"
                             params[key] = value
                 
-                result = session.execute(
+                result = await session.execute(
                     text(f"""
                         UPDATE email_sending_jobs 
                         SET {set_clause}
@@ -731,18 +741,18 @@ class AnalyticsPostgresClient:
                     params
                 )
                 
-                session.commit()
+                await session.commit()
                 return result.rowcount > 0
                 
         except Exception as e:
             logger.error(f"Error updating email job status: {e}")
             return False
 
-    def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+    async def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         """Get email job status."""
         try:
-            with self.get_db_session() as session:
-                result = session.execute(
+            async with get_async_db_session("analytics-service") as session:
+                result = await session.execute(
                     text("""
                         SELECT job_id, status, report_date, target_branches,
                                total_emails, emails_sent, emails_failed, error_message,
@@ -774,7 +784,7 @@ class AnalyticsPostgresClient:
             logger.error(f"Error fetching email job status: {e}")
             return None
 
-    def get_email_jobs(
+    async def get_email_jobs(
         self, 
         tenant_id: str, 
         page: int = 1, 
@@ -783,7 +793,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get email job history with pagination."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Build query
                 where_clause = "WHERE tenant_id = :tenant_id"
                 params = {"tenant_id": tenant_id}
@@ -793,16 +803,17 @@ class AnalyticsPostgresClient:
                     params["status"] = status
                 
                 # Get total count
-                count_result = session.execute(
+                count_result = await session.execute(
                     text(f"SELECT COUNT(*) FROM email_sending_jobs {where_clause}"),
                     params
-                ).scalar()
+                )
+                count = count_result.scalar()
                 
                 # Get paginated data
                 offset = (page - 1) * limit
                 params.update({"limit": limit, "offset": offset})
                 
-                results = session.execute(
+                result = await session.execute(
                     text(f"""
                         SELECT job_id, status, report_date, target_branches,
                                total_emails, emails_sent, emails_failed, error_message,
@@ -813,7 +824,8 @@ class AnalyticsPostgresClient:
                         LIMIT :limit OFFSET :offset
                     """),
                     params
-                ).fetchall()
+                )
+                results = result.fetchall()
                 
                 jobs = []
                 for row in results:
@@ -834,10 +846,10 @@ class AnalyticsPostgresClient:
                 
                 return {
                     "data": jobs,
-                    "total": count_result,
+                    "total": count,
                     "page": page,
                     "limit": limit,
-                    "has_more": (page * limit) < count_result
+                    "has_more": (page * limit) < count
                 }
                 
         except Exception as e:
@@ -848,10 +860,10 @@ class AnalyticsPostgresClient:
     # EMAIL HISTORY METHODS
     # ======================================
 
-    def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
+    async def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
         """Log email send history record."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Ensure all required fields are present
                 data = {
                     "tenant_id": history_data["tenant_id"],
@@ -866,7 +878,7 @@ class AnalyticsPostgresClient:
                     "error_message": history_data.get("error_message")  # Can be None
                 }
                 
-                session.execute(
+                await session.execute(
                     text("""
                         INSERT INTO email_send_history (
                             tenant_id, job_id, branch_code, sales_rep_email,
@@ -880,12 +892,12 @@ class AnalyticsPostgresClient:
                     """),
                     data
                 )
-                session.commit()
+                await session.commit()
                 
         except Exception as e:
             logger.error(f"Error logging email send history: {e}")
 
-    def get_email_send_history(
+    async def get_email_send_history(
         self,
         tenant_id: str,
         page: int = 1,
@@ -897,7 +909,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get email send history with pagination and filtering."""
         try:
-            with self.get_db_session() as session:
+            async with get_async_db_session("analytics-service") as session:
                 # Build WHERE clause
                 where_conditions = ["tenant_id = :tenant_id"]
                 params = {"tenant_id": tenant_id}
@@ -921,16 +933,17 @@ class AnalyticsPostgresClient:
                 where_clause = "WHERE " + " AND ".join(where_conditions)
                 
                 # Get total count
-                count_result = session.execute(
+                count_result = await session.execute(
                     text(f"SELECT COUNT(*) FROM email_send_history {where_clause}"),
                     params
-                ).scalar()
+                )
+                count = count_result.scalar()
                 
                 # Get paginated data
                 offset = (page - 1) * limit
                 params.update({"limit": limit, "offset": offset})
                 
-                results = session.execute(
+                result = await session.execute(
                     text(f"""
                         SELECT id, job_id, branch_code, sales_rep_email, sales_rep_name,
                                subject, report_date, status, smtp_response, error_message, sent_at
@@ -940,7 +953,8 @@ class AnalyticsPostgresClient:
                         LIMIT :limit OFFSET :offset
                     """),
                     params
-                ).fetchall()
+                )
+                results = result.fetchall()
                 
                 history = []
                 for row in results:
@@ -960,10 +974,10 @@ class AnalyticsPostgresClient:
                 
                 return {
                     "data": history,
-                    "total": count_result,
+                    "total": count,
                     "page": page,
                     "limit": limit,
-                    "has_more": (page * limit) < count_result
+                    "has_more": (page * limit) < count
                 }
                 
         except Exception as e:

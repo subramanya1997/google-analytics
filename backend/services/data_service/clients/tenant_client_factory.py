@@ -16,7 +16,7 @@ class TenantClientFactory:
     """Factory for creating tenant-specific clients using database configurations."""
 
     @staticmethod
-    def create_enhanced_bigquery_client(
+    async def create_enhanced_bigquery_client(
         tenant_id: str,
     ) -> Optional[BigQueryClient]:
         """
@@ -29,7 +29,7 @@ class TenantClientFactory:
             EnhancedBigQueryClient instance or None if configuration not found
         """
         try:
-            bigquery_config = get_tenant_bigquery_config(
+            bigquery_config = await get_tenant_bigquery_config(
                 tenant_id, "data-ingestion-service"
             )
 
@@ -46,7 +46,7 @@ class TenantClientFactory:
             return None
 
     @staticmethod
-    def create_azure_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
+    async def create_azure_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
         """
         Create an Azure SFTP client for a specific tenant using database configuration.
 
@@ -57,7 +57,7 @@ class TenantClientFactory:
             AzureSFTPClient instance or None if configuration not found
         """
         try:
-            sftp_config = get_tenant_sftp_config(tenant_id, "data-ingestion-service")
+            sftp_config = await get_tenant_sftp_config(tenant_id, "data-ingestion-service")
 
             if not sftp_config:
                 logger.error(f"SFTP configuration not found for tenant {tenant_id}")
@@ -72,13 +72,13 @@ class TenantClientFactory:
             return None
 
 
-def get_tenant_bigquery_client(
+async def get_tenant_bigquery_client(
     tenant_id: str,
 ) -> Optional[BigQueryClient]:
     """Convenience function to get Enhanced BigQuery client for tenant."""
-    return TenantClientFactory.create_enhanced_bigquery_client(tenant_id)
+    return await TenantClientFactory.create_enhanced_bigquery_client(tenant_id)
 
 
-def get_tenant_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
+async def get_tenant_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
     """Convenience function to get Azure SFTP client for tenant."""
-    return TenantClientFactory.create_azure_sftp_client(tenant_id)
+    return await TenantClientFactory.create_azure_sftp_client(tenant_id)

@@ -40,7 +40,7 @@ async def get_dashboard_stats(
 
         # Use single optimized call if we have date range
         if start_date and end_date:
-            response = db_client.get_complete_dashboard_data(
+            response = await db_client.get_complete_dashboard_data(
                 tenant_id=tenant_id,
                 start_date=start_date,
                 end_date=end_date,

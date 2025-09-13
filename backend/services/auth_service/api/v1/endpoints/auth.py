@@ -51,6 +51,22 @@ class LoginUrlResponse(BaseModel):
     login_url: str
 
 
+class ValidateTokenRequest(BaseModel):
+    """Request model for token validation."""
+    
+    access_token: str
+
+
+class ValidateTokenResponse(BaseModel):
+    """Response model for token validation."""
+    
+    valid: bool
+    message: str
+    tenant_id: Optional[str] = None
+    first_name: Optional[str] = None
+    username: Optional[str] = None
+
+
 @router.post("/authenticate", response_model=AuthResponse)
 async def authenticate(request: AuthRequest):
     """
@@ -148,3 +164,24 @@ async def get_login_url():
     login_url = auth_service.get_login_url()
     
     return LoginUrlResponse(login_url=login_url)
+
+
+@router.post("/validate-token", response_model=ValidateTokenResponse)
+async def validate_token(request: ValidateTokenRequest):
+    """
+    Validate an access token and return user information.
+    
+    This endpoint:
+    1. Validates the access token with the external service
+    2. Returns user information if the token is valid
+    3. Returns validation failure if the token is invalid or expired
+    """
+    auth_service = AuthenticationService()
+    result = await auth_service.validate_token(request.access_token)
+    
+    if not result["valid"]:
+        # Return validation failure but don't raise HTTP exception
+        # The frontend should handle invalid tokens gracefully
+        return ValidateTokenResponse(**result)
+    
+    return ValidateTokenResponse(**result)

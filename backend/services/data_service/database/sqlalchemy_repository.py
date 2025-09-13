@@ -9,8 +9,6 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from sqlalchemy import delete, func, select, literal_column, union_all, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session
 
 from common.models import (
     AddToCart,
@@ -23,7 +21,7 @@ from common.models import (
     ViewItem,
     ViewSearchResults,
 )
-from common.database import get_engine
+from common.database import get_async_db_session
 
 
 def ensure_uuid_string(tenant_id: str) -> str:
@@ -53,12 +51,12 @@ EVENT_TABLES: Dict[str, Any] = {
 class SqlAlchemyRepository:
     """Data-access layer client with SQLAlchemy."""
 
-    def __init__(self, engine: Optional[Engine] = None):
-        self.engine: Engine = engine or get_engine()
+    def __init__(self, service_name: str = "data-service"):
+        self.service_name = service_name
 
     # ---------- Job operations ----------
-    def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
-        with Session(self.engine) as session:
+    async def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        async with get_async_db_session(self.service_name) as session:
             # Ensure tenant_id is properly formatted for UUID column
             if "tenant_id" in job_data:
                 job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
@@ -68,13 +66,13 @@ class SqlAlchemyRepository:
                 .values(job_data)
                 .returning(*ProcessingJobs.__table__.columns)
             )
-            result = session.execute(stmt)
-            session.commit()
+            result = await session.execute(stmt)
+            await session.commit()
             row = result.mappings().first()
             return dict(row) if row else {}
 
-    def update_job_status(self, job_id: str, status: str, **kwargs) -> bool:
-        with Session(self.engine) as session:
+    async def update_job_status(self, job_id: str, status: str, **kwargs) -> bool:
+        async with get_async_db_session(self.service_name) as session:
             update_data = {"status": status}
             update_data.update(kwargs)
             stmt = (
@@ -82,20 +80,21 @@ class SqlAlchemyRepository:
                 .where(ProcessingJobs.__table__.c.job_id == job_id)
                 .values(**update_data)
             )
-            result = session.execute(stmt)
-            session.commit()
+            result = await session.execute(stmt)
+            await session.commit()
             return result.rowcount > 0
 
-    def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
-        with Session(self.engine) as session:
+    async def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        async with get_async_db_session(self.service_name) as session:
             stmt = select(ProcessingJobs.__table__).where(
                 ProcessingJobs.__table__.c.job_id == job_id
             )
-            row = session.execute(stmt).mappings().first()
+            result = await session.execute(stmt)
+            row = result.mappings().first()
             return dict(row) if row else None
 
     # ---------- Events ----------
-    def replace_event_data(
+    async def replace_event_data(
         self,
         tenant_id: str,
         event_type: str,
@@ -105,20 +104,20 @@ class SqlAlchemyRepository:
     ) -> int:
         table = EVENT_TABLES[event_type]
         tenant_uuid_str = ensure_uuid_string(tenant_id)
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             # delete date range
             del_stmt = delete(table).where(
                 table.c.tenant_id == tenant_uuid_str,
                 table.c.event_date.between(start_date, end_date),
             )
-            delete_result = session.execute(del_stmt)
+            delete_result = await session.execute(del_stmt)
             deleted_count = delete_result.rowcount or 0
             logger.info(
                 f"Deleted {deleted_count} existing {event_type} events for tenant {tenant_id} from {start_date} to {end_date}"
             )
 
             if not events_data:
-                session.commit()
+                await session.commit()
                 return 0
 
             # normalize event_date, coerce types, filter to known columns
@@ -166,28 +165,28 @@ class SqlAlchemyRepository:
             for i in range(0, len(normalized), batch_size):
                 batch = normalized[i : i + batch_size]
                 ins = table.insert().values(batch)
-                result = session.execute(ins)
+                result = await session.execute(ins)
                 batch_count = result.rowcount or 0
                 total += batch_count
                 logger.debug(
                     f"Inserted batch {i//batch_size + 1}: {batch_count} {event_type} events"
                 )
 
-            session.commit()
+            await session.commit()
             logger.info(
                 f"Successfully inserted {total} new {event_type} events for tenant {tenant_id}"
             )
             return total
 
     # ---------- Dimensions ----------
-    def upsert_users(self, tenant_id: str, users_data: List[Dict[str, Any]]) -> int:
+    async def upsert_users(self, tenant_id: str, users_data: List[Dict[str, Any]]) -> int:
         if not users_data:
             return 0
         table = Users.__table__
         total = 0
         batch_size = 500
         logger.info(f"Upserting {len(users_data)} users for tenant {tenant_id}")
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             # add tenant_id to each
             rows = []
             for u in users_data:
@@ -211,15 +210,15 @@ class SqlAlchemyRepository:
                 upsert_stmt = stmt.on_conflict_do_update(
                     index_elements=[table.c.tenant_id, table.c.user_id], set_=update_map
                 )
-                result = session.execute(upsert_stmt)
+                result = await session.execute(upsert_stmt)
                 batch_count = result.rowcount or 0
                 total += batch_count
                 logger.debug(f"Upserted batch {i//batch_size + 1}: {batch_count} users")
-            session.commit()
+            await session.commit()
             logger.info(f"Successfully upserted {total} users for tenant {tenant_id}")
             return total
 
-    def upsert_locations(
+    async def upsert_locations(
         self, tenant_id: str, locations_data: List[Dict[str, Any]]
     ) -> int:
         if not locations_data:
@@ -228,7 +227,7 @@ class SqlAlchemyRepository:
         total = 0
         batch_size = 500
         logger.info(f"Upserting {len(locations_data)} locations for tenant {tenant_id}")
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             rows = []
             for loc in locations_data:
                 r = dict(loc)
@@ -253,20 +252,20 @@ class SqlAlchemyRepository:
                     index_elements=[table.c.tenant_id, table.c.warehouse_id],
                     set_=update_map,
                 )
-                result = session.execute(upsert_stmt)
+                result = await session.execute(upsert_stmt)
                 batch_count = result.rowcount or 0
                 total += batch_count
                 logger.debug(
                     f"Upserted batch {i//batch_size + 1}: {batch_count} locations"
                 )
-            session.commit()
+            await session.commit()
             logger.info(
                 f"Successfully upserted {total} locations for tenant {tenant_id}"
             )
             return total
 
     # ---------- Analytics helpers ----------
-    def get_analytics_summary(
+    async def get_analytics_summary(
         self,
         tenant_id: str,
         start_date: Optional[date] = None,
@@ -277,37 +276,40 @@ class SqlAlchemyRepository:
         # Convert tenant_id to proper UUID string
         tenant_uuid_str = ensure_uuid_string(tenant_id)
 
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             for key, table in EVENT_TABLES.items():
                 conds = [table.c.tenant_id == tenant_uuid_str]
                 if start_date and end_date:
                     conds.append(table.c.event_date.between(start_date, end_date))
                 count_stmt = select(func.count()).select_from(table).where(*conds)
-                summary[key] = session.execute(count_stmt).scalar_one()
+                result = await session.execute(count_stmt)
+                summary[key] = result.scalar_one()
 
             # users
             u = Users.__table__
-            summary["users"] = session.execute(
+            user_result = await session.execute(
                 select(func.count())
                 .select_from(u)
                 .where(u.c.tenant_id == tenant_uuid_str)
-            ).scalar_one()
+            )
+            summary["users"] = user_result.scalar_one()
 
             # locations
             l = Locations.__table__
-            summary["locations"] = session.execute(
+            location_result = await session.execute(
                 select(func.count())
                 .select_from(l)
                 .where(l.c.tenant_id == tenant_uuid_str)
-            ).scalar_one()
+            )
+            summary["locations"] = location_result.scalar_one()
 
         return summary
 
-    def get_data_availability(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_data_availability(self, tenant_id: str) -> Dict[str, Any]:
         """Get the date range of available data for a tenant."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             results = {}
             earliest_date = None
             latest_date = None
@@ -325,7 +327,8 @@ class SqlAlchemyRepository:
                     .where(table.c.tenant_id == tenant_uuid_str)
                 )
                 
-                result = session.execute(date_query).fetchone()
+                result_obj = await session.execute(date_query)
+                result = result_obj.fetchone()
                 
                 if result and result.count > 0:
                     if earliest_date is None or (result.earliest and result.earliest < earliest_date):
@@ -340,14 +343,15 @@ class SqlAlchemyRepository:
                 "total_events": total_events
             }
 
-    def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
         """Get data availability summary using optimized function."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             # Call simplified function that only returns summary data
             combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
-            result = session.execute(combined_query, {"tenant_id": tenant_uuid_str}).mappings().first()
+            result_obj = await session.execute(combined_query, {"tenant_id": tenant_uuid_str})
+            result = result_obj.mappings().first()
             
             if result:
                 summary_data = {
@@ -368,22 +372,23 @@ class SqlAlchemyRepository:
                 "summary": summary_data,
             }
 
-    def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    async def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         """Get job history for a tenant - ULTRA-FAST PostgreSQL function only."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        with Session(self.engine) as session:
+        async with get_async_db_session(self.service_name) as session:
             # Call optimized PostgreSQL function (ULTRA FAST!)
             jobs_query = text("SELECT * FROM get_tenant_jobs_paginated(:tenant_id, :limit, :offset)")
             
-            results = session.execute(
+            result = await session.execute(
                 jobs_query,
                 {
                     "tenant_id": tenant_uuid_str,
                     "limit": limit,
                     "offset": offset
                 }
-            ).mappings().all()
+            )
+            results = result.mappings().all()
             
             jobs = []
             total = 0

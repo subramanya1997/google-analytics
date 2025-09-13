@@ -23,7 +23,7 @@ async def get_user_history_compat(
 ):
     """Get the event history for a specific user."""
     try:
-        history = db_client.get_user_history(tenant_id, user_id)
+        history = await db_client.get_user_history(tenant_id, user_id)
         return history
     except Exception as e:
         logger.error(f"Error fetching user history for {user_id}: {e}")
@@ -40,7 +40,7 @@ async def get_session_history_compat(
 ):
     """Get the event history for a specific session."""
     try:
-        history = db_client.get_session_history(tenant_id, session_id)
+        history = await db_client.get_session_history(tenant_id, session_id)
         return history
     except Exception as e:
         logger.error(f"Error fetching session history for {session_id}: {e}")

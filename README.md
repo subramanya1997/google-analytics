@@ -1,6 +1,6 @@
 # Google Analytics Intelligence System
 
-A comprehensive sales intelligence and analytics platform that transforms Google Analytics 4 data into actionable business insights. Built with a modern microservices architecture featuring FastAPI backend services and a Next.js dashboard for optimal performance and scalability.
+A comprehensive sales intelligence and analytics platform that transforms Google Analytics data into actionable business insights. Built with a modern microservices architecture featuring FastAPI backend services and a Next.js dashboard for optimal performance and scalability.
 
 ## 🎯 Overview
 

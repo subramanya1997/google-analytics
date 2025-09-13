@@ -86,7 +86,7 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             -- Extract user properties with proper type handling
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
@@ -133,7 +133,7 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             -- Extract user properties with proper type handling
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
@@ -182,7 +182,7 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             -- Extract user properties with proper type handling
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
@@ -225,7 +225,7 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
@@ -266,7 +266,7 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
@@ -307,11 +307,11 @@ class BigQueryClient:
         query = f"""
         SELECT 
             event_date,
-            event_timestamp,
+            CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
-            (SELECT value.int_value FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
             items[SAFE_OFFSET(0)].item_id as first_item_item_id,
             items[SAFE_OFFSET(0)].item_name as first_item_item_name,
             items[SAFE_OFFSET(0)].item_category as first_item_item_category,

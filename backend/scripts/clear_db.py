@@ -1,12 +1,13 @@
 import os
 import sys
+import asyncio
 from sqlalchemy import text, inspect
 from loguru import logger
 
 # Add the project's root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.database.session import get_engine
+from common.database.session import get_async_engine
 
 # Define paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -69,7 +70,7 @@ def get_function_name_from_sql_file(filepath):
     # Fallback: use filename without extension
     return os.path.splitext(os.path.basename(filepath))[0]
 
-def drop_all_functions(connection):
+async def drop_all_functions(connection):
     """Drop all functions by reading function SQL files."""
     logger.info(f"Looking for function SQL files in: {FUNCTIONS_DIR}")
     
@@ -92,13 +93,13 @@ def drop_all_functions(connection):
             # Drop function if exists (include schema for clarity)
             drop_sql = f"DROP FUNCTION IF EXISTS public.{function_name} CASCADE;"
             logger.info(f"Dropping function: public.{function_name}")
-            connection.execute(text(drop_sql))
+            await connection.execute(text(drop_sql))
             logger.info(f"Successfully dropped function: public.{function_name}")
         except Exception as e:
             logger.error(f"Error dropping function public.{function_name}: {e}")
             # Continue with other functions
 
-def drop_all_tables(connection):
+async def drop_all_tables(connection):
     """Drop all tables in reverse order of creation."""
     logger.info(f"Looking for table SQL files in: {TABLES_DIR}")
     
@@ -137,17 +138,17 @@ def drop_all_tables(connection):
         try:
             drop_sql = f"DROP TABLE IF EXISTS public.{table_name} CASCADE;"
             logger.info(f"Dropping table: public.{table_name}")
-            connection.execute(text(drop_sql))
+            await connection.execute(text(drop_sql))
             logger.info(f"Successfully dropped table: public.{table_name}")
         except Exception as e:
             logger.error(f"Error dropping table public.{table_name}: {e}")
             # Continue with other tables
 
-def list_remaining_objects(connection):
+async def list_remaining_objects(connection):
     """List any remaining tables and functions after cleanup."""
     try:
         # List remaining tables
-        inspector = inspect(connection)
+        inspector = inspect(connection.sync_connection)
         remaining_tables = inspector.get_table_names()
         if remaining_tables:
             logger.info(f"Remaining tables: {', '.join(remaining_tables)}")
@@ -155,7 +156,7 @@ def list_remaining_objects(connection):
             logger.info("No tables remaining in database.")
         
         # List remaining functions
-        result = connection.execute(text("""
+        result = await connection.execute(text("""
             SELECT routine_name 
             FROM information_schema.routines 
             WHERE routine_type = 'FUNCTION' 
@@ -170,7 +171,7 @@ def list_remaining_objects(connection):
     except Exception as e:
         logger.warning(f"Could not list remaining objects: {e}")
 
-def main():
+async def main():
     """Main function to clear the database."""
     logger.info("Starting database cleanup...")
     
@@ -181,31 +182,31 @@ def main():
         return
     
     try:
-        engine = get_engine()
+        engine = get_async_engine()
     except Exception as e:
         logger.error(f"Failed to get database engine: {e}")
         return
 
-    with engine.connect() as connection:
+    async with engine.begin() as connection:
         try:
-            with connection.begin():  # Starts a transaction
-                # First drop all functions (they may depend on tables)
-                drop_all_functions(connection)
-                
-                # Then drop all tables
-                drop_all_tables(connection)
-                
+            # First drop all functions (they may depend on tables)
+            await drop_all_functions(connection)
+            
+            # Then drop all tables
+            await drop_all_tables(connection)
+            
             logger.info("Database cleanup completed successfully.")
             
             # List any remaining objects
-            list_remaining_objects(connection)
+            await list_remaining_objects(connection)
             
         except Exception as e:
             logger.error(f"Database cleanup failed. Transaction rolled back. Error: {e}")
+            raise
 
 if __name__ == "__main__":
     # Configure logger
     logger.add(sys.stderr, format="{time} {level} {message}", filter="my_module", level="INFO")
     logger.add("clear_db.log", rotation="500 MB")  # For logging to a file
 
-    main()
+    asyncio.run(main())

@@ -312,6 +312,16 @@ export async function getLoginUrl() {
   })
 }
 
+export async function validateToken(accessToken: string) {
+  return fetchFromAuthService('validate-token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ access_token: accessToken }),
+  })
+}
+
 // =============== Email Management APIs ===============
 
 export async function fetchEmailConfig() {

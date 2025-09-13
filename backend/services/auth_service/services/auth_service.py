@@ -9,10 +9,9 @@ from typing import Any, Dict
 import httpx
 from loguru import logger
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session
 
 from common.config import get_settings
-from common.database import get_engine
+from common.database import get_async_db_session
 
 
 class AuthenticationService:
@@ -20,7 +19,6 @@ class AuthenticationService:
 
     def __init__(self):
         """Initialize the authentication service."""
-        self.engine = get_engine("auth-service")
         self.settings = get_settings("auth-service")
 
     async def authenticate_with_code(self, code: str) -> Dict[str, Any]:
@@ -180,7 +178,7 @@ class AuthenticationService:
                 sftp_config = formatted_settings.get("sftp_config", {})
                 email_config = formatted_settings.get("email_config", {})
 
-                if not self._upsert_tenant_configurations(
+                if not await self._upsert_tenant_configurations(
                     account_id, postgres_config, bigquery_config, sftp_config, email_config, username
                 ):
                     return {
@@ -384,7 +382,7 @@ class AuthenticationService:
             logger.error(f"Email config validation failed: {e}")
             return False
 
-    def _upsert_tenant_configurations(
+    async def _upsert_tenant_configurations(
         self,
         tenant_id: str,
         postgres_config: Dict[str, Any],
@@ -412,15 +410,14 @@ class AuthenticationService:
             True if successful, False otherwise
         """
         try:
-            connection_string = f"postgresql://{postgres_config['user']}:{postgres_config['password']}@{postgres_config['host']}:{postgres_config['port']}/{postgres_config['database']}"
-            engine = create_engine(connection_string)
-
-            with Session(engine) as session:
+            # Use the async session with the tenant's postgres config
+            async with get_async_db_session("auth-service") as session:
                 # Check if tenant exists
-                result = session.execute(
+                result = await session.execute(
                     text("SELECT COUNT(*) FROM tenants WHERE id = :tenant_id"),
                     {"tenant_id": tenant_id},
-                ).scalar()
+                )
+                count = result.scalar()
 
                 # Prepare configuration data
                 config_data = {
@@ -436,9 +433,9 @@ class AuthenticationService:
                     "email_config": json.dumps(email_config),
                 }
 
-                if result == 0:
+                if count == 0:
                     # Create new tenant with all configurations
-                    session.execute(
+                    await session.execute(
                         text(
                             """
                             INSERT INTO tenants (
@@ -456,11 +453,10 @@ class AuthenticationService:
                         ),
                         config_data,
                     )
-                    session.commit()
                     logger.info(f"Created new tenant: {username} ({tenant_id})")
                 else:
                     # Always update existing tenant with latest configurations from authentication API
-                    session.execute(
+                    await session.execute(
                         text(
                             """
                             UPDATE tenants SET
@@ -478,7 +474,6 @@ class AuthenticationService:
                         ),
                         config_data,
                     )
-                    session.commit()
                     logger.info(f"Updated tenant configurations: ({tenant_id})")
 
             return True
@@ -559,3 +554,100 @@ class AuthenticationService:
         login_url = f"{base_url}/admin/"
         
         return login_url
+
+    async def validate_token(self, access_token: str) -> Dict[str, Any]:
+        """
+        Validate an access token and return user information.
+
+        Args:
+            access_token: The access token to validate
+
+        Returns:
+            Dict containing validation result and user information
+        """
+        try:
+            base_url = self.settings.BASE_URL
+            # Try to validate token by calling the getappproperity endpoint with the token
+            # This is a known working endpoint that requires authentication
+            validate_url = f"{base_url}/manage/auth/getappproperity"
+
+            logger.info(f"Validating access token")
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                validate_response = await client.get(
+                    validate_url,
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+
+                if validate_response.status_code != 200:
+                    logger.error(f"Token validation failed with status {validate_response.status_code}")
+                    
+                    if validate_response.status_code == 401:
+                        return {
+                            "valid": False,
+                            "message": "Token is invalid or expired",
+                            "tenant_id": None,
+                            "first_name": None,
+                            "username": None,
+                        }
+                    elif validate_response.status_code == 404:
+                        return {
+                            "valid": False,
+                            "message": "Token validation endpoint not available",
+                            "tenant_id": None,
+                            "first_name": None,
+                            "username": None,
+                        }
+                    else:
+                        return {
+                            "valid": False,
+                            "message": f"Token validation failed with status {validate_response.status_code}",
+                            "tenant_id": None,
+                            "first_name": None,
+                            "username": None,
+                        }
+
+                # If we get here, the token is valid
+                try:
+                    user_data = validate_response.json()
+                    tenant_id = user_data.get("accountId")  # This is our tenant_id
+                    first_name = user_data.get("firstName")
+                    username = user_data.get("username")
+                    
+                    logger.info(f"Token validation successful for user: {username}")
+                    return {
+                        "valid": True,
+                        "message": "Token is valid",
+                        "tenant_id": tenant_id,
+                        "first_name": first_name,
+                        "username": username,
+                    }
+                except Exception as e:
+                    logger.error(f"Failed to parse user data from token validation: {e}")
+                    return {
+                        "valid": True,  # Token is valid, but we couldn't parse user data
+                        "message": "Token is valid but user data unavailable",
+                        "tenant_id": None,
+                        "first_name": None,
+                        "username": None,
+                    }
+
+        except httpx.RequestError as e:
+            logger.error(f"HTTP request failed during token validation: {e}")
+            logger.error(f"Base URL being used: {self.settings.BASE_URL}")
+            return {
+                "valid": False,
+                "message": f"Token validation service unavailable: {str(e)}",
+                "tenant_id": None,
+                "first_name": None,
+                "username": None,
+            }
+        except Exception as e:
+            logger.error(f"Token validation failed: {e}")
+            return {
+                "valid": False,
+                "message": "Internal server error during token validation",
+                "tenant_id": None,
+                "first_name": None,
+                "username": None,
+            }

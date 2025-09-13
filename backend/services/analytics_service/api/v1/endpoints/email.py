@@ -36,7 +36,7 @@ async def get_email_config(
     Returns the SMTP configuration stored in the tenants table.
     """
     try:
-        config = db_client.get_email_config(tenant_id)
+        config = await db_client.get_email_config(tenant_id)
         
         # Don't expose sensitive information like passwords
         if config and 'password' in config:
@@ -69,7 +69,7 @@ async def get_branch_email_mappings(
     should receive reports for which branches.
     """
     try:
-        mappings = db_client.get_branch_email_mappings(tenant_id, branch_code)
+        mappings = await db_client.get_branch_email_mappings(tenant_id, branch_code)
         
         logger.info(f"Retrieved {len(mappings)} email mappings for tenant {tenant_id}")
         
@@ -92,7 +92,7 @@ async def create_branch_email_mapping(
     Create a new branch email mapping for the tenant.
     """
     try:
-        result = db_client.create_branch_email_mapping(tenant_id, mapping)
+        result = await db_client.create_branch_email_mapping(tenant_id, mapping)
         
         logger.info(f"Created new email mapping for tenant {tenant_id}: {result}")
         
@@ -122,7 +122,7 @@ async def update_branch_email_mapping(
     Updates the mapping identified by the given ID for the current tenant.
     """
     try:
-        result = db_client.update_branch_email_mapping(tenant_id, mapping_id, mapping)
+        result = await db_client.update_branch_email_mapping(tenant_id, mapping_id, mapping)
         
         if not result:
             raise HTTPException(
@@ -159,7 +159,7 @@ async def delete_branch_email_mapping(
     Removes the mapping identified by the given ID for the current tenant.
     """
     try:
-        result = db_client.delete_branch_email_mapping(tenant_id, mapping_id)
+        result = await db_client.delete_branch_email_mapping(tenant_id, mapping_id)
         
         if not result:
             raise HTTPException(
@@ -235,7 +235,7 @@ async def get_email_job_status(
     Get status of an email sending job.
     """
     try:
-        job = db_client.get_email_job_status(tenant_id, job_id)
+        job = await db_client.get_email_job_status(tenant_id, job_id)
         
         if not job:
             raise HTTPException(status_code=404, detail="Email job not found")
@@ -268,7 +268,7 @@ async def get_email_send_history(
     Get email sending history with pagination and filtering.
     """
     try:
-        history = db_client.get_email_send_history(
+        history = await db_client.get_email_send_history(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -303,7 +303,7 @@ async def get_email_jobs(
     Get email job history with pagination and filtering.
     """
     try:
-        jobs = db_client.get_email_jobs(
+        jobs = await db_client.get_email_jobs(
             tenant_id=tenant_id,
             page=page,
             limit=limit,

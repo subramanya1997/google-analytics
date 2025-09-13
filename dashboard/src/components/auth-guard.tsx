@@ -11,12 +11,15 @@ interface AuthGuardProps {
 }
 
 export function AuthGuard({ children, redirectTo = "/oauth/login" }: AuthGuardProps) {
-  const { user, isAuthenticated } = useUser()
+  const { user, isAuthenticated, isValidating } = useUser()
   const router = useRouter()
 
   useEffect(() => {
     // Check if we're on the client side
     if (typeof window === 'undefined') return
+
+    // Don't redirect while validating session
+    if (isValidating) return
 
     // If no user data at all, redirect to login
     if (!user) {
@@ -29,7 +32,19 @@ export function AuthGuard({ children, redirectTo = "/oauth/login" }: AuthGuardPr
       router.replace(redirectTo)
       return
     }
-  }, [user, isAuthenticated, router, redirectTo])
+  }, [user, isAuthenticated, isValidating, router, redirectTo])
+
+  // Show loading while validating session
+  if (isValidating) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p className="text-muted-foreground">Validating session...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Show loading while checking authentication
   if (!user) {

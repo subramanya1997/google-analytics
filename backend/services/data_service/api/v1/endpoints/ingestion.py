@@ -37,7 +37,7 @@ async def create_ingestion_job(
         ingestion_service = IngestionService()
 
         # Create job record
-        ingestion_service.create_job(job_id, tenant_id, request)
+        await ingestion_service.create_job(job_id, tenant_id, request)
 
         # Start background processing
         background_tasks.add_task(ingestion_service.run_job, job_id, tenant_id, request)
@@ -68,13 +68,8 @@ async def get_data_availability(
     try:
         ingestion_service = IngestionService()
         
-        # Run synchronous database operations in thread pool to prevent blocking!
-        loop = asyncio.get_event_loop()
-        combined_data = await loop.run_in_executor(
-            None, 
-            ingestion_service.get_data_availability_with_breakdown, 
-            tenant_id
-        )
+        # Call the async method directly
+        combined_data = await ingestion_service.get_data_availability_with_breakdown(tenant_id)
         return combined_data
     except Exception as e:
         logger.error(f"Error getting data availability: {e}")
@@ -93,15 +88,8 @@ async def get_ingestion_jobs(
     try:
         ingestion_service = IngestionService()
         
-        # Run synchronous database operations in thread pool to prevent blocking!
-        loop = asyncio.get_event_loop()
-        jobs = await loop.run_in_executor(
-            None,
-            ingestion_service.get_tenant_jobs,
-            tenant_id,
-            limit,
-            offset
-        )
+        # Call the async method directly
+        jobs = await ingestion_service.get_tenant_jobs(tenant_id, limit, offset)
         
         return {
             "jobs": jobs.get("jobs", []),
@@ -125,13 +113,8 @@ async def get_ingestion_job(
     try:
         ingestion_service = IngestionService()
         
-        # Run synchronous database operations in thread pool to prevent blocking!
-        loop = asyncio.get_event_loop()
-        job = await loop.run_in_executor(
-            None,
-            ingestion_service.get_job_status,
-            job_id
-        )
+        # Call the async method directly
+        job = await ingestion_service.get_job_status(job_id)
         
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")

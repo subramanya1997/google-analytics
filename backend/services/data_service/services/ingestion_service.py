@@ -30,7 +30,7 @@ class IngestionService:
         if hasattr(self, '_executor'):
             self._executor.shutdown(wait=False)
 
-    def create_job(
+    async def create_job(
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
     ) -> Dict[str, Any]:
         """Create a new ingestion job."""
@@ -44,7 +44,7 @@ class IngestionService:
                 "end_date": request.end_date,  # Pass as date object, not string
             }
 
-            job = self.repo.create_processing_job(job_data)
+            job = await self.repo.create_processing_job(job_data)
             logger.info(f"Created processing job {job_id}")
             return job
 
@@ -58,7 +58,7 @@ class IngestionService:
         """Run the data ingestion job."""
         try:
             # Update job status to processing
-            self.repo.update_job_status(job_id, "processing", started_at=datetime.now())
+            await self.repo.update_job_status(job_id, "processing", started_at=datetime.now())
 
             results = {
                 "purchase": 0,
@@ -112,7 +112,7 @@ class IngestionService:
                     raise
 
             # Update job status to completed
-            self.repo.update_job_status(
+            await self.repo.update_job_status(
                 job_id,
                 "completed",
                 completed_at=datetime.now(),
@@ -124,7 +124,7 @@ class IngestionService:
 
         except Exception as e:
             # Update job status to failed
-            self.repo.update_job_status(
+            await self.repo.update_job_status(
                 job_id, "failed", completed_at=datetime.now(), error_message=str(e)
             )
             logger.error(f"Failed processing job {job_id}: {e}")
@@ -157,13 +157,14 @@ class IngestionService:
             for event_type, events_data in events_by_type.items():
                 try:
                     if events_data:
-                        count = thread_repo.replace_event_data(
+                        # Need to run async method in sync context
+                        count = asyncio.run(thread_repo.replace_event_data(
                             tenant_id,
                             event_type,
                             request.start_date,
                             request.end_date,
                             events_data,
-                        )
+                        ))
                         results[event_type] = count
                         logger.info(f"Processed {count} {event_type} events")
                     else:
@@ -184,13 +185,13 @@ class IngestionService:
         """Synchronous user upsert operation (runs in thread pool)."""
         # Create a new repository instance for this thread
         thread_repo = SqlAlchemyRepository()
-        return thread_repo.upsert_users(tenant_id, users_data)
+        return asyncio.run(thread_repo.upsert_users(tenant_id, users_data))
     
     def _upsert_locations_sync(self, tenant_id: str, locations_data: list) -> int:
         """Synchronous location upsert operation (runs in thread pool)."""
         # Create a new repository instance for this thread
         thread_repo = SqlAlchemyRepository()
-        return thread_repo.upsert_locations(tenant_id, locations_data)
+        return asyncio.run(thread_repo.upsert_locations(tenant_id, locations_data))
 
     async def _process_users(self, tenant_id: str) -> int:
         """Process users from SFTP."""
@@ -312,27 +313,27 @@ class IngestionService:
             logger.error(f"Error processing locations: {e}")
             raise
 
-    def get_job_status(self, job_id: str) -> Dict[str, Any]:
+    async def get_job_status(self, job_id: str) -> Dict[str, Any]:
         """Get job status."""
-        job = self.repo.get_job_by_id(job_id)
+        job = await self.repo.get_job_by_id(job_id)
         if not job:
             raise Exception(f"Job {job_id} not found")
         return job
 
-    def get_tenant_summary(
+    async def get_tenant_summary(
         self, tenant_id: str, start_date: date = None, end_date: date = None
     ) -> Dict[str, Any]:
         """Get analytics summary for a tenant."""
-        return self.repo.get_analytics_summary(tenant_id, start_date, end_date)
+        return await self.repo.get_analytics_summary(tenant_id, start_date, end_date)
 
-    def get_data_availability(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_data_availability(self, tenant_id: str) -> Dict[str, Any]:
         """Get the date range of available data for a tenant."""
-        return self.repo.get_data_availability(tenant_id)
+        return await self.repo.get_data_availability(tenant_id)
 
-    def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
+    async def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
         """Get both data availability summary and detailed breakdown in one call."""
-        return self.repo.get_data_availability_with_breakdown(tenant_id)
+        return await self.repo.get_data_availability_with_breakdown(tenant_id)
 
-    def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    async def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
         """Get job history for a tenant."""
-        return self.repo.get_tenant_jobs(tenant_id, limit, offset)
+        return await self.repo.get_tenant_jobs(tenant_id, limit, offset)

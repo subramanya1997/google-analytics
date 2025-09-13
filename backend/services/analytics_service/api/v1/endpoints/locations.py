@@ -27,7 +27,7 @@ async def get_locations(
     """
     try:
         # Get locations with activity
-        locations = db_client.get_locations(tenant_id)
+        locations = await db_client.get_locations(tenant_id)
 
         logger.info(
             f"Retrieved {len(locations)} active locations for tenant {tenant_id}"

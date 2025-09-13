@@ -61,6 +61,7 @@ class AuthenticationService:
                 account_id = app_property_data.get("accountId")  # This is our tenant_id
                 first_name = app_property_data.get("firstName")
                 username = app_property_data.get("username")
+                business_name = app_property_data.get("businessName")
 
                 if not all([app_instance_id, access_token, account_id]):
                     return {
@@ -69,6 +70,7 @@ class AuthenticationService:
                         "tenant_id": None,
                         "first_name": first_name,
                         "username": username,
+                        "business_name": business_name,
                     }
 
                 # Step 2: Get settings using app instance ID and access token
@@ -86,6 +88,7 @@ class AuthenticationService:
                         "tenant_id": account_id,
                         "first_name": first_name,
                         "username": username,
+                        "business_name": business_name,
                     }
 
                 settings_data = settings_response.json()
@@ -168,6 +171,7 @@ class AuthenticationService:
                         "tenant_id": account_id,
                         "first_name": first_name,
                         "username": username,
+                        "business_name": business_name,
                         "missing_configs": validation_result["missing_configs"],
                         "invalid_configs": validation_result["invalid_configs"],
                     }
@@ -187,6 +191,7 @@ class AuthenticationService:
                         "tenant_id": account_id,
                         "first_name": first_name,
                         "username": username,
+                        "business_name": business_name,
                     }
 
                 # Step 5: Return success response with access token
@@ -196,6 +201,7 @@ class AuthenticationService:
                     "tenant_id": account_id,
                     "first_name": first_name,
                     "username": username,
+                    "business_name": business_name,
                     "access_token": access_token,
                 }
 
@@ -208,6 +214,7 @@ class AuthenticationService:
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,
+                "business_name": None,
             }
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
@@ -217,6 +224,7 @@ class AuthenticationService:
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,
+                "business_name": None,
             }
 
     async def _validate_configurations_async(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -589,6 +597,7 @@ class AuthenticationService:
                             "tenant_id": None,
                             "first_name": None,
                             "username": None,
+                            "business_name": None,
                         }
                     elif validate_response.status_code == 404:
                         return {
@@ -597,6 +606,7 @@ class AuthenticationService:
                             "tenant_id": None,
                             "first_name": None,
                             "username": None,
+                            "business_name": None,
                         }
                     else:
                         return {
@@ -605,6 +615,7 @@ class AuthenticationService:
                             "tenant_id": None,
                             "first_name": None,
                             "username": None,
+                            "business_name": None,
                         }
 
                 # If we get here, the token is valid
@@ -613,6 +624,7 @@ class AuthenticationService:
                     tenant_id = user_data.get("accountId")  # This is our tenant_id
                     first_name = user_data.get("firstName")
                     username = user_data.get("username")
+                    business_name = user_data.get("businessName")
                     
                     logger.info(f"Token validation successful for user: {username}")
                     return {
@@ -621,6 +633,7 @@ class AuthenticationService:
                         "tenant_id": tenant_id,
                         "first_name": first_name,
                         "username": username,
+                        "business_name": business_name,
                     }
                 except Exception as e:
                     logger.error(f"Failed to parse user data from token validation: {e}")
@@ -630,6 +643,7 @@ class AuthenticationService:
                         "tenant_id": None,
                         "first_name": None,
                         "username": None,
+                        "business_name": None,
                     }
 
         except httpx.RequestError as e:
@@ -641,6 +655,7 @@ class AuthenticationService:
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,
+                "business_name": None,
             }
         except Exception as e:
             logger.error(f"Token validation failed: {e}")
@@ -650,4 +665,5 @@ class AuthenticationService:
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,
+                "business_name": None,
             }

@@ -207,6 +207,6 @@ async def main():
 if __name__ == "__main__":
     # Configure logger
     logger.add(sys.stderr, format="{time} {level} {message}", filter="my_module", level="INFO")
-    logger.add("clear_db.log", rotation="500 MB")  # For logging to a file
+    logger.add("logs/clear_db.log", rotation="500 MB")  # For logging to a file
 
     asyncio.run(main())

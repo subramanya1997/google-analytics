@@ -174,7 +174,7 @@ export default function PurchasesPage() {
                       
                       return (
                         <Button
-                          key={i}
+                          key={`purchases-${pageNum}`}
                           variant={pageNum === currentPage ? "default" : "outline"}
                           size="sm"
                           onClick={() => handlePageChange(pageNum)}

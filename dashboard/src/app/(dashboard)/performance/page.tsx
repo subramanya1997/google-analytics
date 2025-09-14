@@ -74,7 +74,7 @@ export default function PerformancePage() {
 
       const transformedTasks: Task[] = [
         ...bouncedSessions.map((session: BouncedSession) => ({
-          id: session.session_id,
+          id: `bounced-session-${session.session_id}`,
           type: 'performance' as const,
           title: `Bounced Session: ${session.session_id}`,
           description: `User session with a single page view. Entry page: ${session.entry_page}`,
@@ -98,7 +98,7 @@ export default function PerformancePage() {
           sessionId: session.session_id
         })),
         ...frequentlyBouncedPages.map((page: FrequentlyBouncedPage) => ({
-          id: page.entry_page,
+          id: `bounced-page-${page.entry_page}`,
           type: 'performance' as const,
           title: `Frequently Bounced Page: ${page.entry_page}`,
           description: `This page has a high bounce rate with ${page.bounce_count} bounces.`,
@@ -424,7 +424,7 @@ export default function PerformancePage() {
                     
                     return (
                       <Button
-                        key={i}
+                        key={`mobile-${pageNum}`}
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}
@@ -445,7 +445,7 @@ export default function PerformancePage() {
                       
                       return (
                         <Button
-                          key={`desktop-${i}`}
+                          key={`desktop-${pageNum}-${i}`}
                           variant={pageNum === currentPage ? "default" : "outline"}
                           size="sm"
                           onClick={() => handlePageChange(pageNum)}

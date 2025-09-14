@@ -40,6 +40,33 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
     }
   }
   
+  const formatXAxisLabel = (tickItem: string) => {
+    try {
+      const date = new Date(tickItem)
+      
+      // Check if we're on a smaller screen (simplified responsive check)
+      const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768
+      
+      switch (timeGranularity) {
+        case "hourly":
+          return isSmallScreen ? format(date, "HH:mm") : format(date, "MMM d, HH:mm")
+        case "4hours":
+        case "12hours":
+          return isSmallScreen ? format(date, "MMM d\nHH:mm") : format(date, "MMM d, HH:mm")
+        case "weekly":
+          return format(date, "MMM d")
+        case "monthly":
+          return format(date, "MMM yyyy")
+        case "daily":
+        default:
+          return isSmallScreen ? format(date, "M/d") : format(date, "MMM d")
+      }
+    } catch (error) {
+      // Fallback for invalid dates
+      return tickItem
+    }
+  }
+  
   return (
     <Card>
       <CardHeader className="pb-4">
@@ -56,6 +83,7 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
                 className="text-xs"
                 tick={{ fill: 'currentColor' }}
                 interval="preserveStartEnd"
+                tickFormatter={formatXAxisLabel}
               />
               <YAxis 
                 className="text-xs"
@@ -68,6 +96,7 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
                   borderRadius: '6px',
                   fontSize: '12px'
                 }}
+                labelFormatter={(value) => formatXAxisLabel(value as string)}
               />
               <Legend 
                 wrapperStyle={{ fontSize: '12px' }}

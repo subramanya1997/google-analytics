@@ -1,0 +1,94 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/*.log
+*.log
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+htmlcov/
+
+# Documentation
+docs/
+*.md
+README*
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.temp
+
+# Database files (since using cloud postgres)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files (will be provided separately)
+.env*
+
+# Package files
+*.tar.gz
+*.zip
+
+# Service temp data
+services/data_service/temp_data/

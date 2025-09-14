@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  analytics-service:
+    build: .  # Uses shared Dockerfile
+    container_name: analytics-service
+    ports:
+      - "8001:8001"
+    environment:
+      - ENVIRONMENT=DEV
+      - LOG_LEVEL=INFO
+      - PORT=8001
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    # Different command = different service
+    command: ["uv", "run", "uvicorn", "services.analytics_service.main:app", "--host", "0.0.0.0", "--port", "8001", "--reload"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  auth-service:
+    build: .  # Uses same shared Dockerfile
+    container_name: auth-service
+    ports:
+      - "8003:8003"
+    environment:
+      - ENVIRONMENT=DEV
+      - LOG_LEVEL=INFO
+      - PORT=8003
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    # Different command = different service
+    command: ["uv", "run", "uvicorn", "services.auth_service.main:app", "--host", "0.0.0.0", "--port", "8003", "--reload"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  data-service:
+    build: .  # Uses same shared Dockerfile  
+    container_name: data-service
+    ports:
+      - "8002:8002"
+    environment:
+      - ENVIRONMENT=DEV
+      - LOG_LEVEL=INFO
+      - PORT=8002
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+    # Different command = different service
+    command: ["uv", "run", "uvicorn", "services.data_service.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: google-analytics-network
+    driver: bridge

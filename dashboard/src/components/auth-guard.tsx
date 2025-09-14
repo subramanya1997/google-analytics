@@ -15,11 +15,10 @@ export function AuthGuard({ children, redirectTo = "/oauth/login" }: AuthGuardPr
   const router = useRouter()
 
   useEffect(() => {
-    // Check if we're on the client side
-    if (typeof window === 'undefined') return
-
-    // Don't redirect while loading initial session or validating
-    if (isLoading || isValidating) return
+    // Only run on client side and when not loading/validating
+    if (typeof window === 'undefined' || isLoading || isValidating) {
+      return
+    }
 
     // If no user data at all after loading is complete, redirect to login
     if (!user) {

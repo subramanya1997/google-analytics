@@ -9,6 +9,7 @@ import { TimeGranularitySelector, TimeGranularity } from "@/components/ui/time-g
 import { useDashboard } from "@/contexts/dashboard-context"
 import { fetchDashboardStats } from "@/lib/api-utils"
 import { DashboardMetrics, LocationStats, ChartDataPoint, DashboardApiResponse } from "@/types"
+import { format } from "date-fns"
 import {
   DollarSign,
   ShoppingCart,
@@ -27,6 +28,30 @@ export default function DashboardPage() {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>("daily")
+
+  // Helper functions for formatting
+  const formatDateRange = () => {
+    if (!dateRange?.from || !dateRange?.to) return "Select date range"
+    
+    const fromDate = format(dateRange.from, "MMM d, yyyy")
+    const toDate = format(dateRange.to, "MMM d, yyyy")
+    
+    if (fromDate === toDate) {
+      return fromDate
+    }
+    
+    return `${format(dateRange.from, "MMM d")} - ${format(dateRange.to, "MMM d, yyyy")}`
+  }
+  
+  const getGranularityText = () => {
+    switch (timeGranularity) {
+      case "hourly": return "Hourly"
+      case "4hours": return "4-hour"
+      case "12hours": return "12-hour"
+      case "daily": return "Daily"
+      default: return "Daily"
+    }
+  }
 
   const fetchDashboardData = useCallback(async () => {
     try {
@@ -106,11 +131,16 @@ export default function DashboardPage() {
           </div>
         )}
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5" />
-              Activity Timeline
-            </h3>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="space-y-1">
+              <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5" />
+                Activity Overview - {formatDateRange()}
+              </h3>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {getGranularityText()} activity breakdown for purchases, cart additions, and searches
+              </p>
+            </div>
             <TimeGranularitySelector 
               value={timeGranularity}
               onChange={setTimeGranularity}
@@ -122,7 +152,6 @@ export default function DashboardPage() {
           ) : (
             <OverviewChart 
               data={chartData} 
-              dateRange={dateRange}
               timeGranularity={timeGranularity}
             />
           )}

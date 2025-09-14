@@ -503,7 +503,7 @@ export default function RepeatVisitsPage() {
                     
                     return (
                       <Button
-                        key={i}
+                        key={`repeat-visits-${pageNum}`}
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}

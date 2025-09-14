@@ -139,7 +139,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         // Only logout on explicit 401 unauthorized
         if (response.status === 401) {
           console.warn('Token is unauthorized, logging out user')
-          setUser(null)
+          setUserState(null)
           return false
         }
         

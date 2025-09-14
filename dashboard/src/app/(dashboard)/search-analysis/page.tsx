@@ -412,7 +412,7 @@ export default function SearchAnalysisPage() {
                     
                     return (
                       <Button
-                        key={i}
+                        key={`search-analysis-${pageNum}`}
                         variant={pageNum === currentPage ? "default" : "outline"}
                         size="sm"
                         onClick={() => handlePageChange(pageNum)}

@@ -170,7 +170,7 @@ export default function CartAbandonmentPage() {
                       
                       return (
                         <Button
-                          key={i}
+                          key={`cart-abandonment-${pageNum}`}
                           variant={pageNum === currentPage ? "default" : "outline"}
                           size="sm"
                           onClick={() => handlePageChange(pageNum)}

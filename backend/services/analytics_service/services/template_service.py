@@ -71,8 +71,8 @@ class TemplateService:
                     "cart_abandonment": {
                         "total": summary.get("total_cart_abandonment", 0),
                         "unique_customers": len(set(c.get("user_id", "") for c in tasks.get("cart_abandonment", []) if c.get("user_id"))),
-                        "total_value": sum(float(c.get("cart_value", 0)) for c in tasks.get("cart_abandonment", [])),
-                        "avg_value": sum(float(c.get("cart_value", 0)) for c in tasks.get("cart_abandonment", [])) / max(summary.get("total_cart_abandonment", 1), 1),
+                        "total_value": sum(float(c.get("total_value", 0)) for c in tasks.get("cart_abandonment", [])),
+                        "avg_value": sum(float(c.get("total_value", 0)) for c in tasks.get("cart_abandonment", [])) / max(summary.get("total_cart_abandonment", 1), 1),
                         "samples": self._transform_cart_samples(tasks.get("cart_abandonment", []))
                     },
                     "search_no_results": {
@@ -84,7 +84,7 @@ class TemplateService:
                     },
                     "repeat_visits": {
                         "total": summary.get("total_repeat_visits", 0),
-                        "avg_pages": sum(r.get("pages_viewed", 0) for r in tasks.get("repeat_visits", [])) / max(summary.get("total_repeat_visits", 1), 1),
+                        "avg_pages": sum(r.get("page_views_count", 0) for r in tasks.get("repeat_visits", [])) / max(summary.get("total_repeat_visits", 1), 1),
                         "samples": self._transform_repeat_samples(tasks.get("repeat_visits", []))
                     }
                 }
@@ -335,26 +335,24 @@ class TemplateService:
         for visit in visits:
             pages_summary = []
             
-            # Parse visited pages if available
-            pages_json = visit.get("pages_json", "")
-            if pages_json:
+            # Parse product details if available
+            products_details = visit.get("products_details", [])
+            if products_details:
                 try:
-                    pages = json.loads(pages_json) if isinstance(pages_json, str) else pages_json
-                    # Group by URL
-                    url_counts = {}
-                    for page in pages:
-                        url = page.get("url", "")
-                        title = page.get("title", "Unknown")
-                        if url not in url_counts:
-                            url_counts[url] = {"count": 0, "title": title, "url": url}
-                        url_counts[url]["count"] += 1
+                    # Ensure it's a list (it should be from the SQL function)
+                    if isinstance(products_details, str):
+                        products_details = json.loads(products_details)
                     
-                    # Sort by count and take top 5
-                    pages_summary = sorted(
-                        url_counts.values(), 
-                        key=lambda x: x["count"], 
-                        reverse=True
-                    )[:5]
+                    # Transform product details to page-like structure
+                    for product in products_details[:5]:  # Take top 5 products
+                        if product and isinstance(product, dict):
+                            pages_summary.append({
+                                "count": 1,  # Products are typically viewed once per session
+                                "title": product.get("title", "Unknown Product"),
+                                "url": product.get("url", "#"),
+                                "category": product.get("category", ""),
+                                "price": product.get("price", 0)
+                            })
                 except:
                     pass
             
@@ -362,7 +360,7 @@ class TemplateService:
                 "customer": visit.get("customer_name", "Unknown"),
                 "email": visit.get("email", ""),
                 "company": visit.get("company", ""),
-                "pages_viewed": visit.get("pages_viewed", 0),
+                "pages_viewed": visit.get("page_views_count", 0),
                 "pages_summary": pages_summary
             }
             

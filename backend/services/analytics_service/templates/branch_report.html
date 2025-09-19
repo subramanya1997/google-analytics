@@ -7,9 +7,9 @@
     <style>
         body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; background-color: #f8f9fa; color: #333; }
         .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .header { display: flex; flex-direction: column; align-items: flex-start; border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; }
-        .header h1 { font-size: 24px; margin: 0 0 5px 0; }
-        .header p { font-size: 16px; margin: 0; color: #6c757d; }
+        .header { border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; overflow: hidden; }
+        .header h1 { font-size: 24px; margin: 0; float: left; }
+        .header p { font-size: 16px; margin: 0; color: #6c757d; float: right; }
         h2 { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
         h4 { font-size: 18px; margin-top: 20px; margin-bottom: 10px; }
         .table { width: 100%; border-collapse: collapse; }
@@ -183,7 +183,7 @@
                 <thead>
                     <tr>
                         <th>Customer Details</th>
-                        <th>Visited Pages (Top 5 by Base URL)</th>
+                        <th>Viewed Products (Top 5)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -197,8 +197,10 @@
                         </td>
                         <td>
                             {% if sample.pages_summary %}
-                                {% for page in sample.pages_summary %}
-                                    {{ page.count }}x <a href='{{ page.url }}' target='_blank'>{{ page.title }}</a><br>
+                                {% for product in sample.pages_summary %}
+                                    <a href='{{ product.url }}' target='_blank'>{{ product.title }}</a>
+                                    {% if product.price and product.price > 0 %} - ${{ "%.2f"|format(product.price) }}{% endif %}
+                                    {% if product.category %} ({{ product.category }}){% endif %}<br>
                                 {% endfor %}
                             {% else %}
                                 N/A

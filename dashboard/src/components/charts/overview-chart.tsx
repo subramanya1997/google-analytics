@@ -1,7 +1,8 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
+import { DateRange } from "react-day-picker"
 import { format } from "date-fns"
 
 interface OverviewChartProps {
@@ -11,34 +12,68 @@ interface OverviewChartProps {
     carts: number
     searches: number
   }>
+  dateRange?: DateRange
   timeGranularity?: string
 }
 
-export function OverviewChart({ data, timeGranularity = "daily" }: OverviewChartProps) {
-  // Format time for display on X-axis
-  const formatXAxisTime = (timeStr: string) => {
+export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: OverviewChartProps) {
+  const formatDateRange = () => {
+    if (!dateRange?.from || !dateRange?.to) return "Select date range"
+    
+    const fromDate = format(dateRange.from, "MMM d, yyyy")
+    const toDate = format(dateRange.to, "MMM d, yyyy")
+    
+    if (fromDate === toDate) {
+      return fromDate
+    }
+    
+    return `${format(dateRange.from, "MMM d")} - ${format(dateRange.to, "MMM d, yyyy")}`
+  }
+  
+  const getGranularityText = () => {
+    switch (timeGranularity) {
+      case "hourly": return "Hourly"
+      case "4hours": return "4-hour"
+      case "12hours": return "12-hour"
+      case "daily": return "Daily"
+      default: return "Daily"
+    }
+  }
+  
+  const formatXAxisLabel = (tickItem: string) => {
     try {
-      const date = new Date(timeStr)
-      if (isNaN(date.getTime())) return timeStr
+      const date = new Date(tickItem)
+      
+      // Check if we're on a smaller screen (simplified responsive check)
+      const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768
       
       switch (timeGranularity) {
         case "hourly":
-          return format(date, "MMM d, HH:mm")
+          return isSmallScreen ? format(date, "HH:mm") : format(date, "MMM d, HH:mm")
         case "4hours":
         case "12hours":
-          return format(date, "MMM d, HH:mm")
+          return isSmallScreen ? format(date, "MMM d\nHH:mm") : format(date, "MMM d, HH:mm")
+        case "weekly":
+          return format(date, "MMM d")
+        case "monthly":
+          return format(date, "MMM yyyy")
         case "daily":
         default:
-          return format(date, "MMM d")
+          return isSmallScreen ? format(date, "M/d") : format(date, "MMM d")
       }
     } catch {
-      return timeStr
+      // Fallback for invalid dates
+      return tickItem
     }
   }
-
+  
   return (
     <Card>
-      <CardContent className="p-6">
+      <CardHeader className="pb-4">
+        <CardTitle className="text-base sm:text-lg">Activity Overview - {formatDateRange()}</CardTitle>
+        <CardDescription className="text-xs sm:text-sm">{getGranularityText()} activity breakdown for purchases, cart additions, and searches</CardDescription>
+      </CardHeader>
+      <CardContent>
         <div className="h-[250px] sm:h-[350px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data}>
@@ -47,8 +82,8 @@ export function OverviewChart({ data, timeGranularity = "daily" }: OverviewChart
                 dataKey="time" 
                 className="text-xs"
                 tick={{ fill: 'currentColor' }}
-                tickFormatter={formatXAxisTime}
                 interval="preserveStartEnd"
+                tickFormatter={formatXAxisLabel}
               />
               <YAxis 
                 className="text-xs"
@@ -61,7 +96,7 @@ export function OverviewChart({ data, timeGranularity = "daily" }: OverviewChart
                   borderRadius: '6px',
                   fontSize: '12px'
                 }}
-                labelFormatter={(label) => `Time: ${formatXAxisTime(label)}`}
+                labelFormatter={(value) => formatXAxisLabel(value as string)}
               />
               <Legend 
                 wrapperStyle={{ fontSize: '12px' }}

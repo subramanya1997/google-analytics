@@ -169,7 +169,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       } else {
         // Token explicitly invalid
         if (data.message?.toLowerCase().includes('invalid')) {
-          setUser(null)
+          setUserState(null)
           return false
         }
         

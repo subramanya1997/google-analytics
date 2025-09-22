@@ -1,3 +1,38 @@
+"""
+Data Ingestion Service - Business Logic for Multi-Source Analytics Pipeline.
+
+This module implements the core business logic for data ingestion operations
+in the Google Analytics Intelligence System. It orchestrates the complete
+data pipeline from multiple sources (BigQuery, SFTP) through transformation
+to database storage with comprehensive job management and error handling.
+
+Key Features:
+- **Multi-Source Integration**: BigQuery (GA4) + SFTP (user/location data)
+- **Asynchronous Processing**: Background job execution with status tracking
+- **Thread Pool Optimization**: Heavy operations in dedicated thread pools
+- **Error Recovery**: Graceful handling of individual data type failures
+- **Progress Monitoring**: Real-time job status and record count tracking
+- **Data Quality**: Comprehensive validation and transformation pipelines
+
+Data Pipeline Architecture:
+1. **Job Creation**: Initialize job record with queued status
+2. **Multi-Source Extraction**: Parallel processing of BigQuery events and SFTP files
+3. **Data Transformation**: Normalization, validation, and type conversion
+4. **Database Storage**: Batch operations with transaction management
+5. **Status Tracking**: Progress updates and completion notification
+
+Processing Strategies:
+- **Events**: Date-range based extraction from BigQuery with 6 event types
+- **Users**: Excel file processing from SFTP with multi-strategy parsing
+- **Locations**: Facility data processing with comprehensive cleaning
+- **Error Isolation**: Individual data type failures don't stop others
+- **Resource Management**: Thread pools prevent blocking of async operations
+
+The service provides the complete business logic layer between the API
+endpoints and the data access layer, handling orchestration, error
+management, and performance optimization for large-scale data processing.
+"""
+
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
@@ -15,7 +50,37 @@ from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepos
 
 
 class IngestionService:
-    """Service for handling analytics data ingestion jobs."""
+    """
+    Core service for multi-source analytics data ingestion and processing.
+    
+    This service orchestrates the complete data ingestion pipeline from multiple
+    external sources through transformation to database storage. It manages job
+    lifecycle, handles errors gracefully, and provides real-time status tracking
+    for complex, long-running data processing operations.
+    
+    **Architecture Overview:**
+    - Async/await for I/O-bound operations (API calls, database)
+    - Thread pool executor for CPU-bound operations (data processing)
+    - Multi-source integration with tenant-specific configurations
+    - Comprehensive error handling with job status management
+    - Performance optimization through parallel processing
+    
+    **Data Sources:**
+    1. **BigQuery**: GA4 event data with 6 event types
+    2. **SFTP**: User profiles and location data from Excel files
+    
+    **Key Capabilities:**
+    - Job creation and lifecycle management
+    - Multi-source data extraction and processing
+    - Data transformation and validation
+    - Error recovery and status tracking
+    - Performance monitoring and optimization
+    
+    Attributes:
+        repo: Database repository for all persistence operations
+        _executor: Thread pool for heavy synchronous operations
+        
+    """
 
     def __init__(self):
         self.repo = SqlAlchemyRepository()

@@ -1,5 +1,8 @@
 """
-Response models for analytics service API endpoints.
+Pydantic Models for Analytics Service API.
+
+This module provides response and request models for the analytics service API endpoints,
+including location data, email configuration models, and various response structures.
 """
 
 from .locations import LocationResponse

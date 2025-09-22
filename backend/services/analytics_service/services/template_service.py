@@ -1,5 +1,11 @@
 """
-Template service for rendering HTML reports using Jinja2
+Template Service for HTML Report Rendering.
+
+This module provides Jinja2-based template rendering for analytics reports,
+including custom filters, data transformation, and fallback report generation.
+
+Handles branch report HTML generation with proper data formatting, currency
+display, and structured presentation of analytics data.
 """
 
 import json
@@ -12,10 +18,21 @@ from loguru import logger
 
 
 class TemplateService:
-    """Service for rendering HTML templates."""
+    """HTML template rendering service for analytics reports.
+    
+    Provides Jinja2-based template rendering with custom filters for currency
+    formatting, date handling, and JSON parsing. Includes fallback rendering
+    capabilities for error scenarios and comprehensive data transformation
+    methods for template compatibility.
+    """
 
     def __init__(self):
-        """Initialize template service with Jinja2 environment."""
+        """Initialize template service with Jinja2 environment and custom filters.
+        
+        Sets up the Jinja2 environment with FileSystemLoader for template files,
+        configures auto-escaping for security, and registers custom filters for
+        currency formatting, date handling, and JSON parsing.
+        """
         # Get templates directory relative to this file
         templates_dir = Path(__file__).parent.parent / "templates"
         
@@ -34,13 +51,25 @@ class TemplateService:
 
     def render_branch_report(self, report_data: Dict[str, Any]) -> str:
         """
-        Render branch report HTML template.
+        Render comprehensive branch report using Jinja2 template with fallback.
+        
+        Transforms analytics data into template-compatible format and renders
+        professional HTML report. Includes fallback rendering for error scenarios
+        to ensure report generation reliability.
         
         Args:
-            report_data: Report data containing location, tasks, etc.
-            
+            report_data (Dict[str, Any]): Complete report dataset containing:
+                - location (Dict): Branch location information
+                - report_date (date): Report generation date
+                - summary (Dict): Aggregated metrics and statistics
+                - tasks (Dict): Categorized task data by type
+                - generated_at (datetime): Report generation timestamp
+                
         Returns:
-            Rendered HTML content
+            str: Complete HTML report content with styling and structure
+            
+        Raises:
+            No exceptions raised; falls back to basic HTML on template errors
         """
         try:
             template = self.env.get_template('branch_report.html')
@@ -100,7 +129,20 @@ class TemplateService:
 
 
     def _currency_filter(self, value: Any) -> str:
-        """Format value as currency."""
+        """Format numeric values as currency with proper symbol and formatting.
+        
+        Converts various input types (int, float, string) to standardized currency
+        format with dollar symbol, thousands separators, and two decimal places.
+        
+        Args:
+            value (Any): Numeric value to format (int, float, or string)
+            
+        Returns:
+            str: Formatted currency string (e.g., "$1,234.56")
+            
+        Raises:
+            No exceptions raised; invalid values return original string representation
+        """
         try:
             if isinstance(value, str):
                 # Already formatted
@@ -117,7 +159,21 @@ class TemplateService:
             return str(value)
 
     def _date_format_filter(self, value: Any, format: str = '%Y-%m-%d') -> str:
-        """Format date value."""
+        """Format date values with configurable format strings.
+        
+        Converts datetime objects and ISO date strings to formatted date strings
+        using Python strftime formatting patterns.
+        
+        Args:
+            value (Any): Date value to format (datetime, string, or other)
+            format (str): strftime format pattern, defaults to '%Y-%m-%d'
+            
+        Returns:
+            str: Formatted date string according to specified format
+            
+        Raises:
+            No exceptions raised; invalid values return string representation
+        """
         try:
             if isinstance(value, datetime):
                 return value.strftime(format)

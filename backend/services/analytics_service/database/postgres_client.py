@@ -1,5 +1,11 @@
 """
-PostgreSQL client for analytics service operations
+PostgreSQL Client for Analytics Service.
+
+This module provides a comprehensive database client for analytics service operations,
+including dashboard statistics, task management, email configuration, and location data.
+
+Utilizes RPC functions for optimized data retrieval and supports multi-tenant operations
+with proper data isolation and filtering capabilities.
 """
 
 import time
@@ -11,14 +17,35 @@ from sqlalchemy import text
 from common.database import get_async_db_session
 
 class AnalyticsPostgresClient:
-    """PostgreSQL client for analytics operations."""
+    """PostgreSQL database client for analytics service operations.
+    
+    Provides methods for retrieving dashboard statistics, managing analytics tasks,
+    handling email configurations, and supporting location-based data access.
+    
+    All operations are multi-tenant aware and utilize optimized RPC functions
+    for efficient data retrieval and processing.
+    """
 
     def __init__(self):
-        """Initialize PostgreSQL client."""
+        """Initialize PostgreSQL client for analytics operations.
+        
+        Sets up the client for database connections using the common database
+        session management system. No persistent connections are maintained.
+        """
         logger.info("Initialized Analytics PostgreSQL client")
 
     async def test_connection(self) -> Dict[str, Any]:
-        """Test the PostgreSQL connection."""
+        """Test the PostgreSQL database connection.
+        
+        Validates database connectivity by attempting to query the tenants table
+        and returns connection status with diagnostic information.
+        
+        Returns:
+            Dict[str, Any]: Connection status dictionary containing:
+                - success (bool): Whether connection succeeded
+                - message (str): Status message describing the result
+                - data (Dict/List): Query result data or empty list on failure
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Try to query tenants table
@@ -42,7 +69,22 @@ class AnalyticsPostgresClient:
 
     # Location operations
     async def get_locations(self, tenant_id: str) -> List[Dict[str, Any]]:
-        """Get all locations with activity."""
+        """Get all locations with recorded analytics activity for a tenant.
+        
+        Retrieves locations that have page view activity using optimized RPC function
+        for efficient data access and proper performance monitoring.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            
+        Returns:
+            List[Dict[str, Any]]: List of location dictionaries containing:
+                - locationId (str): Unique location identifier
+                - locationName (str): Human-readable location name
+                - city (Optional[str]): Location city
+                - state (Optional[str]): Location state
+            
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Get locations that have page view activity using the optimized function
@@ -86,7 +128,27 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get dashboard statistics using RPC function."""
+        """Get comprehensive dashboard statistics using optimized RPC function.
+        
+        Retrieves key metrics including revenue, purchases, visitors, cart abandonment,
+        and search statistics with optional filtering by location and date range.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            location_id (Optional[str]): Location filter for statistics
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Dashboard statistics containing:
+                - totalRevenue (float): Total revenue amount
+                - totalPurchases (int): Number of purchases
+                - totalVisitors (int): Number of unique visitors
+                - abandonedCarts (int): Number of abandoned carts
+                - totalSearches (int): Total search queries
+                - failedSearches (int): Number of failed searches
+                - Additional metrics as returned by RPC function
+        """
         try:
             if not start_date or not end_date:
                 return {
@@ -138,7 +200,28 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get purchase analysis tasks with pagination and filtering."""
+        """Get purchase analysis tasks with pagination and filtering.
+        
+        Retrieves purchase events for sales follow-up tasks with comprehensive
+        filtering capabilities and pagination support.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            query (Optional[str]): Search query for filtering results
+            location_id (Optional[str]): Location filter
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Paginated purchase tasks containing:
+                - data (List[Dict]): Purchase task records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Use the existing RPC function from functions.sql
@@ -182,7 +265,29 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get cart abandonment tasks using the RPC function."""
+        """Get cart abandonment tasks using the RPC function.
+        
+        Retrieves cart abandonment events for sales follow-up tasks with comprehensive
+        filtering capabilities and pagination support.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            query (Optional[str]): Search query for filtering results
+            location_id (Optional[str]): Location filter
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Paginated cart abandonment tasks containing:
+                - data (List[Dict]): Cart abandonment task records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -226,7 +331,30 @@ class AnalyticsPostgresClient:
         end_date: Optional[str] = None,
         include_converted: bool = False,
     ) -> Dict[str, Any]:
-        """Get search analysis tasks using the RPC function."""
+        """Get search analysis tasks with pagination and filtering.
+        
+        Retrieves search analytics events for sales follow-up tasks with comprehensive
+        filtering capabilities and pagination support.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            query (Optional[str]): Search query for filtering results
+            location_id (Optional[str]): Location filter
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            include_converted (bool): Whether to include converted searches
+            
+        Returns:
+            Dict[str, Any]: Paginated search analysis tasks containing:
+                - data (List[Dict]): Search analysis task records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -270,7 +398,29 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get repeat visit tasks using the RPC function."""
+        """Get repeat visit tasks with pagination and filtering.
+        
+        Retrieves repeat visit events for sales follow-up tasks with comprehensive
+        filtering capabilities and pagination support.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            query (Optional[str]): Search query for filtering results
+            location_id (Optional[str]): Location filter
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Paginated repeat visit tasks containing:
+                - data (List[Dict]): Repeat visit task records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -312,7 +462,28 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get performance tasks using the RPC function."""
+        """Get performance tasks with pagination and filtering.
+        
+        Retrieves performance metrics for sales follow-up tasks with comprehensive
+        filtering capabilities and pagination support.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            location_id (Optional[str]): Location filter
+            start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+            end_date (Optional[str]): End date filter in YYYY-MM-DD format
+            
+        Returns:
+            Dict[str, Any]: Paginated performance tasks containing:
+                - data (List[Dict]): Performance task records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -347,7 +518,19 @@ class AnalyticsPostgresClient:
     async def get_session_history(
         self, tenant_id: str, session_id: str
     ) -> List[Dict[str, Any]]:
-        """Get the event history for a specific session using the RPC function."""
+        """Get complete event history for a specific user session.
+        
+        Retrieves chronological sequence of events (page views, purchases, cart actions)
+        for a specific session using optimized RPC function.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            session_id (str): Unique session identifier
+            
+        Returns:
+            List[Dict[str, Any]]: Chronological list of session events containing
+                event details, timestamps, and associated metadata
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -369,7 +552,19 @@ class AnalyticsPostgresClient:
             raise
 
     async def get_user_history(self, tenant_id: str, user_id: str) -> List[Dict[str, Any]]:
-        """Get the event history for a specific user using the RPC function."""
+        """Get the event history for a specific user using the RPC function.
+        
+        Retrieves chronological sequence of events (page views, purchases, cart actions)
+        for a specific user using optimized RPC function.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            user_id (str): Unique user identifier
+            
+        Returns:
+            List[Dict[str, Any]]: Chronological list of user events containing
+                event details, timestamps, and associated metadata
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -391,7 +586,27 @@ class AnalyticsPostgresClient:
     async def get_location_stats_bulk(
         self, tenant_id: str, start_date: str, end_date: str
     ) -> List[Dict[str, Any]]:
-        """Get bulk statistics for all locations using the RPC function."""
+        """Get bulk statistics for all locations using the RPC function.
+        
+        Retrieves comprehensive analytics data for all locations with optional
+        filtering by date range.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            
+        Returns:
+            List[Dict[str, Any]]: List of location statistics containing:
+                - locationId (str): Location identifier
+                - locationName (str): Location name
+                - totalVisitors (int): Total number of unique visitors
+                - totalRevenue (float): Total revenue amount
+                - abandonedCarts (int): Number of abandoned carts
+                - totalSearches (int): Total number of search queries
+                - failedSearches (int): Number of failed searches
+                - Additional metrics as returned by RPC function
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -422,7 +637,29 @@ class AnalyticsPostgresClient:
         granularity: str,
         location_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Get time-series chart data using the RPC function."""
+        """Get time-series chart data using the RPC function.
+        
+        Retrieves time-series data for chart visualization including revenue,
+        purchases, and other metrics with optional filtering by location.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            granularity (str): Time granularity (daily, weekly, monthly, hourly, 4hours, 12hours)
+            location_id (Optional[str]): Location filter
+            
+        Returns:
+            List[Dict[str, Any]]: List of chart data containing:
+                - locationId (str): Location identifier
+                - locationName (str): Location name
+                - totalVisitors (int): Total number of unique visitors
+                - totalRevenue (float): Total revenue amount
+                - abandonedCarts (int): Number of abandoned carts
+                - totalSearches (int): Total number of search queries
+                - failedSearches (int): Number of failed searches
+                - Additional metrics as returned by RPC function
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -455,7 +692,24 @@ class AnalyticsPostgresClient:
         granularity: str = "daily",
         location_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Get complete dashboard data in a single optimized call."""
+        """Get complete dashboard data in a single optimized call.
+        
+        Retrieves comprehensive dashboard data including metrics, chart data,
+        and location statistics with optional filtering by location and date range.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            start_date (str): Start date in YYYY-MM-DD format
+            end_date (str): End date in YYYY-MM-DD format
+            granularity (str): Time granularity (daily, weekly, monthly, hourly, 4hours, 12hours)
+            location_id (Optional[str]): Location filter
+            
+        Returns:
+            Dict[str, Any]: Complete dashboard data containing:
+                - metrics (Dict): Dashboard metrics
+                - chartData (List[Dict]): Time-series chart data
+                - locationStats (List[Dict]): Location statistics
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -485,7 +739,25 @@ class AnalyticsPostgresClient:
     # ======================================
 
     async def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
-        """Get email configuration for a tenant."""
+        """Get SMTP email configuration for a tenant.
+        
+        Retrieves tenant-specific email configuration including SMTP server
+        details, authentication credentials, and connection settings.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            
+        Returns:
+            Optional[Dict[str, Any]]: Email configuration dictionary containing:
+                - server (str): SMTP server hostname
+                - port (int): SMTP server port
+                - username (str): SMTP authentication username
+                - password (str): SMTP authentication password
+                - use_tls (bool): Whether to use TLS encryption
+                - use_ssl (bool): Whether to use SSL encryption
+                - from_address (str): Default sender email address
+                Returns None if no configuration found
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -510,7 +782,26 @@ class AnalyticsPostgresClient:
     async def get_branch_email_mappings(
         self, tenant_id: str, branch_code: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get branch email mappings for a tenant."""
+        """Get branch email mappings for a tenant.
+        
+        Retrieves mappings between branch codes and sales representative email
+        addresses for automated report distribution.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (Optional[str]): Branch filter
+            
+        Returns:
+            List[Dict[str, Any]]: List of branch email mappings containing:
+                - id (str): Unique identifier for the mapping
+                - branch_code (str): Branch identifier
+                - branch_name (Optional[str]): Human-readable branch name
+                - sales_rep_email (str): Sales rep email address
+                - sales_rep_name (Optional[str]): Sales rep name
+                - is_enabled (bool): Whether mapping is active
+                - created_at (datetime): Creation timestamp
+                - updated_at (datetime): Last update timestamp
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 query = """
@@ -552,7 +843,25 @@ class AnalyticsPostgresClient:
     async def create_branch_email_mapping(
         self, tenant_id: str, mapping: Any
     ) -> Dict[str, Any]:
-        """Create a new branch email mapping."""
+        """Create a new branch-to-sales-rep email mapping.
+        
+        Creates a mapping between branch codes and sales representative email
+        addresses for automated report distribution.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            mapping (Any): Branch mapping data (Pydantic model or dictionary) containing:
+                - branch_code (str): Branch identifier
+                - branch_name (Optional[str]): Human-readable branch name
+                - sales_rep_email (str): Sales rep email address
+                - sales_rep_name (Optional[str]): Sales rep name
+                - is_enabled (bool): Whether mapping is active
+                
+        Returns:
+            Dict[str, Any]: Created mapping result containing:
+                - mapping_id (str): Unique identifier for the created mapping
+    
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Handle both Pydantic models and dictionaries
@@ -606,7 +915,25 @@ class AnalyticsPostgresClient:
     async def update_branch_email_mapping(
         self, tenant_id: str, mapping_id: str, mapping: Any
     ) -> bool:
-        """Update a specific branch email mapping by ID."""
+        """Update a specific branch email mapping by ID.
+        
+        Updates an existing branch email mapping with new information.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            mapping_id (str): Unique identifier for the mapping
+            mapping (Any): Branch mapping data (Pydantic model or dictionary) containing:
+                - branch_code (str): Branch identifier
+                - branch_name (Optional[str]): Human-readable branch name
+                - sales_rep_email (str): Sales rep email address
+                - sales_rep_name (Optional[str]): Sales rep name
+                - is_enabled (bool): Whether mapping is active
+                - created_at (datetime): Creation timestamp
+                - updated_at (datetime): Last update timestamp
+                
+        Returns:
+            bool: True if mapping was updated, False if not found
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Handle both Pydantic models and dictionaries
@@ -657,7 +984,16 @@ class AnalyticsPostgresClient:
             raise
 
     async def delete_branch_email_mapping(self, tenant_id: str, mapping_id: str) -> bool:
-        """Delete a specific branch email mapping by ID."""
+        """Delete a specific branch email mapping by ID.
+        
+        Removes an existing branch email mapping from the database.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            mapping_id (str): Unique identifier for the mapping
+        Returns:
+            bool: True if mapping was deleted, False if not found
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -682,7 +1018,25 @@ class AnalyticsPostgresClient:
     # ======================================
 
     async def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new email sending job."""
+        """Create a new email sending job record for tracking.
+        
+        Initializes a new email job entry in the database for progress tracking
+        and audit purposes during automated report distribution.
+        
+        Args:
+            job_data (Dict[str, Any]): Job initialization data containing:
+                - tenant_id (str): Unique identifier for the tenant
+                - job_id (str): Unique job identifier
+                - status (str): Initial job status (typically 'queued')
+                - report_date (date): Date for report generation
+                - target_branches (List[str]): List of branch codes to process
+                
+        Returns:
+            Dict[str, Any]: Created job information containing:
+                - id (str): Database record ID
+                - job_id (str): Unique job identifier
+                - status (str): Current job status
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -721,7 +1075,26 @@ class AnalyticsPostgresClient:
     async def update_email_job_status(
         self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
     ) -> bool:
-        """Update email job status and other fields."""
+        """Update email job status and progress information.
+        
+        Updates job status and optional additional fields like timing information,
+        email counts, and error messages for comprehensive job tracking.
+        
+        Args:
+            job_id (str): Unique job identifier
+            status (str): New job status (queued, processing, completed, failed)
+            updates (Optional[Dict[str, Any]]): Additional fields to update:
+                - started_at (datetime): Job start timestamp
+                - completed_at (datetime): Job completion timestamp
+                - total_emails (int): Total number of emails to send
+                - emails_sent (int): Number of successfully sent emails
+                - emails_failed (int): Number of failed email deliveries
+                - error_message (str): Error description if job failed
+                
+        Returns:
+            bool: True if job record was updated, False if not found
+            
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 set_clause = "status = :status, updated_at = NOW()"
@@ -751,7 +1124,32 @@ class AnalyticsPostgresClient:
             return False
 
     async def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get email job status."""
+        """Get comprehensive status information for a specific email job.
+        
+        Retrieves detailed job information including progress, timing, and error
+        details for monitoring and troubleshooting email distribution jobs.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            job_id (str): Unique job identifier
+            
+        Returns:
+            Optional[Dict[str, Any]]: Job status dictionary containing:
+                - job_id (str): Unique job identifier
+                - status (str): Current job status
+                - tenant_id (str): Tenant identifier
+                - report_date (date): Report generation date
+                - target_branches (List[str]): Target branch codes
+                - total_emails (int): Total emails to send
+                - emails_sent (int): Successfully sent emails
+                - emails_failed (int): Failed email deliveries
+                - error_message (Optional[str]): Error description if failed
+                - created_at (datetime): Job creation timestamp
+                - started_at (Optional[datetime]): Job start timestamp
+                - completed_at (Optional[datetime]): Job completion timestamp
+                Returns None if job not found
+            
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 result = await session.execute(
@@ -794,7 +1192,25 @@ class AnalyticsPostgresClient:
         limit: int = 50,
         status: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get email job history with pagination."""
+        """Get email job history with pagination.
+        
+        Retrieves email job history with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            status (Optional[str]): Filter by job status
+            
+        Returns:
+            Dict[str, Any]: Email job history containing:
+                - data (List[Dict]): List of email job records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Build query
@@ -864,7 +1280,24 @@ class AnalyticsPostgresClient:
     # ======================================
 
     async def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
-        """Log email send history record."""
+        """Log email send history record.
+        
+        Logs a new email send history record for tracking email delivery metrics.
+        
+        Args:
+            history_data (Dict[str, Any]): Email send history data containing:
+                - tenant_id (str): Unique identifier for the tenant
+                - job_id (str): Unique identifier for the email job
+                - branch_code (str): Branch identifier
+                - sales_rep_email (str): Sales rep email address
+                - sales_rep_name (Optional[str]): Sales rep name
+                - subject (str): Email subject
+                - report_date (str): Date of the report
+                - status (str): Email delivery status
+                - smtp_response (Optional[str]): SMTP server response
+                - error_message (Optional[str]): Error message if delivery failed
+                - sent_at (datetime): Timestamp of email send
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Ensure all required fields are present
@@ -910,7 +1343,29 @@ class AnalyticsPostgresClient:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get email send history with pagination and filtering."""
+        """Get email send history with pagination and filtering.
+        
+        Retrieves email send history with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            page (int): Page number for pagination (1-based)
+            limit (int): Number of items per page
+            branch_code (Optional[str]): Filter by branch
+            status (Optional[str]): Filter by status
+            start_date (Optional[str]): Filter from date (YYYY-MM-DD)
+            end_date (Optional[str]): Filter to date (YYYY-MM-DD)
+        Returns:
+            Dict[str, Any]: Email send history containing:
+                - data (List[Dict]): List of email send history records
+                - total (int): Total number of matching records
+                - page (int): Current page number
+                - limit (int): Items per page
+                - has_more (bool): Whether more pages exist
+                
+        Raises:
+            Exception: Database errors are propagated to caller
+        """
         try:
             async with get_async_db_session("analytics-service") as session:
                 # Build WHERE clause

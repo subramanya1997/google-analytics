@@ -1,5 +1,11 @@
 """
-Email service for sending branch reports
+Email Service for Branch Report Distribution.
+
+This module provides email functionality for automated branch report distribution,
+including background job processing, SMTP configuration, and delivery tracking.
+
+Handles branch-specific report generation, email sending, and comprehensive
+logging of delivery status for audit and monitoring purposes.
 """
 
 import asyncio
@@ -19,10 +25,20 @@ from services.analytics_service.services.report_service import ReportService
 
 
 class EmailService:
-    """Service for handling email operations."""
+    """Email service for automated branch report distribution.
+    
+    Manages the complete email workflow including job creation, background processing,
+    report generation, SMTP delivery, and delivery tracking. Integrates with
+    ReportService for HTML report generation and database client for configuration
+    and tracking data persistence.
+    """
 
     def __init__(self, db_client: AnalyticsPostgresClient):
-        """Initialize email service."""
+        """Initialize email service with database client dependency.
+        
+        Args:
+            db_client: Analytics PostgreSQL client for data operations
+        """
         self.db_client = db_client
         self.report_service = ReportService(db_client)
 
@@ -33,15 +49,23 @@ class EmailService:
         background_tasks: BackgroundTasks
     ) -> str:
         """
-        Create a background job to send reports via email.
+        Create and queue a background job for automated report distribution.
+        
+        Initializes a new email job in the database and schedules background processing
+        for branch report generation and SMTP delivery to configured recipients.
         
         Args:
-            tenant_id: Tenant ID
-            request: Send reports request
-            background_tasks: FastAPI background tasks
+            tenant_id (str): Unique identifier for the tenant
+            request (SendReportsRequest): Report request containing:
+                - report_date (date): Date for report generation
+                - branch_codes (Optional[List[str]]): Specific branches or None for all
+            background_tasks (BackgroundTasks): FastAPI background task scheduler
             
         Returns:
-            Job ID for tracking
+            str: Unique job identifier for progress tracking
+            
+        Raises:
+            Exception: Database errors during job creation
         """
         job_id = f"email_{uuid4().hex[:12]}"
         
@@ -73,12 +97,18 @@ class EmailService:
         request: SendReportsRequest
     ) -> None:
         """
-        Process email sending job in background.
+        Process email sending job in background with comprehensive error handling.
+        
+        Orchestrates the complete email workflow including configuration validation,
+        branch mapping retrieval, report generation, SMTP delivery, and progress tracking.
+        Updates job status throughout the process for monitoring purposes.
         
         Args:
-            tenant_id: Tenant ID
-            job_id: Job ID
-            request: Send reports request
+            tenant_id (str): Unique identifier for the tenant
+            job_id (str): Unique job identifier for tracking
+            request (SendReportsRequest): Report generation request data
+            
+
         """
         try:
             logger.info(f"Starting email job {job_id} for tenant {tenant_id}")
@@ -206,16 +236,32 @@ class EmailService:
         tenant_id: str
     ) -> None:
         """
-        Send individual branch email.
+        Send individual branch report email via SMTP with delivery tracking.
+        
+        Handles SMTP connection, authentication, message composition, and delivery
+        with comprehensive logging of success/failure status for audit purposes.
         
         Args:
-            email_config: SMTP configuration
-            mapping: Email recipient mapping
-            branch_report_html: Generated branch HTML report
-            report_date: Date of the report
-            branch_code: Branch code for the report
-            job_id: Job ID for tracking
-            tenant_id: Tenant ID
+            email_config (Dict[str, Any]): SMTP configuration containing:
+                - server (str): SMTP server hostname
+                - port (int): SMTP server port
+                - username (str): Authentication username
+                - password (str): Authentication password
+                - use_ssl (bool): SSL encryption flag
+                - use_tls (bool): TLS encryption flag
+                - from_address (str): Sender email address
+            mapping (Dict[str, Any]): Recipient mapping containing:
+                - sales_rep_email (str): Recipient email address
+                - sales_rep_name (Optional[str]): Recipient name
+                - branch_code (str): Associated branch code
+            branch_report_html (str): Generated HTML report content
+            report_date (date): Report generation date for subject line
+            branch_code (str): Branch identifier for subject line
+            job_id (str): Job identifier for tracking
+            tenant_id (str): Tenant identifier for tracking
+            
+        Raises:
+            Exception: SMTP connection, authentication, or delivery failures
         """
         # Create email message
         msg = MIMEMultipart('related')

@@ -1,5 +1,12 @@
 """
-Report generation service for creating HTML branch reports
+Report Generation Service for Branch Analytics.
+
+This module provides HTML report generation functionality for branch-specific
+analytics data, including purchase analysis, cart abandonment, search behavior,
+and repeat visitor tracking.
+
+Integrates with database client for data retrieval and template service for
+HTML rendering, supporting parallel data gathering for optimal performance.
 """
 
 import asyncio
@@ -13,10 +20,20 @@ from services.analytics_service.services.template_service import TemplateService
 
 
 class ReportService:
-    """Service for generating HTML reports."""
+    """HTML report generation service for branch analytics.
+    
+    Generates comprehensive branch reports by aggregating analytics data from
+    multiple sources including purchases, cart abandonment, search analysis,
+    and repeat visitor tracking. Utilizes parallel data gathering and template
+    rendering for efficient report generation.
+    """
 
     def __init__(self, db_client: AnalyticsPostgresClient):
-        """Initialize report service."""
+        """Initialize report service with database client dependency.
+        
+        Args:
+            db_client: Analytics PostgreSQL client for data operations
+        """
         self.db_client = db_client
         self.template_service = TemplateService()
 
@@ -27,15 +44,22 @@ class ReportService:
         report_date: date
     ) -> str:
         """
-        Generate HTML report for a specific branch.
+        Generate comprehensive HTML report for a specific branch.
+        
+        Orchestrates data collection from multiple analytics sources including purchases,
+        cart abandonment, search analysis, and repeat visitors. Uses parallel data
+        gathering for optimal performance and comprehensive error handling.
         
         Args:
-            tenant_id: Tenant ID
-            branch_code: Branch code to generate report for
-            report_date: Date to generate report for
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch/location identifier for report generation
+            report_date (date): Specific date for report data collection
             
         Returns:
-            HTML report content
+            str: Complete HTML report content ready for email delivery
+            
+        Raises:
+            Exception: Location information not found or template rendering failures
         """
         logger.info(f"Generating report for branch {branch_code} on {report_date}")
         
@@ -100,7 +124,24 @@ class ReportService:
 
 
     async def _get_location_info(self, tenant_id: str, branch_code: str) -> Optional[Dict[str, Any]]:
-        """Get location information for a branch."""
+        """Get location metadata information for a specific branch.
+        
+        Retrieves location details including name, city, and state information
+        for report header and identification purposes.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch/location identifier
+            
+        Returns:
+            Optional[Dict[str, Any]]: Location information containing:
+                - locationId (str): Branch identifier
+                - locationName (str): Human-readable location name
+                - city (Optional[str]): Location city
+                - state (Optional[str]): Location state
+                Returns None if branch not found
+                
+        """
         try:
             locations = await self.db_client.get_locations(tenant_id)
             for location in locations:
@@ -114,7 +155,15 @@ class ReportService:
     async def _get_purchase_tasks_async(
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
-        """Get purchase tasks asynchronously."""
+        """Get purchase tasks asynchronously.
+        
+        Retrieves purchase analytics tasks with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch identifier
+            date_str (str): Date in YYYY-MM-DD format
+        """
         return await self.db_client.get_purchase_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
@@ -122,7 +171,14 @@ class ReportService:
     async def _get_cart_abandonment_tasks_async(
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
-        """Get cart abandonment tasks asynchronously."""
+        """
+        Retrieves cart abandonment analytics tasks with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch identifier
+            date_str (str): Date in YYYY-MM-DD format
+        """
         return await self.db_client.get_cart_abandonment_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
@@ -130,7 +186,14 @@ class ReportService:
     async def _get_search_analysis_tasks_async(
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
-        """Get search analysis tasks asynchronously."""
+        """
+        Retrieves search analytics tasks with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch identifier
+            date_str (str): Date in YYYY-MM-DD format
+        """
         return await self.db_client.get_search_analysis_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str, False
         )
@@ -138,13 +201,27 @@ class ReportService:
     async def _get_repeat_visit_tasks_async(
         self, tenant_id: str, branch_code: str, date_str: str
     ) -> Dict[str, Any]:
-        """Get repeat visit tasks asynchronously."""
+        """
+        Retrieves repeat visit analytics tasks with pagination and filtering capabilities.
+        
+        Args:
+            tenant_id (str): Unique identifier for the tenant
+            branch_code (str): Branch identifier
+            date_str (str): Date in YYYY-MM-DD format
+        """
         return await self.db_client.get_repeat_visit_tasks(
             tenant_id, 1, 50, None, branch_code, date_str, date_str
         )
 
     def _safe_get_task_data(self, task_result: Any, task_type: str) -> Dict[str, Any]:
-        """Safely get task data with proper error handling."""
+        """
+        Processes task results to ensure data integrity and proper handling of
+        various data types and structures.
+        
+        Args:
+            task_result (Any): Task result data
+            task_type (str): Type of task (purchase, cart, search, repeat)
+        """
         try:
             if isinstance(task_result, Exception):
                 logger.error(f"Error in {task_type} task: {task_result}")
@@ -177,7 +254,20 @@ class ReportService:
             return {"data": [], "total": 0}
 
     def _calculate_total_revenue(self, purchase_data: List[Dict[str, Any]]) -> float:
-        """Calculate total revenue from purchase data."""
+        """Calculate total revenue from purchase task data with robust parsing.
+        
+        Processes purchase records to compute total revenue with support for
+        various currency formats and data types, including string-based values
+        with currency symbols.
+        
+        Args:
+            purchase_data (List[Dict[str, Any]]): List of purchase records containing
+                order_value fields in various formats (int, float, string)
+                
+        Returns:
+            float: Total revenue amount as decimal value
+            
+        """
         total = 0.0
         if not purchase_data:
             return total

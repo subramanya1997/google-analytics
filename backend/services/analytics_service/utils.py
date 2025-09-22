@@ -1,5 +1,8 @@
 """
-Utility functions for analytics service.
+Utility Functions for Analytics Service.
+
+This module provides common utility functions used throughout the analytics service,
+including asynchronous execution helpers and shared processing utilities.
 """
 
 import asyncio
@@ -8,10 +11,13 @@ from typing import Any, Callable
 
 async def run_sync_in_executor(func: Callable[..., Any], *args, **kwargs) -> Any:
     """
-    Run a synchronous function in an executor with cleaner syntax.
+    Execute synchronous function asynchronously using thread executor.
+    
+    Provides a cleaner syntax for running CPU-bound or blocking operations
+    in a separate thread without blocking the main event loop.
     
     Args:
-        func: The synchronous function to run
+        func: The synchronous function to execute
         *args: Positional arguments for the function
         **kwargs: Keyword arguments for the function
         

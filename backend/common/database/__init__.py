@@ -1,5 +1,19 @@
 """
 Common database utilities and session management.
+
+This module provides a unified interface for database operations across the Google
+Analytics Intelligence System. It includes SQLAlchemy session management, connection
+pooling, tenant configuration management, and database utilities.
+
+Key Components:
+- Base: SQLAlchemy declarative base class with automatic timestamps
+- Session Management: Sync and async session factories with connection pooling
+- Tenant Configuration: Multi-tenant configuration retrieval from database
+- Database Utilities: Database creation, validation, and health checking
+
+The module is designed to handle multi-service, multi-tenant database operations
+with robust connection management and error handling.
+
 """
 
 from .base import Base

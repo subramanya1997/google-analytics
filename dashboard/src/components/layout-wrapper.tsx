@@ -18,7 +18,7 @@ import { LocationSelector } from "@/components/ui/location-selector"
 import { DateRangeSelector } from "@/components/ui/date-range-selector"
 import { getPageInfo } from "@/lib/page-config"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Plus, Send } from "lucide-react"
+import { Plus, Send, Clock, RefreshCw } from "lucide-react"
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -39,6 +39,26 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent('openSendReportsDialog'))
   }
 
+  const handleScheduleDataIngestion = () => {
+    // Dispatch a custom event that the data management page can listen to
+    window.dispatchEvent(new CustomEvent('openDataIngestionScheduler'))
+  }
+
+  const handleScheduleEmailReports = () => {
+    // Dispatch a custom event that the email management page can listen to
+    window.dispatchEvent(new CustomEvent('openEmailReportsScheduler'))
+  }
+
+  const handleRefreshData = () => {
+    // Dispatch a custom event that the data management page can listen to
+    window.dispatchEvent(new CustomEvent('refreshDataManagement'))
+  }
+
+  const handleRefreshEmail = () => {
+    // Dispatch a custom event that the email management page can listen to
+    window.dispatchEvent(new CustomEvent('refreshEmailManagement'))
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -56,8 +76,30 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             </Breadcrumb>
           </div>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            {isDataManagementPage && (
+              <>
+                <Button onClick={handleRefreshData} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
+                  <RefreshCw className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
+                  {!isMobile && 'Refresh'}
+                </Button>
+                <div className="h-4 w-px bg-border" />
+                <Button onClick={handleScheduleDataIngestion} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
+                  <Clock className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
+                  {!isMobile && 'Schedule'}
+                </Button>
+              </>
+            )}
             {isEmailManagementPage && (
               <>
+                <Button onClick={handleRefreshEmail} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
+                  <RefreshCw className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
+                  {!isMobile && 'Refresh'}
+                </Button>
+                <div className="h-4 w-px bg-border" />
+                <Button onClick={handleScheduleEmailReports} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
+                  <Clock className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
+                  {!isMobile && 'Schedule'}
+                </Button>
                 <Button onClick={handleSendReports} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
                   <Send className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
                   {!isMobile && 'Send'}

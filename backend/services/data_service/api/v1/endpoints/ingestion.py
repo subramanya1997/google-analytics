@@ -25,8 +25,8 @@ async def create_ingestion_job(
     """
     Create a new data ingestion job.
 
-    - **start_date**: Start date (YYYY-MM-DD)
-    - **end_date**: End date (YYYY-MM-DD)
+    - **start_date**: Start date (YYYY-MM-DD) - defaults to 2 days ago if not provided
+    - **end_date**: End date (YYYY-MM-DD) - defaults to today if not provided
     - **data_types**: Types of data to process ["events", "users", "locations"]
     """
     try:

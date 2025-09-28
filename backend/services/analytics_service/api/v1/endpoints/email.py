@@ -193,10 +193,13 @@ async def send_reports(
 ):
     """
     Send individual branch reports via email.
-    
-    Generates individual branch reports for the specified date and branches, 
-    then sends them to the configured sales representatives. Each recipient gets 
+
+    Generates individual branch reports for the specified date and branches,
+    then sends them to the configured sales representatives. Each recipient gets
     individual reports for each branch they handle.
+
+    - **report_date**: Report date (YYYY-MM-DD) - defaults to yesterday if not provided
+    - **branch_codes**: Specific branch codes to include (None means all branches)
     """
     try:
         # Initialize email service

@@ -1,19 +1,37 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from pydantic import BaseModel, validator
 
 
 class CreateIngestionJobRequest(BaseModel):
-    """Request model for data ingestion."""
+    """Request model for data ingestion.
 
-    start_date: date
-    end_date: date
+    If start_date and/or end_date are not provided, defaults to:
+    - start_date: 2 days ago (including today as end_date)
+    - end_date: today
+    """
+
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     data_types: Optional[List[str]] = ["events", "users", "locations"]
+
+    def __init__(self, **data):
+        # Set default dates if not provided
+        today = date.today()
+        two_days_ago = today - timedelta(days=2)
+
+        if 'start_date' not in data or data['start_date'] is None:
+            data['start_date'] = two_days_ago
+        if 'end_date' not in data or data['end_date'] is None:
+            data['end_date'] = today
+
+        super().__init__(**data)
 
     @validator("end_date")
     def end_date_must_be_after_start_date(cls, v, values):
-        if "start_date" in values and v < values["start_date"]:
+        # Only validate if both dates are present (they should be set by __init__)
+        if "start_date" in values and values["start_date"] is not None and v < values["start_date"]:
             raise ValueError("end_date must be after start_date")
         return v
 

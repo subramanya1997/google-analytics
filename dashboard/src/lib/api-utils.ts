@@ -284,6 +284,58 @@ export async function createIngestionJob(data: {
   })
 }
 
+// =============== Scheduler APIs ===============
+
+export async function fetchScheduledTasks(type?: 'data_ingestion' | 'email_reports') {
+  const queryParams = new URLSearchParams()
+  if (type) queryParams.append('type', type)
+
+  const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
+  return fetchFromAnalyticsService(`scheduler/tasks${query}`)
+}
+
+export async function createScheduledTask(task: {
+  name: string
+  type: 'data_ingestion' | 'email_reports'
+  schedule: string
+  schedule_type: 'cron' | 'natural'
+  config: Record<string, unknown>
+}) {
+  return fetchFromAnalyticsService('scheduler/tasks', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(task),
+  })
+}
+
+export async function updateScheduledTask(taskId: string, updates: Partial<{
+  name: string
+  schedule: string
+  schedule_type: 'cron' | 'natural'
+  is_active: boolean
+  config: Record<string, unknown>
+}>) {
+  return fetchFromAnalyticsService(`scheduler/tasks/${taskId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function deleteScheduledTask(taskId: string) {
+  return fetchFromAnalyticsService(`scheduler/tasks/${taskId}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function toggleScheduledTask(taskId: string, isActive: boolean) {
+  return updateScheduledTask(taskId, { is_active: isActive })
+}
+
 // =============== Auth Service APIs ===============
 
 export async function authenticateWithCode(code: string) {
@@ -359,7 +411,7 @@ export async function deleteBranchEmailMapping(mappingId: string) {
 }
 
 export async function sendEmailReports(data: {
-  report_date: string
+  report_date?: string
   branch_codes?: string[]
 }) {
   return fetchFromAnalyticsService('email/send-reports', {

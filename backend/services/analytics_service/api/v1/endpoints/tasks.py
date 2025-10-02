@@ -1,5 +1,11 @@
 """
-Tasks API endpoints
+Task Management API Endpoints.
+
+This module implements REST API endpoints for retrieving and managing various
+analytics-driven sales tasks including purchase follow-ups, cart abandonment
+recovery, search analysis, and repeat visitor engagement.
+
+All endpoints support pagination, filtering, and multi-tenant data isolation.
 """
 
 from typing import Any, Dict, Optional
@@ -31,7 +37,32 @@ async def get_purchase_tasks(
     end_date: Optional[str] = Query(default=None, description="End date filter"),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get purchase analysis tasks."""
+    """Get paginated purchase analysis tasks for sales follow-up.
+
+    Retrieves purchase events that require sales representative follow-up contact,
+    with comprehensive filtering and search capabilities for efficient task management.
+
+    Args:
+        tenant_id (str): Unique tenant identifier (from X-Tenant-Id header)
+        page (int): Page number for pagination (1-based, minimum 1)
+        limit (int): Items per page (controlled by service settings)
+        query (Optional[str]): Search filter for customer names, emails, or companies
+        location_id (Optional[str]): Location/branch filter for specific locations
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        db_client (AnalyticsPostgresClient): Database client dependency
+
+    Returns:
+        Dict[str, Any]: Paginated purchase tasks containing:
+            - data (List[Dict]): Purchase records with customer and transaction details
+            - total (int): Total number of matching records
+            - page (int): Current page number
+            - limit (int): Items per page
+            - has_more (bool): Whether additional pages exist
+
+    Raises:
+        HTTPException: 500 error for database failures or processing errors
+    """
     try:
         # Database client injected via dependency
 
@@ -72,7 +103,19 @@ async def get_cart_abandonment_tasks(
     end_date: Optional[str] = Query(default=None, description="End date filter"),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get cart abandonment analysis tasks."""
+    """
+    Retrieves cart abandonment analytics tasks with pagination and filtering capabilities.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        query (Optional[str]): Search query for filtering results
+        location_id (Optional[str]): Location filter
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         # Database client injected via dependency
 
@@ -116,7 +159,20 @@ async def get_search_analysis_tasks(
     ),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get search analysis tasks."""
+    """
+    Retrieves search analytics tasks with pagination and filtering capabilities.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        query (Optional[str]): Search query for filtering results
+        location_id (Optional[str]): Location filter
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        include_converted (bool): Whether to include sessions that resulted in a purchase
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         # Database client injected via dependency
 
@@ -157,7 +213,17 @@ async def get_performance_tasks(
     end_date: Optional[str] = Query(default=None, description="End date filter"),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get performance analysis tasks."""
+    """Get performance analysis tasks.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        location_id (Optional[str]): Location filter
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         # Database client injected via dependency
 
@@ -197,7 +263,18 @@ async def get_repeat_visit_tasks(
     end_date: Optional[str] = Query(default=None, description="End date filter"),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get repeat visit analysis tasks."""
+    """Get repeat visit analysis tasks.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        query (Optional[str]): Search query for filtering results
+        location_id (Optional[str]): Location filter
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         # Database client injected via dependency
 

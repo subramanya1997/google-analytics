@@ -1,3 +1,38 @@
+"""
+SQLAlchemy Repository for Multi-Tenant Analytics Data Management.
+
+This module provides a comprehensive data access layer for the Google Analytics
+Intelligence System using SQLAlchemy ORM. It handles all database operations
+including event data storage, dimension management, job tracking, and analytics
+queries with proper multi-tenant isolation and performance optimization.
+
+Key Features:
+- **Multi-Tenant Data Isolation**: Tenant-scoped operations with UUID handling
+- **Event Data Management**: Batch processing for 6 GA4 event types
+- **Dimension Management**: User and location data with upsert operations
+- **Job Tracking**: Processing job lifecycle and status management
+- **Analytics Queries**: Data availability and summary statistics
+- **Performance Optimization**: Batch operations, PostgreSQL functions
+- **Data Integrity**: Transaction management and error handling
+
+Database Architecture:
+- **Event Tables**: Time-series event data with tenant isolation
+- **Dimension Tables**: Reference data (users, locations) with SCD Type 1
+- **Control Tables**: Job processing and system metadata
+- **Multi-Tenant Design**: UUID-based tenant isolation across all tables
+
+Supported Operations:
+1. **Event Processing**: Batch insert/replace with type coercion
+2. **Dimension Updates**: Upsert operations with conflict resolution
+3. **Job Management**: Status tracking and progress monitoring
+4. **Analytics**: Data availability and summary reporting
+5. **Performance**: Optimized PostgreSQL functions for complex queries
+
+The repository implements the Repository pattern to abstract database
+operations and provide a clean interface for the service layer while
+maintaining high performance and data consistency.
+"""
+
 from __future__ import annotations
 
 import json
@@ -25,7 +60,28 @@ from common.database import get_async_db_session
 
 
 def ensure_uuid_string(tenant_id: str) -> str:
-    """Convert tenant_id to a consistent UUID string format."""
+    """
+    Convert tenant_id to consistent UUID string format for database storage.
+    
+    Ensures all tenant identifiers are stored as valid UUID strings in the
+    database, handling both valid UUID inputs and string inputs that need
+    to be converted to UUID format using deterministic hashing.
+    
+    Args:
+        tenant_id: Input tenant identifier (UUID string or arbitrary string)
+        
+    Returns:
+        str: Valid UUID string representation for database storage
+        
+    Conversion Logic:
+        - Valid UUID strings: Validated and returned as-is
+        - Invalid UUID strings: Converted using MD5 hash for deterministic UUIDs
+        - Ensures consistent tenant identification across all database operations
+        
+    Multi-Tenant Security:
+        Provides consistent tenant identification for proper data isolation
+        and prevents tenant ID spoofing through deterministic conversion.
+    """
     try:
         # Validate and convert to UUID string
         uuid_obj = uuid.UUID(tenant_id)
@@ -46,10 +102,41 @@ EVENT_TABLES: Dict[str, Any] = {
     "no_search_results": NoSearchResults.__table__,
     "view_item": ViewItem.__table__,
 }
+"""
+Event table mapping for dynamic table access in batch operations.
+
+Maps event type names to their corresponding SQLAlchemy table objects,
+enabling generic event processing across all supported GA4 event types
+without code duplication.
+"""
 
 
 class SqlAlchemyRepository:
-    """Data-access layer client with SQLAlchemy."""
+    """
+    Multi-tenant analytics data repository with comprehensive database operations.
+    
+    This repository provides the complete data access layer for the Google Analytics
+    Intelligence System, handling all database operations with proper multi-tenant
+    isolation, performance optimization, and data integrity management.
+    
+    Key Capabilities:
+    - **Event Data Processing**: Batch insert/replace operations for GA4 events
+    - **Dimension Management**: User and location data with upsert logic
+    - **Job Tracking**: Processing job lifecycle and status management
+    - **Analytics Queries**: Data availability and summary statistics
+    - **Multi-Tenant Security**: UUID-based tenant isolation
+    - **Performance Optimization**: Batch operations and PostgreSQL functions
+    
+    Database Design:
+    - Uses async SQLAlchemy for non-blocking operations
+    - Implements proper transaction management
+    - Handles data type conversions and validation
+    - Provides comprehensive error handling and logging
+    
+    Attributes:
+        service_name: Service identifier for database session management
+        
+    """
 
     def __init__(self, service_name: str = "data-service"):
         self.service_name = service_name
@@ -102,6 +189,44 @@ class SqlAlchemyRepository:
         end_date: date,
         events_data: List[Dict[str, Any]],
     ) -> int:
+        """
+        Replace event data for tenant and date range with comprehensive processing.
+        
+        This is the primary method for event data ingestion, providing atomic
+        replace operations that delete existing data for the date range and
+        insert new events with proper data transformation and validation.
+        
+        **Atomic Replace Operation:**
+        1. Delete existing events for tenant/event_type/date_range
+        2. Transform and validate new event data
+        3. Batch insert new events (1000 records per batch)
+        4. Commit transaction atomically
+        
+        **Data Transformation:**
+        - Converts string dates (YYYYMMDD) to date objects
+        - Handles JSON field parsing (items_json, raw_data)
+        - Performs decimal conversion for revenue fields
+        - Filters columns to match database schema
+        - Ensures proper tenant UUID formatting
+        
+        Args:
+            tenant_id: Unique tenant identifier for data isolation
+            event_type: GA4 event type (purchase, add_to_cart, page_view, etc.)
+            start_date: Beginning of date range to replace (inclusive)
+            end_date: End of date range to replace (inclusive)
+            events_data: List of event dictionaries from BigQuery extraction
+            
+        Returns:
+            int: Number of new event records successfully inserted
+            
+        **Multi-Tenant Security:**
+        All operations are scoped to the specified tenant, ensuring
+        proper data isolation and preventing cross-tenant contamination.
+        
+        Raises:
+            Exception: Database transaction failures, data validation errors
+
+        """
         table = EVENT_TABLES[event_type]
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         async with get_async_db_session(self.service_name) as session:

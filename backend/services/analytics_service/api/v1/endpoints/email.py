@@ -1,5 +1,19 @@
 """
-Email management API endpoints
+Email Management API Endpoints.
+
+This module implements REST API endpoints for email configuration management,
+branch-to-sales-rep mappings, and automated report distribution. Handles
+the complete email workflow from configuration to report delivery with
+comprehensive job tracking and history management.
+
+Key Features:
+- Email configuration management with SMTP settings
+- Branch-to-sales-rep email mapping CRUD operations
+- Automated report generation and distribution
+- Email job tracking with status monitoring
+- Email send history with filtering and pagination
+
+All endpoints require X-Tenant-Id header for multi-tenant security.
 """
 
 from typing import Any, Dict, List, Optional
@@ -33,7 +47,9 @@ async def get_email_config(
     """
     Get email configuration for the tenant.
     
-    Returns the SMTP configuration stored in the tenants table.
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         config = await db_client.get_email_config(tenant_id)
@@ -65,8 +81,10 @@ async def get_branch_email_mappings(
     """
     Get branch to email mappings for the tenant.
     
-    Returns list of branch-email mappings showing which sales reps
-    should receive reports for which branches.
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        branch_code (Optional[str]): Filter by branch code
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         mappings = await db_client.get_branch_email_mappings(tenant_id, branch_code)
@@ -90,6 +108,11 @@ async def create_branch_email_mapping(
 ):
     """
     Create a new branch email mapping for the tenant.
+    
+    Args:
+        mapping (BranchEmailMappingRequest): Branch email mapping request
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         result = await db_client.create_branch_email_mapping(tenant_id, mapping)
@@ -120,6 +143,12 @@ async def update_branch_email_mapping(
     Update a specific branch email mapping by ID.
     
     Updates the mapping identified by the given ID for the current tenant.
+    
+    Args:
+        mapping_id (str): Unique identifier for the mapping
+        mapping (BranchEmailMappingRequest): Branch email mapping request
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         result = await db_client.update_branch_email_mapping(tenant_id, mapping_id, mapping)
@@ -157,6 +186,11 @@ async def delete_branch_email_mapping(
     Delete a specific branch email mapping by ID.
     
     Removes the mapping identified by the given ID for the current tenant.
+    
+    Args:
+        mapping_id (str): Unique identifier for the mapping
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         result = await db_client.delete_branch_email_mapping(tenant_id, mapping_id)
@@ -252,6 +286,11 @@ async def get_email_job_status(
 ):
     """
     Get status of an email sending job.
+    
+    Args:
+        job_id (str): Unique identifier for the email job
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         job = await db_client.get_email_job_status(tenant_id, job_id)
@@ -285,6 +324,16 @@ async def get_email_send_history(
 ):
     """
     Get email sending history with pagination and filtering.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        branch_code (Optional[str]): Filter by branch
+        status (Optional[str]): Filter by status
+        start_date (Optional[str]): Filter from date (YYYY-MM-DD)
+        end_date (Optional[str]): Filter to date (YYYY-MM-DD)
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         history = await db_client.get_email_send_history(
@@ -320,6 +369,13 @@ async def get_email_jobs(
 ):
     """
     Get email job history with pagination and filtering.
+    
+    Args:
+        tenant_id (str): Unique identifier for the tenant
+        page (int): Page number for pagination (1-based)
+        limit (int): Number of items per page
+        status (Optional[str]): Filter by job status
+        db_client (AnalyticsPostgresClient): Database client dependency
     """
     try:
         jobs = await db_client.get_email_jobs(

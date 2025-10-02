@@ -1,5 +1,15 @@
 """
-History API endpoints for users and sessions
+History API Endpoints.
+
+This module implements REST API endpoints for retrieving user and session
+event history, providing detailed analytics tracking for individual users
+and sessions with comprehensive event data.
+
+Endpoints:
+- GET /history/user: User-specific event history
+- GET /history/session: Session-specific event history
+
+All endpoints enforce multi-tenant security and return detailed event data.
 """
 
 from typing import Any, Dict, List
@@ -21,7 +31,13 @@ async def get_user_history_compat(
     tenant_id: str = Depends(get_tenant_id),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get the event history for a specific user."""
+    """Get the event history for a specific user.
+    
+    Args:
+        user_id (str): Unique identifier for the user
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         history = await db_client.get_user_history(tenant_id, user_id)
         return history
@@ -38,7 +54,13 @@ async def get_session_history_compat(
     tenant_id: str = Depends(get_tenant_id),
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
-    """Get the event history for a specific session."""
+    """Get the event history for a specific session.
+    
+    Args:
+        session_id (str): Unique identifier for the session
+        tenant_id (str): Unique identifier for the tenant
+        db_client (AnalyticsPostgresClient): Database client dependency
+    """
     try:
         history = await db_client.get_session_history(tenant_id, session_id)
         return history

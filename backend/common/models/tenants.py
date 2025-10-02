@@ -1,5 +1,8 @@
 """
-Control and analytics models - Tenants and Task tracking.
+Tenant management models.
+
+This module defines the tenant model for multi-tenant system support, storing
+tenant-specific configurations for BigQuery, PostgreSQL, SFTP, and other services.
 """
 from __future__ import annotations
 
@@ -12,6 +15,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from common.database import Base
 
 class Tenants(Base):
+    """
+    Multi-tenant configuration model storing per-tenant service configurations.
+    
+    Manages tenant-specific settings including database connections, API credentials,
+    and service configurations for BigQuery, PostgreSQL, and SFTP integrations.
+    """
     __tablename__ = "tenants"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))

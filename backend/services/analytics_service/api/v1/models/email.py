@@ -1,5 +1,8 @@
 """
-Email-related Pydantic models
+Email Configuration and Management Pydantic Models.
+
+This module provides Pydantic models for email-related operations in the analytics service,
+including branch-to-sales-rep mappings, report sending requests, and email job tracking.
 """
 
 from datetime import date, datetime, timedelta
@@ -9,7 +12,11 @@ from pydantic import BaseModel, EmailStr, validator
 
 
 class BranchEmailMappingRequest(BaseModel):
-    """Request model for branch email mapping."""
+    """Request model for creating or updating branch email mappings.
+    
+    Associates branch codes with sales representative email addresses for automated
+    report distribution. Validates email format and ensures proper branch identification.
+    """
 
     branch_code: str
     branch_name: Optional[str] = None
@@ -19,7 +26,11 @@ class BranchEmailMappingRequest(BaseModel):
 
 
 class BranchEmailMappingResponse(BaseModel):
-    """Response model for branch email mapping."""
+    """Response model for branch email mapping data.
+    
+    Returns complete branch email mapping information including timestamps and
+    enabled status for tracking and management purposes.
+    """
 
     id: str
     branch_code: str
@@ -50,7 +61,11 @@ class SendReportsRequest(BaseModel):
 
 
 class EmailJobResponse(BaseModel):
-    """Response model for email job."""
+    """Response model for email job status and progress tracking.
+    
+    Provides comprehensive status information for email sending operations,
+    including success/failure counts, error messages, and timing data.
+    """
 
     job_id: str
     status: str

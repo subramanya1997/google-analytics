@@ -1,5 +1,30 @@
 """
 Event models - User behavior and transaction events.
+
+This module defines database models for storing Google Analytics events representing
+user interactions and e-commerce transactions. These models capture detailed event
+data from Google Analytics 4 including user properties, event parameters, device
+information, and geographic data.
+
+All event models share common patterns:
+- Tenant isolation (tenant_id field)
+- Event metadata (date, timestamp, user identification)
+- Google Analytics parameters (ga_session_id, page information)
+- Device and geographic context
+- Raw data preservation for debugging and future analysis
+
+Event Types Supported:
+- Purchase: E-commerce transaction completion events
+- AddToCart: Product addition to shopping cart events  
+- PageView: Page navigation and view events
+- ViewSearchResults: Search result page views with search terms
+- NoSearchResults: Failed search attempts with zero results
+- ViewItem: Individual product or item page views
+
+Each model includes JSONB fields for flexible data storage:
+- items_json: Structured product/item data
+- raw_data: Complete original event data from Google Analytics
+
 """
 from __future__ import annotations
 
@@ -16,6 +41,7 @@ from common.database import Base
 
 
 class Purchase(Base):
+    """E-commerce purchase completion events with transaction details and purchased items."""
     __tablename__ = "purchase"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -39,6 +65,7 @@ class Purchase(Base):
 
 
 class AddToCart(Base):
+    """Shopping cart addition events with product details and user context."""
     __tablename__ = "add_to_cart"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -65,6 +92,7 @@ class AddToCart(Base):
 
 
 class PageView(Base):
+    """Page navigation and view events with referrer and device information."""
     __tablename__ = "page_view"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -86,6 +114,7 @@ class PageView(Base):
 
 
 class ViewSearchResults(Base):
+    """Search result page views with search terms and context."""
     __tablename__ = "view_search_results"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -107,6 +136,7 @@ class ViewSearchResults(Base):
 
 
 class NoSearchResults(Base):
+    """Failed search attempts that returned zero results."""
     __tablename__ = "no_search_results"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
@@ -128,6 +158,7 @@ class NoSearchResults(Base):
 
 
 class ViewItem(Base):
+    """Individual product or item page view events with item details."""
     __tablename__ = "view_item"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))

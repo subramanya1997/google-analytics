@@ -1,5 +1,10 @@
 """
-Statistics API endpoints
+Statistics API Endpoints.
+
+This module implements REST API endpoints for retrieving comprehensive dashboard
+statistics, including metrics, trend data, and location-based analytics.
+
+Provides optimized data aggregation for dashboard visualization and reporting.
 """
 
 from typing import Any, Dict, Optional
@@ -28,12 +33,28 @@ async def get_dashboard_stats(
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
     """
-    Get comprehensive dashboard statistics.
+    Get comprehensive dashboard statistics with optional filtering.
+
+    Retrieves aggregated analytics metrics including revenue, purchases, visitor counts,
+    cart abandonment, and search statistics. Supports location-based filtering and
+    date range selection with optimized single-call data retrieval.
+
+    Args:
+        tenant_id (str): Unique tenant identifier (from X-Tenant-Id header)
+        location_id (Optional[str]): Location filter for branch-specific stats
+        start_date (Optional[str]): Start date filter in YYYY-MM-DD format
+        end_date (Optional[str]): End date filter in YYYY-MM-DD format
+        granularity (str): Time aggregation level (daily, weekly, monthly)
+        db_client (AnalyticsPostgresClient): Database client dependency
 
     Returns:
-    - Overall metrics (revenue, purchases, abandonment, etc.)
-    - Chart data for trends
-    - Location-based statistics
+        Dict[str, Any]: Comprehensive statistics containing:
+            - metrics (Dict): Key performance indicators
+            - chartData (List): Time-series data for visualization
+            - locationStats (List): Location-based breakdowns
+
+    Raises:
+        HTTPException: 500 error for database failures or processing errors
     """
     try:
         # Database client injected via dependency

@@ -1,5 +1,33 @@
 """
 Tenant configuration utilities for retrieving configurations from the database.
+
+This module provides functionality to retrieve and manage tenant-specific configurations
+stored in the database. It enables multi-tenant applications to have different
+configurations for BigQuery, PostgreSQL, SFTP, and other services on a per-tenant basis.
+
+Key Features:
+- Tenant configuration retrieval with caching
+- Safe JSON parsing for configuration fields
+- Service-specific configuration extraction
+- Tenant validation and existence checking
+- Error handling and logging
+
+The tenant configuration system supports:
+- BigQuery connection settings (project, dataset, service account)
+- PostgreSQL database configurations
+- SFTP connection parameters
+- Custom configuration extensions
+
+Example:
+    ```python
+    from common.database.tenant_config import get_tenant_bigquery_config
+    
+    # Get BigQuery config for a tenant
+    config = await get_tenant_bigquery_config("tenant-123")
+    if config:
+        project_id = config["project_id"]
+        dataset_id = config["dataset_id"]
+    ```
 """
 import json
 from typing import Dict, Any, Optional
@@ -10,7 +38,19 @@ from common.database.session import get_async_db_session
 
 
 def _safe_json_parse(data: Any) -> Dict[str, Any]:
-    """Safely parse JSON data that might already be a dictionary."""
+    """
+    Safely parse JSON data that might already be a dictionary.
+    
+    Handles various input types and gracefully fails on invalid JSON,
+    providing consistent dict output for configuration processing.
+    
+    Args:
+        data: Input data that might be JSON string, dict, or None
+        
+    Returns:
+        Parsed dictionary or empty dict if parsing fails
+        
+    """
     if data is None:
         return {}
     if isinstance(data, dict):
@@ -25,21 +65,66 @@ def _safe_json_parse(data: Any) -> Dict[str, Any]:
 
 
 class TenantConfigManager:
-    """Manager for tenant-specific configurations stored in the database."""
+    """
+    Manager for tenant-specific configurations stored in the database.
+    
+    Provides methods to retrieve and validate tenant configurations for various
+    services including BigQuery, PostgreSQL, and SFTP. Handles JSON parsing,
+    error handling, and provides convenience methods for service-specific configs.
+    
+    Attributes:
+        service_name: Name of the service using this manager (for database connections)
+        
+    Example:
+        ```python
+        manager = TenantConfigManager("analytics-service")
+        config = await manager.get_tenant_config("tenant-123")
+        
+        if config and config["is_active"]:
+            bigquery_config = config["bigquery_config"]
+            # Use configuration
+        ```
+    """
     
     def __init__(self, service_name: str = None):
-        """Initialize the tenant config manager."""
+        """
+        Initialize the tenant config manager.
+        
+        Args:
+            service_name: Name of the service using this manager for database connections
+        """
         self.service_name = service_name
     
     async def get_tenant_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get all configurations for a tenant.
+        Get all configurations for a tenant from the database.
+        
+        Retrieves complete tenant configuration including BigQuery, PostgreSQL,
+        and SFTP settings. Only returns configurations for active tenants.
         
         Args:
-            tenant_id: The tenant ID
+            tenant_id: The tenant ID to retrieve configuration for
             
         Returns:
-            Dict containing all tenant configurations or None if not found
+            Dictionary containing all tenant configurations with parsed JSON fields,
+            or None if tenant not found or inactive
+            
+        Configuration Structure:
+            {
+                "tenant_id": str,
+                "name": str,
+                "domain": str,
+                "bigquery_config": {
+                    "project_id": str,
+                    "dataset_id": str, 
+                    "service_account": dict
+                },
+                "postgres_config": dict,
+                "sftp_config": dict,
+                "is_active": bool,
+                "created_at": datetime,
+                "updated_at": datetime
+            }
         """
         try:
             async with get_async_db_session(self.service_name) as session:

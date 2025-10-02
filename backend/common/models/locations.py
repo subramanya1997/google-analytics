@@ -1,5 +1,8 @@
 """
-Location models - Location entities.
+Location management models.
+
+This module defines location/warehouse entities with detailed address information,
+contact details, and operational metadata for multi-tenant location tracking.
 """
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from common.database import Base
 
 class Locations(Base):
+    """Location/warehouse model with comprehensive address and contact information."""
     __tablename__ = "locations"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))

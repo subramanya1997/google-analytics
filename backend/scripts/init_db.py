@@ -1,3 +1,45 @@
+"""
+Database Initialization Script for Google Analytics Intelligence System.
+
+This script initializes the PostgreSQL database by creating all required tables
+and functions from SQL files. It handles the complete database schema setup
+with proper dependency ordering and error handling.
+
+Key Features:
+- Creates database if it doesn't exist
+- Executes table creation in dependency order
+- Creates all stored functions and procedures
+- Handles both regular SQL statements and PostgreSQL functions
+- Comprehensive error handling with transaction rollback
+- Detailed logging of all operations
+
+The script reads SQL files from two directories:
+- database/tables/: Table creation scripts (executed in dependency order)
+- database/functions/: Function/procedure creation scripts
+
+Table Creation Order:
+The script follows a specific order for table creation to respect foreign key
+dependencies and constraints. Tables are created in the following sequence:
+1. tenants (base tenant configuration)
+2. branch_email_mappings (email configuration)
+3. email_sending_jobs (email job tracking)
+4. email_send_history (email history)
+5. users (user profiles)
+6. locations (warehouse/location data)
+7. processing_jobs (data processing tracking)
+8. Event tables (page_view, add_to_cart, purchase, etc.)
+
+Usage:
+    python scripts/init_db.py
+
+Environment Variables Required:
+    - POSTGRES_HOST: Database host
+    - POSTGRES_PORT: Database port
+    - POSTGRES_USER: Database username
+    - POSTGRES_PASSWORD: Database password
+    - POSTGRES_DATABASE: Target database name
+
+"""
 import os
 import sys
 import asyncio
@@ -36,7 +78,32 @@ TABLE_CREATION_ORDER = [
 ]
 
 async def main():
-    """Main function to initialize the database."""
+    """
+    Initialize the database with tables and functions from SQL files.
+    
+    This is the main entry point for database initialization. It performs the
+    following operations in sequence:
+    
+    1. Ensures the target database exists (creates if necessary)
+    2. Establishes async database connection
+    3. Collects SQL files in dependency order (tables first, then functions)
+    4. Executes all SQL files within a single transaction
+    5. Handles both regular SQL statements and PostgreSQL functions
+    
+    The function uses a single transaction for all operations, ensuring that
+    either all tables and functions are created successfully, or none are
+    created if any error occurs (atomic operation).
+    
+    SQL File Processing:
+        - Table files: Split by semicolons, execute each statement separately
+        - Function files: Execute entire content as single statement (handles $$ quoting)
+        - Empty files: Skipped with warning
+        - File order: Tables in dependency order, then functions alphabetically
+
+        
+    Returns:
+        None: Function doesn't return a value, uses logging for status reporting
+    """
     logger.info("Starting database initialization...")
     
     # First, ensure the database exists
@@ -127,6 +194,17 @@ async def main():
             raise
 
 if __name__ == "__main__":
+    """
+    Script entry point with logging configuration.
+    
+    Configures loguru logging to output to both stderr and a rotating log file,
+    then runs the async main() function to initialize the database.
+    
+    Logging Configuration:
+        - Console output: Timestamped messages at INFO level and above
+        - File output: logs/init_db.log with 500MB rotation
+        - Log levels: INFO for progress, DEBUG for details, ERROR for failures
+    """
     # Configure logger
     logger.add(sys.stderr, format="{time} {level} {message}", filter="my_module", level="INFO")
     logger.add("logs/init_db.log", rotation="500 MB") # For logging to a file

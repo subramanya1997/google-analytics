@@ -1,5 +1,8 @@
 """
-User models - User entities.
+User management models.
+
+This module defines user entities with comprehensive profile information,
+contact details, and organizational associations for multi-tenant analytics.
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ from common.database import Base
 
 
 class Users(Base):
+    """User profile model with comprehensive contact and organizational information."""
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))

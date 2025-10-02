@@ -100,17 +100,64 @@ class CreateIngestionJobRequest(BaseModel):
 
     @validator("data_types")
     def valid_data_types(cls, v):
+        """
+        Validate data_types contains only supported data processing types.
+        
+        Ensures that only supported data types are requested for processing
+        to prevent errors in the ingestion pipeline and ensure proper resource
+        allocation.
+        
+        Args:
+            v: List of data_types to validate
+            
+        Returns:
+            List[str]: Validated data_types list
+            
+        Raises:
+            ValueError: If any data_types are not in the allowed set
+        """
         allowed_types = {"events", "users", "locations"}
         if not set(v).issubset(allowed_types):
             raise ValueError(f"data_types must be subset of {allowed_types}")
         return v
 
     class Config:
+        """Pydantic model configuration for JSON serialization."""
         json_encoders = {date: lambda v: v.isoformat()}
 
 
 class IngestionJobResponse(BaseModel):
-    """Response model for data ingestion."""
+    """
+    Response model for data ingestion job information.
+    
+    Provides comprehensive job information including status, configuration,
+    and timing data for client applications to track job progress and results.
+    
+    Attributes:
+        job_id: Unique identifier for the ingestion job
+        start_date: Job start date (data range beginning)
+        end_date: Job end date (data range end)
+        data_types: List of data types being processed in this job
+        status: Current job status (queued, processing, completed, failed)
+        created_at: Timestamp when the job was created
+    
+    Job Status Values:
+        - "queued": Job created and waiting for processing
+        - "processing": Job currently being executed
+        - "completed": Job finished successfully
+        - "failed": Job encountered errors and stopped
+    
+    Usage Context:
+        Used for both job creation responses and status query responses,
+        providing consistent job information across all job-related endpoints.
+    
+    Client Integration:
+        Clients can use this response to:
+        - Track job progress through status field
+        - Display job configuration to users  
+        - Implement polling for job completion
+        - Handle error scenarios appropriately
+    """
 
     job_id: str
     start_date: date
@@ -120,6 +167,7 @@ class IngestionJobResponse(BaseModel):
     created_at: datetime
 
     class Config:
+        """Pydantic model configuration for JSON serialization."""
         json_encoders = {
             date: lambda v: v.isoformat(),
             datetime: lambda v: v.isoformat(),

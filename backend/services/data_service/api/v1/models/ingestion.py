@@ -22,7 +22,7 @@ Key Features:
 - Multi-tenant job tracking and status management
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from pydantic import BaseModel, validator
@@ -60,9 +60,21 @@ class CreateIngestionJobRequest(BaseModel):
         - Job status is tracked throughout the processing pipeline
     """
 
-    start_date: date
-    end_date: date
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
     data_types: Optional[List[str]] = ["events", "users", "locations"]
+
+    def __init__(self, **data):
+        # Set default dates if not provided
+        today = date.today()
+        two_days_ago = today - timedelta(days=2)
+
+        if 'start_date' not in data or data['start_date'] is None:
+            data['start_date'] = two_days_ago
+        if 'end_date' not in data or data['end_date'] is None:
+            data['end_date'] = today
+
+        super().__init__(**data)
 
     @validator("end_date")
     def end_date_must_be_after_start_date(cls, v, values):

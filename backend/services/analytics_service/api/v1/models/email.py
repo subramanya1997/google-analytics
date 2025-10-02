@@ -5,7 +5,7 @@ This module provides Pydantic models for email-related operations in the analyti
 including branch-to-sales-rep mappings, report sending requests, and email job tracking.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, validator
@@ -49,8 +49,15 @@ class SendReportsRequest(BaseModel):
     report generation and email sending operations.
     """
 
-    report_date: date
+    report_date: Optional[date] = None
     branch_codes: Optional[List[str]] = None  # None means all branches
+
+    def __init__(self, **data):
+        # Set default date if not provided
+        if 'report_date' not in data or data['report_date'] is None:
+            data['report_date'] = date.today() - timedelta(days=1)
+
+        super().__init__(**data)
 
 
 class EmailJobResponse(BaseModel):

@@ -88,7 +88,7 @@ async def create_ingestion_job(
         request: Job configuration including date range and data types
         background_tasks: FastAPI background task manager for async execution
         tenant_id: Validated tenant ID from X-Tenant-Id header (via dependency)
-
+    
     Returns:
         IngestionJobResponse: Job information with unique ID and initial status
 

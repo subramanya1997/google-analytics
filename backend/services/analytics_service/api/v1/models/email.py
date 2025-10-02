@@ -32,9 +32,10 @@ class BranchEmailMappingResponse(BaseModel):
 
 
 class SendReportsRequest(BaseModel):
-    """Request model for sending reports.
-
-    If report_date is not provided, defaults to yesterday.
+    """Request model for initiating automated report distribution.
+    
+    Specifies the report date and optional branch code filters for targeted
+    report generation and email sending operations.
     """
 
     report_date: Optional[date] = None

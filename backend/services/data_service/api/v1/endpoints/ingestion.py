@@ -23,11 +23,70 @@ async def create_ingestion_job(
     tenant_id: str = Depends(get_tenant_id),
 ):
     """
-    Create a new data ingestion job.
+    Create and start a new data ingestion job for multi-source analytics data processing.
 
-    - **start_date**: Start date (YYYY-MM-DD) - defaults to 2 days ago if not provided
-    - **end_date**: End date (YYYY-MM-DD) - defaults to today if not provided
-    - **data_types**: Types of data to process ["events", "users", "locations"]
+    This endpoint initiates a comprehensive data ingestion job that processes analytics
+    data from multiple sources based on the specified date range and data types. The job
+    executes asynchronously in the background while returning immediate job information
+    to the client.
+
+    **Data Processing Pipeline:**
+    
+    1. **Job Creation**: Creates job record with queued status
+    2. **Background Execution**: Starts async processing in thread pool
+    3. **Multi-Source Ingestion**: Parallel processing of selected data types:
+       - **BigQuery Events**: GA4 event data (purchase, add_to_cart, page_view, etc.)
+       - **SFTP Users**: Customer profile and demographic data
+       - **SFTP Locations**: Warehouse and branch location information
+    4. **Data Transformation**: Normalization, validation, and database storage
+    5. **Status Updates**: Real-time job progress and completion tracking
+
+    **Supported Data Types:**
+    - `events`: Google Analytics 4 event data from BigQuery (6 event types)
+    - `users`: Customer profile data from SFTP sources
+    - `locations`: Warehouse/branch data from SFTP sources
+
+    **Multi-Tenant Security:**
+    Requires X-Tenant-Id header for proper data isolation and tenant-specific
+    configuration retrieval (BigQuery project, SFTP credentials, etc.)
+
+    **Background Processing:**
+    Jobs execute asynchronously using FastAPI BackgroundTasks with dedicated
+    thread pools for heavy operations. Clients receive immediate response
+    and can poll job status for completion monitoring.
+
+    Args:
+        request: Job configuration including date range and data types
+        background_tasks: FastAPI background task manager for async execution
+        tenant_id: Validated tenant ID from X-Tenant-Id header (via dependency)
+    
+    Returns:
+        IngestionJobResponse: Job information with unique ID and initial status
+
+    Raises:
+        HTTPException:
+        - 400 BAD REQUEST: Invalid date range or unsupported data types
+        - 400 BAD REQUEST: Missing or invalid X-Tenant-Id header
+        - 500 INTERNAL SERVER ERROR: Job creation or initialization failure
+
+    **Processing Details:**
+    - **Events Processing**: Extracts 6 GA4 event types with full attribution
+    - **Users Processing**: SFTP download with Excel parsing and data cleaning
+    - **Locations Processing**: Warehouse data with address normalization
+    - **Error Handling**: Individual data type failures don't stop other types
+    - **Progress Tracking**: Records processed counts by data type
+    - **Performance**: Batch operations (1000 records) for optimal throughput
+
+    **Job Status Workflow:**
+    1. `queued` → Job created, waiting for background processing
+    2. `processing` → Job actively running data extraction/transformation
+    3. `completed` → All data types processed successfully
+    4. `failed` → Job encountered unrecoverable error
+
+    **Client Usage Pattern:**
+    1. POST /ingest → Get job_id
+    2. Poll GET /jobs/{job_id} → Monitor progress
+    3. Handle completion or error states appropriately
     """
     try:
         # Generate unique job ID

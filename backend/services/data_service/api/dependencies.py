@@ -3,9 +3,12 @@ Shared API dependencies for the data service.
 """
 
 from typing import Optional
+from functools import lru_cache
 
 from fastapi import Header, HTTPException
 from loguru import logger
+
+from services.data_service.services import IngestionService
 
 
 def get_tenant_id(
@@ -28,3 +31,12 @@ def get_tenant_id(
         )
 
     return tenant_id_value
+
+
+@lru_cache(maxsize=1)
+def get_ingestion_service() -> IngestionService:
+    """
+    Get cached ingestion service instance.
+    Using lru_cache to ensure only one instance is created.
+    """
+    return IngestionService()

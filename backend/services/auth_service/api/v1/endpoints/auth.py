@@ -2,13 +2,15 @@
 Authentication endpoints.
 """
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Depends, status, BackgroundTasks
 from pydantic import BaseModel
 from loguru import logger
 
 from services.auth_service.services.auth_service import AuthenticationService
+from services.auth_service.api.dependencies import get_auth_service
+from common.database import get_tenant_service_status
 
 router = APIRouter()
 
@@ -29,8 +31,6 @@ class AuthResponse(BaseModel):
     username: Optional[str] = None
     business_name: Optional[str] = None
     access_token: Optional[str] = None
-    missing_configs: Optional[List[str]] = None
-    invalid_configs: Optional[List[str]] = None
 
 
 class LogoutRequest(BaseModel):
@@ -69,8 +69,39 @@ class ValidateTokenResponse(BaseModel):
     business_name: Optional[str] = None
 
 
+class ServiceStatusDetail(BaseModel):
+    """Service status details."""
+    
+    enabled: bool
+    error: Optional[str] = None
+
+
+class ServiceStatusResponse(BaseModel):
+    """Response model for service status."""
+    
+    tenant_id: str
+    services: Dict[str, ServiceStatusDetail]
+
+
+class RevalidateServicesRequest(BaseModel):
+    """Request model for revalidating services."""
+    
+    tenant_id: str
+
+
+class RevalidateServicesResponse(BaseModel):
+    """Response model for revalidating services."""
+    
+    success: bool
+    message: str
+    tenant_id: str
+
+
 @router.post("/authenticate", response_model=AuthResponse)
-async def authenticate(request: AuthRequest):
+async def authenticate(
+    request: AuthRequest,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
     """
     Authenticate user with code and validate configurations.
 
@@ -81,34 +112,15 @@ async def authenticate(request: AuthRequest):
     4. Ensures the tenant exists in the database
     5. Returns authentication result with tenant_id for frontend use
     """
-    auth_service = AuthenticationService()
     result = await auth_service.authenticate_with_code(request.code)
-
-    if not result["success"]:
-        # Determine appropriate HTTP status code based on the error
-        if "Invalid authentication code" in result["message"]:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=result["message"]
-            )
-        elif "service unavailable" in result["message"]:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=result["message"],
-            )
-        elif "configurations" in result["message"]:
-            # Configuration issues are not HTTP errors, return as successful response
-            return AuthResponse(**result)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result["message"],
-            )
-
     return AuthResponse(**result)
 
 
 @router.post("/logout", response_model=LogoutResponse)
-async def logout(request: LogoutRequest):
+async def logout(
+    request: LogoutRequest,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
     """
     Logout user by invalidating the access token.
     
@@ -119,7 +131,6 @@ async def logout(request: LogoutRequest):
     Note: Even if the external logout fails, we return success to allow
     the frontend to continue with local logout and redirect.
     """
-    auth_service = AuthenticationService()
     result = await auth_service.logout_with_token(request.access_token)
     
     if not result["success"]:
@@ -155,21 +166,25 @@ async def logout(request: LogoutRequest):
 
 
 @router.get("/login-url", response_model=LoginUrlResponse)
-async def get_login_url():
+async def get_login_url(
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
     """
     Get the login URL for OAuth authentication.
     
     This endpoint returns the external login URL that users should be redirected to
     when they need to authenticate.
     """
-    auth_service = AuthenticationService()
     login_url = auth_service.get_login_url()
     
     return LoginUrlResponse(login_url=login_url)
 
 
 @router.post("/validate-token", response_model=ValidateTokenResponse)
-async def validate_token(request: ValidateTokenRequest):
+async def validate_token(
+    request: ValidateTokenRequest,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
     """
     Validate an access token and return user information.
     
@@ -178,7 +193,6 @@ async def validate_token(request: ValidateTokenRequest):
     2. Returns user information if the token is valid
     3. Returns validation failure if the token is invalid or expired
     """
-    auth_service = AuthenticationService()
     result = await auth_service.validate_token(request.access_token)
     
     if not result["valid"]:
@@ -187,3 +201,90 @@ async def validate_token(request: ValidateTokenRequest):
         return ValidateTokenResponse(**result)
     
     return ValidateTokenResponse(**result)
+
+
+@router.get("/service-status", response_model=ServiceStatusResponse)
+async def get_service_status(
+    tenant_id: str,
+):
+    """
+    Get service enable/disable status for a tenant.
+    
+    This endpoint returns the current status of all services (BigQuery, SFTP, SMTP)
+    for the specified tenant. Services may be disabled if their configurations
+    failed validation.
+    
+    Args:
+        tenant_id: The tenant ID to check service status for
+    
+    Returns:
+        ServiceStatusResponse containing enabled/disabled status and error messages
+        for each service
+    """
+    try:
+        service_status = await get_tenant_service_status(tenant_id, "auth-service")
+        
+        # Convert to response model format
+        services = {
+            service_name: ServiceStatusDetail(
+                enabled=status["enabled"],
+                error=status["error"]
+            )
+            for service_name, status in service_status.items()
+        }
+        
+        return ServiceStatusResponse(
+            tenant_id=tenant_id,
+            services=services
+        )
+        
+    except Exception as e:
+        logger.error(f"Error fetching service status for tenant {tenant_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch service status: {str(e)}"
+        )
+
+
+@router.post("/revalidate-services", response_model=RevalidateServicesResponse)
+async def revalidate_services(
+    request: RevalidateServicesRequest,
+    background_tasks: BackgroundTasks,
+    auth_service: AuthenticationService = Depends(get_auth_service)
+):
+    """
+    Trigger background re-validation of all service configurations.
+    
+    This endpoint is useful after updating tenant configurations to re-check
+    if services should be enabled or disabled. The validation runs in the
+    background and updates the database.
+    
+    Args:
+        request: Contains tenant_id to revalidate
+        background_tasks: FastAPI background tasks manager
+        auth_service: Authentication service dependency
+    
+    Returns:
+        RevalidateServicesResponse indicating the revalidation was triggered
+    """
+    try:
+        # Trigger background revalidation
+        background_tasks.add_task(
+            auth_service.revalidate_tenant_services,
+            request.tenant_id
+        )
+        
+        logger.info(f"Triggered service revalidation for tenant {request.tenant_id}")
+        
+        return RevalidateServicesResponse(
+            success=True,
+            message="Service revalidation triggered successfully",
+            tenant_id=request.tenant_id
+        )
+        
+    except Exception as e:
+        logger.error(f"Error triggering service revalidation for tenant {request.tenant_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger service revalidation: {str(e)}"
+        )

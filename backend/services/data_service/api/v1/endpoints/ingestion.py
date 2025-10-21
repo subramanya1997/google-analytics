@@ -6,12 +6,13 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 
-from services.data_service.api.dependencies import get_tenant_id
+from services.data_service.api.dependencies import get_tenant_id, get_ingestion_service
 from services.data_service.api.v1.models import (
     CreateIngestionJobRequest,
     IngestionJobResponse,
 )
 from services.data_service.services import IngestionService
+from common.database import get_tenant_service_status
 
 router = APIRouter()
 
@@ -21,6 +22,7 @@ async def create_ingestion_job(
     request: CreateIngestionJobRequest,
     background_tasks: BackgroundTasks,
     tenant_id: str = Depends(get_tenant_id),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """
     Create and start a new data ingestion job for multi-source analytics data processing.
@@ -89,17 +91,40 @@ async def create_ingestion_job(
     3. Handle completion or error states appropriately
     """
     try:
+        # Check which services are needed based on data_types
+        needs_bigquery = "events" in request.data_types
+        needs_sftp = "users" in request.data_types or "locations" in request.data_types
+        
+        # Validate services are enabled
+        service_status = await get_tenant_service_status(tenant_id, "data-ingestion-service")
+        
+        # Check if required services are enabled
+        disabled_services = []
+        
+        if needs_bigquery and not service_status["bigquery"]["enabled"]:
+            error_msg = service_status["bigquery"]["error"] or "BigQuery service is disabled"
+            disabled_services.append(f"BigQuery: {error_msg}")
+        
+        if needs_sftp and not service_status["sftp"]["enabled"]:
+            error_msg = service_status["sftp"]["error"] or "SFTP service is disabled"
+            disabled_services.append(f"SFTP: {error_msg}")
+        
+        if disabled_services:
+            error_detail = "Cannot process ingestion job. " + "; ".join(disabled_services)
+            logger.warning(f"Ingestion blocked for tenant {tenant_id}: {error_detail}")
+            raise HTTPException(
+                status_code=400,
+                detail=error_detail
+            )
+        
         # Generate unique job ID
         job_id = f"job_{uuid4().hex[:12]}"
-
-        # Create ingestion service
-        ingestion_service = IngestionService()
 
         # Create job record
         await ingestion_service.create_job(job_id, tenant_id, request)
 
-        # Start background processing
-        background_tasks.add_task(ingestion_service.run_job, job_id, tenant_id, request)
+        # Start background processing with safe wrapper
+        background_tasks.add_task(ingestion_service.run_job_safe, job_id, tenant_id, request)
 
         logger.info(f"Created ingestion job {job_id} for tenant {tenant_id}")
 
@@ -120,13 +145,12 @@ async def create_ingestion_job(
 @router.get("/data-availability")
 async def get_data_availability(
     tenant_id: str = Depends(get_tenant_id),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """
     Get the date range of available data for the tenant with detailed breakdown.
     """
     try:
-        ingestion_service = IngestionService()
-        
         # Call the async method directly
         combined_data = await ingestion_service.get_data_availability_with_breakdown(tenant_id)
         return combined_data
@@ -138,6 +162,7 @@ async def get_data_availability(
 @router.get("/jobs")
 async def get_ingestion_jobs(
     tenant_id: str = Depends(get_tenant_id),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
     limit: Optional[int] = Query(default=50, le=100),
     offset: Optional[int] = Query(default=0, ge=0)
 ):
@@ -145,8 +170,6 @@ async def get_ingestion_jobs(
     Get ingestion job history for the tenant.
     """
     try:
-        ingestion_service = IngestionService()
-        
         # Call the async method directly
         jobs = await ingestion_service.get_tenant_jobs(tenant_id, limit, offset)
         
@@ -165,13 +188,12 @@ async def get_ingestion_jobs(
 async def get_ingestion_job(
     job_id: str,
     tenant_id: str = Depends(get_tenant_id),
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
 ):
     """
     Get specific ingestion job details.
     """
     try:
-        ingestion_service = IngestionService()
-        
         # Call the async method directly
         job = await ingestion_service.get_job_status(job_id)
         

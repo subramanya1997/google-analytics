@@ -19,6 +19,16 @@ CREATE TABLE public.email_sending_jobs (
 );
 
 -- ======================================
+-- STATISTICS TARGETS FOR QUERY OPTIMIZER
+-- ======================================
+-- Increase statistics for frequently filtered/joined columns to improve cardinality estimates
+
+ALTER TABLE email_sending_jobs ALTER COLUMN tenant_id SET STATISTICS 1000;
+ALTER TABLE email_sending_jobs ALTER COLUMN job_id SET STATISTICS 1000;
+ALTER TABLE email_sending_jobs ALTER COLUMN status SET STATISTICS 1000;
+ALTER TABLE email_sending_jobs ALTER COLUMN created_at SET STATISTICS 1000;
+
+-- ======================================
 -- EMAIL_SENDING_JOBS TABLE INDEXES
 -- ======================================
 

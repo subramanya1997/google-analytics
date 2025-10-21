@@ -42,27 +42,27 @@ class AnalyticsPostgresClient:
 
     # Location operations
     async def get_locations(self, tenant_id: str) -> List[Dict[str, Any]]:
-        """Get all locations with activity."""
+        """Get all active locations for tenant."""
         try:
             async with get_async_db_session("analytics-service") as session:
-                # Get locations that have page view activity using the optimized function
+                # Get all active locations using the optimized function
                 time_start = time.time()
                 result = await session.execute(
                     text(
                         """
-                    SELECT * FROM get_locations_with_activity_table(:tenant_id)
+                    SELECT * FROM get_locations(:tenant_id)
                 """
                     ),
                     {"tenant_id": tenant_id},
                 )
-                locations_with_activity = result.fetchall()
+                locations_data = result.fetchall()
                 time_end = time.time()
                 logger.info(
                     f"Time taken to fetch locations: {time_end - time_start} seconds"
                 )
 
                 locations = []
-                for location in locations_with_activity:
+                for location in locations_data:
                     locations.append(
                         {
                             "locationId": location.location_id,
@@ -794,44 +794,34 @@ class AnalyticsPostgresClient:
         limit: int = 50,
         status: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Get email job history with pagination."""
+        """Get email job history with pagination - ULTRA-FAST PostgreSQL function only."""
         try:
             async with get_async_db_session("analytics-service") as session:
-                # Build query
-                where_clause = "WHERE tenant_id = :tenant_id"
-                params = {"tenant_id": tenant_id}
-                
-                if status:
-                    where_clause += " AND status = :status"
-                    params["status"] = status
-                
-                # Get total count
-                count_result = await session.execute(
-                    text(f"SELECT COUNT(*) FROM email_sending_jobs {where_clause}"),
-                    params
-                )
-                count = count_result.scalar()
-                
-                # Get paginated data
+                # Calculate offset from page number
                 offset = (page - 1) * limit
-                params.update({"limit": limit, "offset": offset})
+                
+                # Call optimized PostgreSQL function (ULTRA FAST!)
+                jobs_query = text("SELECT * FROM get_email_jobs_paginated(:tenant_id, :limit, :offset, :status)")
                 
                 result = await session.execute(
-                    text(f"""
-                        SELECT job_id, status, report_date, target_branches,
-                               total_emails, emails_sent, emails_failed, error_message,
-                               created_at, started_at, completed_at
-                        FROM email_sending_jobs 
-                        {where_clause}
-                        ORDER BY created_at DESC
-                        LIMIT :limit OFFSET :offset
-                    """),
-                    params
+                    jobs_query,
+                    {
+                        "tenant_id": tenant_id,
+                        "limit": limit,
+                        "offset": offset,
+                        "status": status
+                    }
                 )
-                results = result.fetchall()
+                results = result.mappings().all()
                 
                 jobs = []
+                total = 0
+                
                 for row in results:
+                    if total == 0:  # Get total from first row
+                        total = int(row.total_count)
+                    
+                    # Build job data with proper type conversion
                     jobs.append({
                         "job_id": row.job_id,
                         "status": row.status,
@@ -849,10 +839,10 @@ class AnalyticsPostgresClient:
                 
                 return {
                     "data": jobs,
-                    "total": count,
+                    "total": total,
                     "page": page,
                     "limit": limit,
-                    "has_more": (page * limit) < count
+                    "has_more": (page * limit) < total
                 }
                 
         except Exception as e:

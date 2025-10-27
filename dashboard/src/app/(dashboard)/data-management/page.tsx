@@ -29,7 +29,7 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { toast } from "sonner"
-import { fetchDataAvailability, fetchJobs, createIngestionJob, createScheduledTask } from "@/lib/api-utils"
+import { fetchDataAvailability, fetchJobs, createIngestionJob } from "@/lib/api-utils"
 import { DataAvailability, IngestionJob, JobsResponse } from "@/types"
 import { Scheduler } from "@/components/scheduler"
 import type { DateRange } from "react-day-picker"
@@ -265,29 +265,6 @@ export default function DataManagementPage() {
       }
       return newSet
     })
-  }
-
-  const handleScheduleTask = async (task: { name: string; type: 'data_ingestion' | 'email_reports'; schedule: string; scheduleType: 'cron' | 'natural'; config: Record<string, unknown> }) => {
-    try {
-      const response = await createScheduledTask({
-        name: task.name,
-        type: task.type,
-        schedule: task.schedule,
-        schedule_type: task.scheduleType,
-        config: task.config
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'Failed to create scheduled task')
-      }
-
-      toast.success(`${task.type === 'data_ingestion' ? 'Data ingestion' : 'Email report'} task scheduled successfully!`)
-    } catch (error) {
-      console.error('Error creating scheduled task:', error)
-      toast.error(`Failed to schedule task: ${error instanceof Error ? error.message : String(error)}`)
-      throw error // Re-throw to let the scheduler component handle it
-    }
   }
 
 
@@ -634,7 +611,6 @@ export default function DataManagementPage() {
         open={schedulerOpen}
         onOpenChange={setSchedulerOpen}
         type="data_ingestion"
-        onSchedule={handleScheduleTask}
       />
     </div>
   )

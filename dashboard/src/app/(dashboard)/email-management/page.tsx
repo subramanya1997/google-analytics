@@ -13,7 +13,6 @@ import {
   sendEmailReports,
   fetchEmailJobs,
   fetchEmailHistory,
-  createScheduledTask,
 } from "@/lib/api-utils"
 import {
   EmailConfigResponse,
@@ -440,29 +439,6 @@ export default function EmailManagementPage() {
     })
   }
 
-  const handleScheduleTask = async (task: { name: string; type: 'data_ingestion' | 'email_reports'; schedule: string; scheduleType: 'cron' | 'natural'; config: Record<string, unknown> }) => {
-    try {
-      const response = await createScheduledTask({
-        name: task.name,
-        type: task.type,
-        schedule: task.schedule,
-        schedule_type: task.scheduleType,
-        config: task.config
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'Failed to create scheduled task')
-      }
-
-      toast.success(`${task.type === 'data_ingestion' ? 'Data ingestion' : 'Email report'} task scheduled successfully!`)
-    } catch (error) {
-      console.error('Error creating scheduled task:', error)
-      toast.error(`Failed to schedule task: ${error instanceof Error ? error.message : String(error)}`)
-      throw error // Re-throw to let the scheduler component handle it
-    }
-  }
-
 
   return (
     <div className="space-y-4">
@@ -553,7 +529,6 @@ export default function EmailManagementPage() {
         open={schedulerOpen}
         onOpenChange={setSchedulerOpen}
         type="email_reports"
-        onSchedule={handleScheduleTask}
       />
     </div>
   )

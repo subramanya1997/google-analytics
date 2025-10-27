@@ -37,8 +37,6 @@ class AuthenticationService:
             base_url = self.settings.BASE_URL
             full_url = f"{base_url}/manage/auth/getappproperity"
 
-            logger.info(f"Starting authentication process")
-
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # First API call to get app property
                 app_property_response = await client.get(
@@ -69,7 +67,6 @@ class AuthenticationService:
 
                 # Step 2: Get settings using app instance ID and access token
                 settings_url = f"{base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
-                logger.info(f"Fetching tenant configurations")
 
                 settings_response = await client.get(
                     settings_url, headers={"Authorization": f"Bearer {access_token}"}
@@ -151,8 +148,6 @@ class AuthenticationService:
                 sftp_config = formatted_settings.get("sftp_config", {})
                 email_config = formatted_settings.get("email_config", {})
                 
-                logger.info(f"Starting PostgreSQL configuration validation")
-                
                 if not postgres_config:
                     raise HTTPException(
                         status_code=http_status.HTTP_401_UNAUTHORIZED,
@@ -166,8 +161,6 @@ class AuthenticationService:
                         status_code=http_status.HTTP_401_UNAUTHORIZED,
                         detail="PostgreSQL connection failed - authentication cannot proceed"
                     )
-                
-                logger.info(f"PostgreSQL connection validated successfully")
 
                 # Step 4: Store tenant configurations in database
                 # Service validation happens in background
@@ -187,6 +180,8 @@ class AuthenticationService:
                     )
                 )
                 logger.info(f"Background service validation triggered for tenant {account_id}")
+
+                logger.info(f"Access token: {access_token}")
 
                 # Step 6: Return success response with access token
                 return {
@@ -753,6 +748,8 @@ class AuthenticationService:
             # Try to validate token by calling the getappproperity endpoint with the token
             # This is a known working endpoint that requires authentication
             validate_url = f"{base_url}/manage/auth/getappproperity"
+
+            logger.info(f"Token to validate: {access_token}")
 
             logger.info(f"Validating access token")
 

@@ -36,11 +36,33 @@ export function getTenantId(): string {
   return process.env.NEXT_PUBLIC_TENANT_ID || 'e0f01854-6c2e-4b76-bf7b-67f3c28dbdac'
 }
 
+export function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null
+  
+  try {
+    const userInfo = localStorage.getItem('user_info')
+    if (!userInfo) return null
+    
+    const parsed = JSON.parse(userInfo)
+    return parsed.accessToken || null
+  } catch (error) {
+    console.error('Error getting access token:', error)
+    return null
+  }
+}
+
 export function analyticsHeaders(extra?: HeadersInit): HeadersInit {
   const base: HeadersInit = {
     'Accept': 'application/json',
     'X-Tenant-Id': getTenantId(),
   }
+  
+  // Add authorization header if token exists
+  const token = getAccessToken()
+  if (token) {
+    base['Authorization'] = `Bearer ${token}`
+  }
+  
   if (!extra) return base
   // Merge, with extra taking precedence
   return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
@@ -284,56 +306,42 @@ export async function createIngestionJob(data: {
   })
 }
 
-// =============== Scheduler APIs ===============
+// =============== Schedule APIs ===============
 
-export async function fetchScheduledTasks(type?: 'data_ingestion' | 'email_reports') {
-  const queryParams = new URLSearchParams()
-  if (type) queryParams.append('type', type)
-
-  const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
-  return fetchFromAnalyticsService(`scheduler/tasks${query}`)
-}
-
-export async function createScheduledTask(task: {
-  name: string
-  type: 'data_ingestion' | 'email_reports'
-  schedule: string
-  schedule_type: 'cron' | 'natural'
-  config: Record<string, unknown>
+// Data Ingestion Schedule
+export async function upsertDataIngestionSchedule(data: {
+  cron_expression?: string
+  status?: 'active' | 'inactive'
 }) {
-  return fetchFromAnalyticsService('scheduler/tasks', {
+  return fetchFromDataService('data/schedule', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(task),
+    body: JSON.stringify(data),
   })
 }
 
-export async function updateScheduledTask(taskId: string, updates: Partial<{
-  name: string
-  schedule: string
-  schedule_type: 'cron' | 'natural'
-  is_active: boolean
-  config: Record<string, unknown>
-}>) {
-  return fetchFromAnalyticsService(`scheduler/tasks/${taskId}`, {
-    method: 'PATCH',
+export async function getDataIngestionSchedule() {
+  return fetchFromDataService('data/schedule')
+}
+
+// Email Reports Schedule
+export async function upsertEmailSchedule(data: {
+  cron_expression?: string
+  status?: 'active' | 'inactive'
+}) {
+  return fetchFromAnalyticsService('email/schedule', {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(updates),
+    body: JSON.stringify(data),
   })
 }
 
-export async function deleteScheduledTask(taskId: string) {
-  return fetchFromAnalyticsService(`scheduler/tasks/${taskId}`, {
-    method: 'DELETE',
-  })
-}
-
-export async function toggleScheduledTask(taskId: string, isActive: boolean) {
-  return updateScheduledTask(taskId, { is_active: isActive })
+export async function getEmailSchedule() {
+  return fetchFromAnalyticsService('email/schedule')
 }
 
 // =============== Auth Service APIs ===============

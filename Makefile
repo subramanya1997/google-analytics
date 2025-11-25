@@ -17,7 +17,6 @@ help:
 	@echo "Database Management:"
 	@echo "  db_setup        - Initialize database schema and functions"
 	@echo "  db_clean        - Clean/drop all database tables and functions"
-	@echo "  db_optimize     - Optimize database indexes and statistics"
 	@echo ""
 	@echo "Backend Services:"
 	@echo "  install_backend - Install Python dependencies with uv"
@@ -48,11 +47,6 @@ db_setup:
 db_clean:
 	@echo "Cleaning database (WARNING: This will delete all data)..."
 	cd $(BACKEND_DIR) && uv run python scripts/clear_db.py
-
-db_optimize:
-	@echo "Optimizing database indexes and statistics..."
-	@echo "This will add covering indexes and update statistics for better query performance"
-	cd $(BACKEND_DIR) && uv run python scripts/optimize_indexes.py
 
 # ================================
 # BACKEND SERVICES

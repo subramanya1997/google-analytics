@@ -175,17 +175,14 @@ async def get_email_schedule(
     """
     Get the email report schedule details for the tenant.
     
-    Fallback order:
-    1. Try to get from scheduler API
-    2. If not found, get from database (tenants.email_schedule)
-    3. If not in database, use default from settings
+    Returns the schedule from the scheduler API if it exists, otherwise returns the default.
     
     Args:
         tenant_id: Tenant ID from X-Tenant-Id header
         authorization: JWT token from Authorization header
         
     Returns:
-        Schedule details
+        Schedule details with cron_expression, status, and source
     """
     try:
         # Extract JWT token
@@ -206,50 +203,31 @@ async def get_email_schedule(
             limit=1
         )
         
-        # Always fetch from database for comparison/fallback
-        cron_from_db = None
-        try:
-            async with get_async_db_session("analytics-service") as session:
-                result = await session.execute(
-                    text("SELECT email_schedule FROM tenants WHERE id = :tenant_id"),
-                    {"tenant_id": tenant_id}
-                )
-                row = result.fetchone()
-                if row and row[0]:
-                    cron_from_db = row[0]
-        except Exception as db_error:
-            logger.error(f"Failed to get email_schedule from database: {db_error}")
-        
         # Check if active schedule exists in scheduler
         has_active_schedule = response.get("scheduler_details") and len(response["scheduler_details"]) > 0
         
         if has_active_schedule:
             # Extract cron expression from active schedule
             schedule_data = response["scheduler_details"][0]
-            cron_from_scheduler = schedule_data.get("cron_exp")
+            cron_expression = schedule_data.get("cron_exp")
             status = schedule_data.get("status", "active")
             
-            # Use scheduler value if available, otherwise fall back to DB
-            cron_expression = cron_from_scheduler if cron_from_scheduler else cron_from_db
-            
+            # If no cron expression in scheduler, use default
             if not cron_expression:
                 cron_expression = _settings.EMAIL_NOTIFICATION_CRON
-                logger.warning(f"Both scheduler and DB returned null, using default")
+                logger.warning(f"Scheduler returned no cron expression, using default")
             
             return {
                 "cron_expression": cron_expression,
                 "status": status,
-                "source": "scheduler" if cron_from_scheduler else ("database" if cron_from_db else "default")
+                "source": "scheduler"
             }
         
-        # No schedule in scheduler - use database or default
-        # Use database value or default from settings
-        cron_expression = cron_from_db or _settings.EMAIL_NOTIFICATION_CRON
-        
+        # No schedule in scheduler - return default
         return {
-            "cron_expression": cron_expression,
+            "cron_expression": _settings.EMAIL_NOTIFICATION_CRON,
             "status": "inactive",
-            "source": "database" if cron_from_db else "default"
+            "source": "default"
         }
         
     except HTTPException:

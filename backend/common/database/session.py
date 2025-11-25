@@ -143,11 +143,11 @@ def get_engine(service_name: str = None, database_name: str = None) -> Engine:
     """Get cached database engine with optimized connection pooling."""
     url = create_sqlalchemy_url(database_name)
     
-    # Enhanced connection pool settings
-    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 20))  # Increased default
-    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 30))  # Increased default
+    # Conservative connection pool settings to prevent overloading
+    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 5))  # Reduced default
+    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 5))  # Reduced default
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))  # 1 hour
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
     
     engine = create_engine(
         url,
@@ -186,11 +186,11 @@ def get_async_engine(service_name: str = None, database_name: str = None):
     """Get cached async database engine with optimized connection pooling."""
     url = create_sqlalchemy_url(database_name, async_driver=True)
     
-    # Enhanced connection pool settings for async
-    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 15))
-    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 25))
+    # Conservative connection pool settings for async to prevent overloading
+    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 5))
+    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 5))
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
     
     async_engine = create_async_engine(
         url,

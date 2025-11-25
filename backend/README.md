@@ -115,9 +115,8 @@ The backend consists of three main microservices:
 
 ## 🚀 Installation & Setup
 
-### 1. Clone and Navigate
+### 1. Navigate to Backend
 ```bash
-git clone <repository_url>
 cd google-analytics/backend
 ```
 
@@ -648,15 +647,6 @@ LOG_LEVEL=DEBUG uv run uvicorn services.analytics_service:app --port 8001 --relo
    - [ ] Set up database backups
 
 ## 🤝 Contributing
-
-### Development Workflow
-1. Fork the repository
-2. Create feature branch: `git checkout -b feat/new-feature`
-3. Make changes and add tests
-4. Run quality checks: `make lint test`
-5. Commit changes: `git commit -m "Add new feature"`
-6. Push to branch: `git push origin feat/new-feature`
-7. Create Pull Request
 
 ### Code Standards
 - Follow PEP 8 style guide

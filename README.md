@@ -61,6 +61,12 @@ make dev
 
 Each tenant requires configuration for four external services. These are configured during OAuth login and stored securely in the database.
 
+### 🎬 Video Walkthrough
+
+Watch the complete tenant setup process:
+
+[📹 Setting Up a New Tenant](assets/Setting%20Up%20a%20New%20Tenant%20for%20Google%20Analytics%20Dashboard.mp4)
+
 ### BigQuery (GA4 Data Source)
 
 Connects to Google Analytics 4 data via BigQuery.
@@ -71,7 +77,7 @@ Connects to Google Analytics 4 data via BigQuery.
 | `project_id` | Google Cloud project ID | `learned-maker-366218` |
 | `credentials` | Service account JSON key | `{"type": "service_account", ...}` |
 
-![BigQuery Configuration](images/bigquery.png)
+![BigQuery Configuration](assets/bigquery.png)
 
 **Setup Steps:**
 1. Enable GA4 BigQuery Export in your Google Analytics property
@@ -95,7 +101,7 @@ Each tenant's analytics data is stored in PostgreSQL with row-level isolation.
 | `ssl_mode` | SSL connection mode | `require` |
 | `connect_timeout` | Connection timeout (seconds) | `10` |
 
-![PostgreSQL Configuration](images/postgres-config.png)
+![PostgreSQL Configuration](assets/postgres-config.png)
 
 ---
 
@@ -113,7 +119,7 @@ Master data for users and locations is synced via SFTP.
 | `user_file` | User data filename | `UserReport.xlsx` |
 | `locations_file` | Locations data filename | `Locations_List.xlsx` |
 
-![SFTP Configuration](images/SFTP.png)
+![SFTP Configuration](assets/SFTP.png)
 
 ---
 
@@ -131,7 +137,7 @@ Automated email reports are sent via SMTP.
 | `from_name` | Sender display name | `Sales Analytics Team` |
 | `from_address` | Sender email address | `admin@extremeb2b.com` |
 
-![SMTP Configuration](images/SMTP.png)
+![SMTP Configuration](assets/SMTP.png)
 
 ---
 
@@ -307,7 +313,7 @@ google-analytics/
 │       ├── app/          # Next.js pages
 │       ├── components/   # React components
 │       └── lib/          # Utilities
-└── images/               # Configuration screenshots
+└── assets/               # Screenshots & videos
 ```
 
 ---

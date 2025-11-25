@@ -65,7 +65,7 @@ Each tenant requires configuration for four external services. These are configu
 
 Watch the complete tenant setup process:
 
-https://github.com/subramanya1997/google-analytics/raw/master/assets/Setting%20Up%20a%20New%20Tenant%20for%20Google%20Analytics%20Dashboard.mp4
+[![Watch the video](https://img.shields.io/badge/▶-Watch%20Video-red)](https://www.loom.com/share/0e1f882831b442daae1a3d0f93072a60)
 
 ### BigQuery (GA4 Data Source)
 

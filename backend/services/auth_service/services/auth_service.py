@@ -4,9 +4,10 @@ Authentication service business logic.
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
+from fastapi import HTTPException, status as http_status
 from loguru import logger
 from sqlalchemy import create_engine, text
 
@@ -36,8 +37,6 @@ class AuthenticationService:
             base_url = self.settings.BASE_URL
             full_url = f"{base_url}/manage/auth/getappproperity"
 
-            logger.info(f"Starting authentication process")
-
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # First API call to get app property
                 app_property_response = await client.get(
@@ -45,13 +44,10 @@ class AuthenticationService:
                 )
 
                 if app_property_response.status_code != 200:
-                    return {
-                        "success": False,
-                        "message": "Invalid authentication code",
-                        "tenant_id": None,
-                        "first_name": None,
-                        "username": None,
-                    }
+                    raise HTTPException(
+                        status_code=http_status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid authentication code"
+                    )
 
                 app_property_data = app_property_response.json()
 
@@ -64,32 +60,23 @@ class AuthenticationService:
                 business_name = app_property_data.get("businessName")
 
                 if not all([app_instance_id, access_token, account_id]):
-                    return {
-                        "success": False,
-                        "message": "Invalid response from authentication service",
-                        "tenant_id": None,
-                        "first_name": first_name,
-                        "username": username,
-                        "business_name": business_name,
-                    }
+                    raise HTTPException(
+                        status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Invalid response from authentication service"
+                    )
 
                 # Step 2: Get settings using app instance ID and access token
                 settings_url = f"{base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
-                logger.info(f"Fetching tenant configurations")
 
                 settings_response = await client.get(
                     settings_url, headers={"Authorization": f"Bearer {access_token}"}
                 )
 
                 if settings_response.status_code != 200:
-                    return {
-                        "success": False,
-                        "message": "Failed to retrieve application settings",
-                        "tenant_id": account_id,
-                        "first_name": first_name,
-                        "username": username,
-                        "business_name": business_name,
-                    }
+                    raise HTTPException(
+                        status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to retrieve application settings"
+                    )
 
                 settings_data = settings_response.json()
 
@@ -155,46 +142,48 @@ class AuthenticationService:
                         "email_config": {},
                     }
 
-                # Step 3: Validate configurations
-                logger.info(f"Starting configuration validation")
-                validation_result = await self._validate_configurations_async(formatted_settings)
-
-                if validation_result["valid"]:
-                    logger.info(f"All configurations validated successfully")
-                else:
-                    logger.error(f"Configuration validation failed")
-
-                if not validation_result["valid"]:
-                    return {
-                        "success": False,
-                        "message": "Authentication failed due to missing or invalid configurations",
-                        "tenant_id": account_id,
-                        "first_name": first_name,
-                        "username": username,
-                        "business_name": business_name,
-                        "missing_configs": validation_result["missing_configs"],
-                        "invalid_configs": validation_result["invalid_configs"],
-                    }
-
-                # Step 4: Ensure tenant exists in database with all configurations
+                # Step 3: Validate PostgreSQL configuration synchronously (blocking)
                 postgres_config = formatted_settings.get("postgres_config", {})
                 bigquery_config = formatted_settings.get("bigquery_config", {})
                 sftp_config = formatted_settings.get("sftp_config", {})
                 email_config = formatted_settings.get("email_config", {})
+                
+                if not postgres_config:
+                    raise HTTPException(
+                        status_code=http_status.HTTP_401_UNAUTHORIZED,
+                        detail="PostgreSQL configuration is missing - authentication cannot proceed"
+                    )
+                
+                # Test PostgreSQL connection - must succeed for authentication
+                postgres_valid = await self._test_postgres_connection_async(postgres_config)
+                if not postgres_valid:
+                    raise HTTPException(
+                        status_code=http_status.HTTP_401_UNAUTHORIZED,
+                        detail="PostgreSQL connection failed - authentication cannot proceed"
+                    )
 
+                # Step 4: Store tenant configurations in database
+                # Service validation happens in background
                 if not await self._upsert_tenant_configurations(
                     account_id, postgres_config, bigquery_config, sftp_config, email_config, username
                 ):
-                    return {
-                        "success": False,
-                        "message": "Failed to store tenant configurations in database",
-                        "tenant_id": account_id,
-                        "first_name": first_name,
-                        "username": username,
-                        "business_name": business_name,
-                    }
+                    raise HTTPException(
+                        status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to store tenant configurations in database"
+                    )
+                
+                # Step 5: Validate other services in background (non-blocking)
+                # This will update service status in database without blocking authentication
+                asyncio.create_task(
+                    self._validate_and_update_services_async(
+                        account_id, bigquery_config, sftp_config, email_config
+                    )
+                )
+                logger.info(f"Background service validation triggered for tenant {account_id}")
 
-                # Step 5: Return success response with access token
+                logger.info(f"Access token: {access_token}")
+
+                # Step 6: Return success response with access token
                 return {
                     "success": True,
                     "message": "Authentication successful",
@@ -208,24 +197,19 @@ class AuthenticationService:
         except httpx.RequestError as e:
             logger.error(f"HTTP request failed: {e}")
             logger.error(f"Base URL being used: {self.settings.BASE_URL}")
-            return {
-                "success": False,
-                "message": f"Authentication service unavailable: {str(e)}",
-                "tenant_id": None,
-                "first_name": None,
-                "username": None,
-                "business_name": None,
-            }
+            raise HTTPException(
+                status_code=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Authentication service unavailable: {str(e)}"
+            )
+        except HTTPException:
+            # Re-raise HTTPExceptions as-is
+            raise
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
-            return {
-                "success": False,
-                "message": "Internal server error during authentication",
-                "tenant_id": None,
-                "first_name": None,
-                "username": None,
-                "business_name": None,
-            }
+            raise HTTPException(
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal server error during authentication"
+            )
 
     async def _validate_configurations_async(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -290,6 +274,189 @@ class AuthenticationService:
             "missing_configs": missing_configs,
             "invalid_configs": invalid_configs,
         }
+
+    async def _validate_and_update_services_async(
+        self,
+        tenant_id: str,
+        bigquery_config: Dict[str, Any],
+        sftp_config: Dict[str, Any],
+        email_config: Dict[str, Any]
+    ) -> None:
+        """
+        Validate services in background and update their status in the database.
+        
+        This method validates BigQuery, SFTP, and SMTP configurations and updates
+        the corresponding enabled/disabled flags in the tenants table.
+        
+        Args:
+            tenant_id: The tenant ID
+            bigquery_config: BigQuery configuration
+            sftp_config: SFTP configuration
+            email_config: Email/SMTP configuration
+        """
+        try:
+            logger.info(f"Starting background service validation for tenant {tenant_id}")
+            
+            # Validate each service
+            bigquery_enabled = False
+            bigquery_error = None
+            sftp_enabled = False
+            sftp_error = None
+            smtp_enabled = False
+            smtp_error = None
+            
+            # Validate BigQuery
+            if bigquery_config:
+                bigquery_enabled = await self._test_bigquery_config_async(bigquery_config)
+                if not bigquery_enabled:
+                    bigquery_error = "BigQuery configuration validation failed"
+            else:
+                bigquery_error = "BigQuery configuration is missing"
+            
+            # Validate SFTP
+            if sftp_config:
+                sftp_enabled = await self._test_sftp_config_async(sftp_config)
+                if not sftp_enabled:
+                    sftp_error = "SFTP configuration validation failed"
+            else:
+                sftp_error = "SFTP configuration is missing"
+            
+            # Validate SMTP
+            if email_config:
+                smtp_enabled = await self._test_email_config_async(email_config)
+                if not smtp_enabled:
+                    smtp_error = "SMTP configuration validation failed"
+            else:
+                smtp_error = "SMTP configuration is missing"
+            
+            # Update database with validation results
+            await self._update_service_status(
+                tenant_id,
+                bigquery_enabled, bigquery_error,
+                sftp_enabled, sftp_error,
+                smtp_enabled, smtp_error
+            )
+            
+            logger.info(
+                f"Service validation completed for tenant {tenant_id}: "
+                f"BigQuery={bigquery_enabled}, SFTP={sftp_enabled}, SMTP={smtp_enabled}"
+            )
+            
+        except Exception as e:
+            logger.error(f"Background service validation failed for tenant {tenant_id}: {e}")
+
+    async def _update_service_status(
+        self,
+        tenant_id: str,
+        bigquery_enabled: bool,
+        bigquery_error: Optional[str],
+        sftp_enabled: bool,
+        sftp_error: Optional[str],
+        smtp_enabled: bool,
+        smtp_error: Optional[str]
+    ) -> None:
+        """
+        Update service status in the database.
+        
+        Args:
+            tenant_id: The tenant ID
+            bigquery_enabled: Whether BigQuery is enabled
+            bigquery_error: BigQuery validation error message
+            sftp_enabled: Whether SFTP is enabled
+            sftp_error: SFTP validation error message
+            smtp_enabled: Whether SMTP is enabled
+            smtp_error: SMTP validation error message
+        """
+        try:
+            from common.database import get_async_db_session
+            
+            async with get_async_db_session("auth-service") as session:
+                await session.execute(
+                    text("""
+                        UPDATE tenants SET
+                            bigquery_enabled = :bigquery_enabled,
+                            bigquery_validation_error = :bigquery_error,
+                            sftp_enabled = :sftp_enabled,
+                            sftp_validation_error = :sftp_error,
+                            smtp_enabled = :smtp_enabled,
+                            smtp_validation_error = :smtp_error,
+                            updated_at = NOW()
+                        WHERE id = :tenant_id
+                    """),
+                    {
+                        "tenant_id": tenant_id,
+                        "bigquery_enabled": bigquery_enabled,
+                        "bigquery_error": bigquery_error,
+                        "sftp_enabled": sftp_enabled,
+                        "sftp_error": sftp_error,
+                        "smtp_enabled": smtp_enabled,
+                        "smtp_error": smtp_error
+                    }
+                )
+                
+                # Commit the transaction to persist changes
+                await session.commit()
+                
+                logger.info(f"Updated service status in database for tenant {tenant_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to update service status for tenant {tenant_id}: {e}")
+
+    async def revalidate_tenant_services(self, tenant_id: str) -> None:
+        """
+        Revalidate all services for a tenant and update their status.
+        
+        This method retrieves the tenant's current configurations and validates
+        all services, updating their enabled/disabled status in the database.
+        
+        Args:
+            tenant_id: The tenant ID to revalidate
+        """
+        try:
+            logger.info(f"Revalidating services for tenant {tenant_id}")
+            
+            from common.database import get_async_db_session
+            
+            # Get current configurations from database
+            async with get_async_db_session("auth-service") as session:
+                result = await session.execute(
+                    text("""
+                        SELECT 
+                            bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
+                            postgres_config, sftp_config, email_config
+                        FROM tenants 
+                        WHERE id = :tenant_id
+                    """),
+                    {"tenant_id": tenant_id}
+                )
+                row = result.fetchone()
+                
+                if not row:
+                    logger.error(f"Tenant not found: {tenant_id}")
+                    return
+                
+                # Parse configurations
+                import json
+                
+                bigquery_config = {}
+                if row.bigquery_project_id and row.bigquery_dataset_id:
+                    bigquery_config = {
+                        "project_id": row.bigquery_project_id,
+                        "dataset_id": row.bigquery_dataset_id,
+                        "service_account": json.loads(row.bigquery_credentials) if row.bigquery_credentials else {}
+                    }
+                
+                postgres_config = json.loads(row.postgres_config) if row.postgres_config else {}
+                sftp_config = json.loads(row.sftp_config) if row.sftp_config else {}
+                email_config = json.loads(row.email_config) if row.email_config else {}
+            
+            # Validate and update services
+            await self._validate_and_update_services_async(
+                tenant_id, bigquery_config, sftp_config, email_config
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to revalidate services for tenant {tenant_id}: {e}")
 
     async def _test_postgres_connection_async(self, config: Dict[str, Any]) -> bool:
         """Test PostgreSQL connection asynchronously."""
@@ -483,6 +650,9 @@ class AuthenticationService:
                         config_data,
                     )
                     logger.info(f"Updated tenant configurations: ({tenant_id})")
+                
+                # Commit the transaction to persist changes
+                await session.commit()
 
             return True
         except Exception as e:
@@ -578,6 +748,8 @@ class AuthenticationService:
             # Try to validate token by calling the getappproperity endpoint with the token
             # This is a known working endpoint that requires authentication
             validate_url = f"{base_url}/manage/auth/getappproperity"
+
+            logger.info(f"Token to validate: {access_token}")
 
             logger.info(f"Validating access token")
 

@@ -31,6 +31,7 @@ import { format } from "date-fns"
 import { toast } from "sonner"
 import { fetchDataAvailability, fetchJobs, createIngestionJob } from "@/lib/api-utils"
 import { DataAvailability, IngestionJob, JobsResponse } from "@/types"
+import { Scheduler } from "@/components/scheduler"
 import type { DateRange } from "react-day-picker"
 
 export default function DataManagementPage() {
@@ -57,6 +58,9 @@ export default function DataManagementPage() {
 
   // Expanded job details state
   const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set())
+
+  // Scheduler state
+  const [schedulerOpen, setSchedulerOpen] = useState(false)
 
 
   const fetchDataAvailabilityData = useCallback(async () => {
@@ -112,12 +116,35 @@ export default function DataManagementPage() {
     }
   }, [jobsPerPage])
 
+
   useEffect(() => {
     // PARALLEL API calls - both start simultaneously!
     Promise.all([
       fetchDataAvailabilityData(), // Always gets both summary and breakdown
       fetchJobsData()              // Also starts immediately (parallel!)
     ])
+  }, [fetchDataAvailabilityData, fetchJobsData])
+
+  // Listen for scheduler and refresh events
+  useEffect(() => {
+    const handleOpenScheduler = () => {
+      setSchedulerOpen(true)
+    }
+
+    const handleRefreshData = () => {
+      // Refresh all data management data
+      fetchDataAvailabilityData()
+      fetchJobsData()
+      toast.success('Data management data refreshed')
+    }
+
+    window.addEventListener('openDataIngestionScheduler', handleOpenScheduler)
+    window.addEventListener('refreshDataManagement', handleRefreshData)
+
+    return () => {
+      window.removeEventListener('openDataIngestionScheduler', handleOpenScheduler)
+      window.removeEventListener('refreshDataManagement', handleRefreshData)
+    }
   }, [fetchDataAvailabilityData, fetchJobsData])
 
   const handleSubmitIngestion = async () => {
@@ -241,6 +268,7 @@ export default function DataManagementPage() {
   }
 
 
+
   return (
     <div className="space-y-6">
       {/* Data Availability and Data Ingestion Section */}
@@ -359,13 +387,8 @@ export default function DataManagementPage() {
 
       {/* Job History Section */}
       <div className="space-y-4">
-        {loadingJobs ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
-          </div>
-        ) : jobs.length > 0 ? (
+        {/* Always show table when loading, or when there are jobs */}
+        {loadingJobs || jobs.length > 0 ? (
           <>
             <div className="rounded-md border">
               <Table>
@@ -381,15 +404,44 @@ export default function DataManagementPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {jobs.map((job) => (
-                    <React.Fragment key={job.job_id}>
-                      <TableRow 
-                        className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => toggleJobExpansion(job.job_id)}
-                      >
+                  {loadingJobs ? (
+                    // Loading skeleton rows
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={`skeleton-${i}`}>
                         <TableCell className="w-12">
-                          <ChevronRight 
-                            className={`h-4 w-4 transition-transform ${
+                          <Skeleton className="h-4 w-4" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-24" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-32" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-6 w-20" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-16" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-12" />
+                        </TableCell>
+                        <TableCell>
+                          <Skeleton className="h-4 w-20" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    // Actual job data
+                    jobs.map((job) => (
+                      <React.Fragment key={job.job_id}>
+                        <TableRow
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => toggleJobExpansion(job.job_id)}
+                        >
+                          <TableCell className="w-12">
+                            <ChevronRight
+                              className={`h-4 w-4 transition-transform ${
                               expandedJobs.has(job.job_id) ? 'rotate-90' : ''
                             }`}
                           />
@@ -424,79 +476,80 @@ export default function DataManagementPage() {
                             {format(new Date(job.created_at), 'MMM d, HH:mm')}
                           </div>
                         </TableCell>
-                      </TableRow>
-                      {expandedJobs.has(job.job_id) && (
-                        <TableRow>
-                          <TableCell colSpan={7} className="bg-muted/30 p-0">
-                            <div className="px-6 py-4 border-t border-border/50">
-                              <div className="space-y-4">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                  <div>
-                                    <Label className="text-sm font-medium text-muted-foreground">Processing Details</Label>
-                                    <div className="mt-1 space-y-1">
-                                      <p className="text-sm">Started: {job.started_at ? format(new Date(job.started_at), 'MMM d, HH:mm:ss') : 'Not started'}</p>
-                                      <p className="text-sm">Completed: {job.completed_at ? format(new Date(job.completed_at), 'MMM d, HH:mm:ss') : 'Not completed'}</p>
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                {/* Records Processed */}
-                                {job.records_processed && Object.keys(job.records_processed).length > 0 && (
-                                  <div>
-                                    <Label className="text-sm font-medium text-muted-foreground">Records Processed</Label>
-                                    <div className="mt-2">
-                                      <div className="rounded-md border">
-                                        <Table>
-                                          <TableHeader>
-                                            <TableRow>
-                                              <TableHead className="text-xs">Event Type</TableHead>
-                                              <TableHead className="text-xs text-right">Count</TableHead>
-                                            </TableRow>
-                                          </TableHeader>
-                                          <TableBody>
-                                            {Object.entries(job.records_processed).map(([eventType, count]) => (
-                                              <TableRow key={eventType}>
-                                                <TableCell className="text-sm capitalize">{eventType.replace('_', ' ')}</TableCell>
-                                                <TableCell className="text-sm text-right font-mono">
-                                                  {count.toLocaleString()}
-                                                </TableCell>
-                                              </TableRow>
-                                            ))}
-                                            <TableRow className="bg-muted/50">
-                                              <TableCell className="text-sm font-medium">Total</TableCell>
-                                              <TableCell className="text-sm text-right font-mono font-medium">
-                                                {Object.values(job.records_processed).reduce((sum, count) => sum + count, 0).toLocaleString()}
-                                              </TableCell>
-                                            </TableRow>
-                                          </TableBody>
-                                        </Table>
+                        </TableRow>
+                        {expandedJobs.has(job.job_id) && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="bg-muted/30 p-0">
+                              <div className="px-6 py-4 border-t border-border/50">
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                      <Label className="text-sm font-medium text-muted-foreground">Processing Details</Label>
+                                      <div className="mt-1 space-y-1">
+                                        <p className="text-sm">Started: {job.started_at ? format(new Date(job.started_at), 'MMM d, HH:mm:ss') : 'Not started'}</p>
+                                        <p className="text-sm">Completed: {job.completed_at ? format(new Date(job.completed_at), 'MMM d, HH:mm:ss') : 'Not completed'}</p>
                                       </div>
                                     </div>
                                   </div>
-                                )}
-                                
-                                {/* Error Message */}
-                                {job.error_message && (
-                                  <div>
-                                    <Label className="text-sm font-medium text-destructive">Error Message</Label>
-                                    <div className="mt-1 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-                                      <p className="text-sm text-destructive">{job.error_message}</p>
+
+                                  {/* Records Processed */}
+                                  {job.records_processed && Object.keys(job.records_processed).length > 0 && (
+                                    <div>
+                                      <Label className="text-sm font-medium text-muted-foreground">Records Processed</Label>
+                                      <div className="mt-2">
+                                        <div className="rounded-md border">
+                                          <Table>
+                                            <TableHeader>
+                                              <TableRow>
+                                                <TableHead className="text-xs">Event Type</TableHead>
+                                                <TableHead className="text-xs text-right">Count</TableHead>
+                                              </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                              {Object.entries(job.records_processed).map(([eventType, count]) => (
+                                                <TableRow key={eventType}>
+                                                  <TableCell className="text-sm capitalize">{eventType.replace('_', ' ')}</TableCell>
+                                                  <TableCell className="text-sm text-right font-mono">
+                                                    {count.toLocaleString()}
+                                                  </TableCell>
+                                                </TableRow>
+                                              ))}
+                                              <TableRow className="bg-muted/50">
+                                                <TableCell className="text-sm font-medium">Total</TableCell>
+                                                <TableCell className="text-sm text-right font-mono font-medium">
+                                                  {Object.values(job.records_processed).reduce((sum, count) => sum + count, 0).toLocaleString()}
+                                                </TableCell>
+                                              </TableRow>
+                                            </TableBody>
+                                          </Table>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                )}
+                                  )}
+
+                                  {/* Error Message */}
+                                  {job.error_message && (
+                                    <div>
+                                      <Label className="text-sm font-medium text-destructive">Error Message</Label>
+                                      <div className="mt-1 p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                                        <p className="text-sm text-destructive">{job.error_message}</p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </React.Fragment>
-                  ))}
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </React.Fragment>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {!loadingJobs && totalPages > 1 && jobs.length > 0 && (
               <div className="flex items-center justify-between pt-4">
                 <p className="text-sm text-muted-foreground">
                   Showing {currentPage * jobsPerPage + 1} to {Math.min((currentPage + 1) * jobsPerPage, totalJobs)} of {totalJobs} jobs
@@ -526,12 +579,39 @@ export default function DataManagementPage() {
             )}
           </>
         ) : (
-          <div className="text-center py-8">
-            <Clock className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">No ingestion jobs found</p>
+          // Show table with no data message
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead>Job ID</TableHead>
+                  <TableHead>Date Range</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Data Types</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8">
+                    <Clock className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">No ingestion jobs found</p>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
+
+      {/* Data Ingestion Scheduler */}
+      <Scheduler
+        open={schedulerOpen}
+        onOpenChange={setSchedulerOpen}
+        type="data_ingestion"
+      />
     </div>
   )
 }

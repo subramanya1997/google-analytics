@@ -12,8 +12,6 @@ from .session import (
     # Session makers
     get_session_maker,
     get_async_session_maker,
-    SessionLocal,
-    AsyncSessionLocal,
     
     # Context managers
     get_db_session,
@@ -29,7 +27,8 @@ from .tenant_config import (
     get_tenant_config_manager,
     get_tenant_bigquery_config,
     get_tenant_postgres_config,
-    get_tenant_sftp_config
+    get_tenant_sftp_config,
+    get_tenant_service_status
 )
 
 __all__ = [
@@ -44,8 +43,6 @@ __all__ = [
     # Session makers
     "get_session_maker",
     "get_async_session_maker",
-    "SessionLocal",
-    "AsyncSessionLocal",
     
     # Context managers (recommended)
     "get_db_session",
@@ -62,4 +59,5 @@ __all__ = [
     "get_tenant_bigquery_config",
     "get_tenant_postgres_config", 
     "get_tenant_sftp_config",
+    "get_tenant_service_status",
 ]

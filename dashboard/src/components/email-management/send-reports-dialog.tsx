@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Calendar } from "@/components/ui/calendar"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -69,7 +68,7 @@ export function SendReportsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="min-w-4xl max-h-[90vh]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5" />
@@ -129,23 +128,33 @@ export function SendReportsDialog({
                 ))}
               </div>
             ) : (
-              <div className="max-h-40 overflow-y-auto border rounded-md p-2 space-y-1">
-                {locations.map((location) => (
-                  <div key={location.locationId} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={location.locationId}
-                      checked={selectedBranches.includes(location.locationId)}
-                      onCheckedChange={(checked) => 
-                        onBranchSelectionChange(location.locationId, !!checked)
-                      }
-                    />
-                    <Label htmlFor={location.locationId} className="flex items-center gap-1 text-sm cursor-pointer">
-                      <MapPin className="h-3 w-3" />
-                      <span className="font-mono text-xs">{location.locationId}</span>
-                      <span>{location.locationName}</span>
-                    </Label>
-                  </div>
-                ))}
+              <div className="max-h-96 overflow-y-auto border rounded-md p-4">
+                <div className="grid grid-cols-2 gap-2">
+                  {locations.map((location) => (
+                    <Button
+                      key={location.locationId}
+                      variant={selectedBranches.includes(location.locationId) ? "default" : "outline"}
+                      size="sm"
+                      className="h-auto p-3 justify-start text-left"
+                      onClick={() => onBranchSelectionChange(
+                        location.locationId, 
+                        !selectedBranches.includes(location.locationId)
+                      )}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <MapPin className="h-4 w-4 flex-shrink-0" />
+                        <div className="flex flex-col items-start min-w-0">
+                          <span className="font-mono text-xs text-muted-foreground">
+                            {location.locationId}
+                          </span>
+                          <span className="text-sm font-medium truncate w-full">
+                            {location.locationName}
+                          </span>
+                        </div>
+                      </div>
+                    </Button>
+                  ))}
+                </div>
               </div>
             )}
             

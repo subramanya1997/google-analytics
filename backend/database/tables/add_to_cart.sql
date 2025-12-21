@@ -27,6 +27,15 @@ CREATE TABLE public.add_to_cart (
 );
 
 -- ======================================
+-- STATISTICS TARGETS FOR QUERY OPTIMIZER
+-- ======================================
+-- Increase statistics for frequently aggregated columns to improve cardinality estimates
+
+ALTER TABLE add_to_cart ALTER COLUMN user_prop_default_branch_id SET STATISTICS 1000;
+ALTER TABLE add_to_cart ALTER COLUMN param_ga_session_id SET STATISTICS 1000;
+ALTER TABLE add_to_cart ALTER COLUMN user_prop_webuserid SET STATISTICS 1000;
+
+-- ======================================
 -- ADD_TO_CART TABLE INDEXES
 -- ======================================
 
@@ -56,3 +65,8 @@ WHERE items_json IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_add_to_cart_recent 
 ON add_to_cart (tenant_id, event_date DESC) 
 WHERE event_date >= '2024-01-01';
+
+-- Covering index for location stats aggregations (eliminates heap lookups)
+CREATE INDEX IF NOT EXISTS idx_add_to_cart_location_stats_covering 
+ON add_to_cart (tenant_id, event_date, user_prop_default_branch_id) 
+INCLUDE (param_ga_session_id, first_item_price, first_item_quantity);

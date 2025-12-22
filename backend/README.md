@@ -115,8 +115,9 @@ The backend consists of three main microservices:
 
 ## 🚀 Installation & Setup
 
-### 1. Navigate to Backend
+### 1. Clone and Navigate
 ```bash
+git clone <repository_url>
 cd google-analytics/backend
 ```
 
@@ -541,34 +542,10 @@ make db_setup
 # Clean database (WARNING: Deletes all data)
 make db_clean
 
-# Optimize database performance (indexes + statistics)
-make db_optimize
-
 # Manual database operations
 uv run python scripts/init_db.py
 uv run python scripts/clear_db.py
-uv run python scripts/optimize_indexes.py
 ```
-
-### Database Performance Optimization
-
-The system includes comprehensive index optimizations for analytics queries:
-
-```bash
-# Optimize existing database (recommended after data ingestion)
-make db_optimize
-
-# This adds:
-# - 18 new indexes across all event tables
-# - 3 covering indexes for aggregation performance  
-# - Enhanced statistics for query planning
-# - Results in 40-80% faster analytics queries
-```
-
-**For detailed optimization information:**
-- See `database/OPTIMIZATION_GUIDE.md` for comprehensive details
-- See `database/migrations/QUICK_START.md` for quick reference
-- See `database/INDEX_OPTIMIZATION_SUMMARY.md` for change summary
 
 ## 🐛 Troubleshooting
 
@@ -648,6 +625,15 @@ LOG_LEVEL=DEBUG uv run uvicorn services.analytics_service:app --port 8001 --relo
 
 ## 🤝 Contributing
 
+### Development Workflow
+1. Fork the repository
+2. Create feature branch: `git checkout -b feat/new-feature`
+3. Make changes and add tests
+4. Run quality checks: `make lint test`
+5. Commit changes: `git commit -m "Add new feature"`
+6. Push to branch: `git push origin feat/new-feature`
+7. Create Pull Request
+
 ### Code Standards
 - Follow PEP 8 style guide
 - Add type hints to all functions
@@ -674,7 +660,6 @@ make dev
 # Database operations
 make db_setup
 make db_clean
-make db_optimize  # Optimize indexes and statistics for performance
 
 # Individual services
 make service_analytics

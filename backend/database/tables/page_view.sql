@@ -22,15 +22,6 @@ CREATE TABLE public.page_view (
 );
 
 -- ======================================
--- STATISTICS TARGETS FOR QUERY OPTIMIZER
--- ======================================
--- Increase statistics for frequently aggregated columns to improve cardinality estimates
-
-ALTER TABLE page_view ALTER COLUMN user_prop_default_branch_id SET STATISTICS 1000;
-ALTER TABLE page_view ALTER COLUMN param_ga_session_id SET STATISTICS 1000;
-ALTER TABLE page_view ALTER COLUMN user_prop_webuserid SET STATISTICS 1000;
-
--- ======================================
 -- PAGE_VIEW TABLE INDEXES
 -- ======================================
 
@@ -60,8 +51,3 @@ WHERE user_prop_webuserid IS NOT NULL AND param_ga_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_page_view_recent 
 ON page_view (tenant_id, event_date DESC) 
 WHERE event_date >= '2024-01-01';
-
--- Covering index for location stats aggregations (eliminates heap lookups)
-CREATE INDEX IF NOT EXISTS idx_page_view_location_stats_covering 
-ON page_view (tenant_id, event_date, user_prop_default_branch_id) 
-INCLUDE (param_ga_session_id, user_prop_webuserid);

@@ -180,7 +180,7 @@ function OAuthCallbackContent() {
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Account Authentication</CardTitle>
+          <CardTitle>Account verification & setup</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {status === "working" && (

@@ -13,61 +13,22 @@ from services.data_service.clients.tenant_client_factory import (
 )
 from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepository
 
-# Module-level thread pool for heavy synchronous operations
-# Shared across all IngestionService instances
-_INGESTION_EXECUTOR = ThreadPoolExecutor(
-    max_workers=8,  # Increased from 2 for better parallelism
-    thread_name_prefix="ingestion-worker"
-)
-
 
 class IngestionService:
     """Service for handling analytics data ingestion jobs."""
 
     def __init__(self):
         self.repo = SqlAlchemyRepository()
-
-    async def run_job_safe(
-        self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
-    ) -> None:
-        """
-        Wrapper that ensures job status is always updated, even on unexpected failures.
-        Includes timeout monitoring to prevent jobs from running indefinitely.
-        """
-        try:
-            # Set a 30-minute timeout for medium date ranges
-            await asyncio.wait_for(
-                self.run_job(job_id, tenant_id, request),
-                timeout=1800  # 30 minutes
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Job {job_id} timed out after 30 minutes")
-            try:
-                await self.repo.update_job_status(
-                    job_id, "failed",
-                    completed_at=datetime.now(),
-                    error_message="Job timed out after 30 minutes"
-                )
-            except Exception as update_error:
-                logger.error(f"Failed to update job status after timeout: {update_error}")
-        except Exception as e:
-            # Catch ANY exception that escaped run_job's try/catch
-            error_msg = str(e)
-            
-            logger.error(f"Job failed: {error_msg}", exc_info=True)
-            
-            # Use the user-friendly error message if available, otherwise create one
-            if not error_msg or error_msg == "":
-                error_msg = f"Job failed unexpectedly. Please contact administrator with job ID: {job_id}"
-            
-            try:
-                await self.repo.update_job_status(
-                    job_id, "failed",
-                    completed_at=datetime.now(),
-                    error_message=error_msg
-                )
-            except Exception as update_error:
-                logger.error(f"Failed to update job status: {update_error}")
+        # Thread pool for heavy synchronous operations
+        self._executor = ThreadPoolExecutor(
+            max_workers=2,  # Limit concurrent heavy operations
+            thread_name_prefix="ingestion-worker"
+        )
+    
+    def __del__(self):
+        """Cleanup thread pool on destruction."""
+        if hasattr(self, '_executor'):
+            self._executor.shutdown(wait=False)
 
     async def create_job(
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
@@ -114,62 +75,34 @@ class IngestionService:
             if "events" in request.data_types:
                 try:
                     logger.info(f"Processing events for job {job_id}")
-                    await self.repo.update_job_status(job_id, "processing", progress={"current": "events"})
                     event_results = await self._process_events_async(tenant_id, request)
                     results.update(event_results)
 
                 except Exception as e:
-                    logger.error(f"Failed to extract events from BigQuery: {e}", exc_info=True)
-                    # Get root cause error
-                    root_cause = str(e)
-                    if "nodename nor servname" in root_cause or "gaierror" in root_cause:
-                        raise Exception("Failed to extract events from BigQuery - Network/DNS error. Please check BigQuery configuration and network connectivity.") from e
-                    elif "credentials" in root_cause.lower() or "authentication" in root_cause.lower():
-                        raise Exception("Failed to extract events from BigQuery - Authentication error. Please check service account credentials.") from e
-                    else:
-                        raise Exception(f"Failed to extract events from BigQuery - {type(e).__name__}: {str(e)}") from e
+                    logger.error(f"Error processing events: {e}")
+                    raise
 
             # Process users from SFTP
             if "users" in request.data_types:
                 try:
                     logger.info(f"Processing users for job {job_id}")
-                    await self.repo.update_job_status(job_id, "processing", progress={"current": "users"})
                     users_count = await self._process_users(tenant_id)
                     results["users_processed"] = users_count
 
                 except Exception as e:
-                    logger.error(f"Failed to download/process users: {e}", exc_info=True)
-                    # Get root cause error
-                    root_cause = str(e)
-                    if "nodename nor servname" in root_cause or "gaierror" in root_cause:
-                        raise Exception("Failed to download users report from SFTP - Network/DNS error. Please verify SFTP hostname in tenant configuration.") from e
-                    elif "authentication" in root_cause.lower() or "permission denied" in root_cause.lower():
-                        raise Exception("Failed to download users report from SFTP - Authentication error. Please check SFTP credentials.") from e
-                    elif "no such file" in root_cause.lower() or "file not found" in root_cause.lower():
-                        raise Exception("Failed to download users report from SFTP - File not found. Please verify the file exists on the server.") from e
-                    else:
-                        raise Exception(f"Failed to download users report from SFTP - {type(e).__name__}: {str(e)}") from e
+                    logger.error(f"Error processing users: {e}")
+                    raise
 
             # Process locations from SFTP
             if "locations" in request.data_types:
                 try:
                     logger.info(f"Processing locations for job {job_id}")
-                    await self.repo.update_job_status(job_id, "processing", progress={"current": "locations"})
                     locations_count = await self._process_locations(tenant_id)
                     results["locations_processed"] = locations_count
 
                 except Exception as e:
-                    logger.error(f"Failed to download/process locations: {e}", exc_info=True)
-                    # Get root cause error
-                    root_cause = str(e)
-                    if "nodename nor servname" in root_cause or "gaierror" in root_cause:
-                        raise Exception("Failed to download locations data from SFTP - Network/DNS error. Please verify SFTP hostname in tenant configuration.") from e
-                    elif "authentication" in root_cause.lower() or "permission denied" in root_cause.lower():
-                        raise Exception("Failed to download locations data from SFTP - Authentication error. Please check SFTP credentials.") from e
-                    elif "no such file" in root_cause.lower() or "file not found" in root_cause.lower():
-                        raise Exception("Failed to download locations data from SFTP - File not found. Please verify the file exists on the server.") from e
-                    else:
-                        raise Exception(f"Failed to download locations data from SFTP - {type(e).__name__}: {str(e)}") from e
+                    logger.error(f"Error processing locations: {e}")
+                    raise
 
             # Update job status to completed
             await self.repo.update_job_status(
@@ -196,7 +129,6 @@ class IngestionService:
         """Process all event types from BigQuery asynchronously."""
         try:
             # Initialize BigQuery client using tenant configuration from database
-            logger.info(f"Fetching BigQuery configuration for tenant {tenant_id}")
             bigquery_client = await get_tenant_bigquery_client(tenant_id)
 
             if not bigquery_client:
@@ -204,9 +136,11 @@ class IngestionService:
                     f"BigQuery configuration not found for tenant {tenant_id}"
                 )
 
-            # Get all events for date range - now runs 6 queries in parallel
-            logger.info(f"Starting BigQuery extraction for {request.start_date} to {request.end_date}")
-            events_by_type = await bigquery_client.get_date_range_events_async(
+            # Get all events for date range - run sync operation in thread pool
+            loop = asyncio.get_event_loop()
+            events_by_type = await loop.run_in_executor(
+                self._executor,
+                bigquery_client.get_date_range_events,
                 request.start_date.isoformat(),
                 request.end_date.isoformat()
             )
@@ -246,7 +180,6 @@ class IngestionService:
         """Process users from SFTP."""
         try:
             # Create a fresh Azure SFTP client using tenant configuration from database
-            logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
             sftp_client = await get_tenant_sftp_client(tenant_id)
 
             if not sftp_client:
@@ -254,7 +187,6 @@ class IngestionService:
                 return 0
 
             # Get users data (Azure client handles connections internally)
-            logger.info(f"Connecting to SFTP to download users data")
             users_data = await sftp_client.get_latest_users_data()
 
             if users_data is not None and len(users_data) > 0:
@@ -307,11 +239,10 @@ class IngestionService:
 
             # First try to get from SFTP using tenant configuration
             try:
-                logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
                 sftp_client = await get_tenant_sftp_client(tenant_id)
                 if sftp_client:
                     logger.info(
-                        f"Connecting to SFTP to download locations data for tenant {tenant_id}"
+                        f"Attempting to get locations from SFTP for tenant {tenant_id}"
                     )
                     locations_data = await sftp_client.get_latest_locations_data()
                 else:
@@ -319,9 +250,8 @@ class IngestionService:
                         f"SFTP configuration not found for tenant {tenant_id}, skipping location processing"
                     )
             except Exception as e:
-                error_type = type(e).__name__
                 logger.warning(
-                    f"Failed to get locations from SFTP [{error_type}]: {e}"
+                    f"Failed to get locations from SFTP for tenant {tenant_id}: {e}"
                 )
 
             # Fallback to local file if SFTP failed or no data

@@ -22,16 +22,6 @@ CREATE TABLE public.no_search_results (
 );
 
 -- ======================================
--- STATISTICS TARGETS FOR QUERY OPTIMIZER
--- ======================================
--- Increase statistics for frequently aggregated columns to improve cardinality estimates
-
-ALTER TABLE no_search_results ALTER COLUMN user_prop_default_branch_id SET STATISTICS 1000;
-ALTER TABLE no_search_results ALTER COLUMN param_ga_session_id SET STATISTICS 1000;
-ALTER TABLE no_search_results ALTER COLUMN user_prop_webuserid SET STATISTICS 1000;
-ALTER TABLE no_search_results ALTER COLUMN param_no_search_results_term SET STATISTICS 1000;
-
--- ======================================
 -- NO_SEARCH_RESULTS TABLE INDEXES
 -- ======================================
 
@@ -39,23 +29,5 @@ ALTER TABLE no_search_results ALTER COLUMN param_no_search_results_term SET STAT
 CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_date 
 ON no_search_results (tenant_id, event_date);
 
-CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_session 
-ON no_search_results (tenant_id, param_ga_session_id);
-
-CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_user 
-ON no_search_results (tenant_id, user_prop_webuserid);
-
-CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_date_branch 
-ON no_search_results (tenant_id, event_date, user_prop_default_branch_id);
-
 CREATE INDEX IF NOT EXISTS idx_no_search_results_term 
 ON no_search_results (tenant_id, param_no_search_results_term);
-
--- Time-series index for dashboard
-CREATE INDEX IF NOT EXISTS idx_no_search_results_time_series 
-ON no_search_results (tenant_id, event_date DESC, event_timestamp DESC);
-
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_no_search_results_recent 
-ON no_search_results (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';

@@ -36,33 +36,11 @@ export function getTenantId(): string {
   return process.env.NEXT_PUBLIC_TENANT_ID || 'e0f01854-6c2e-4b76-bf7b-67f3c28dbdac'
 }
 
-export function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null
-  
-  try {
-    const userInfo = localStorage.getItem('user_info')
-    if (!userInfo) return null
-    
-    const parsed = JSON.parse(userInfo)
-    return parsed.accessToken || null
-  } catch (error) {
-    console.error('Error getting access token:', error)
-    return null
-  }
-}
-
 export function analyticsHeaders(extra?: HeadersInit): HeadersInit {
   const base: HeadersInit = {
     'Accept': 'application/json',
     'X-Tenant-Id': getTenantId(),
   }
-  
-  // Add authorization header if token exists
-  const token = getAccessToken()
-  if (token) {
-    base['Authorization'] = `Bearer ${token}`
-  }
-  
   if (!extra) return base
   // Merge, with extra taking precedence
   return { ...(base as Record<string, string>), ...(extra as Record<string, string>) }
@@ -306,44 +284,6 @@ export async function createIngestionJob(data: {
   })
 }
 
-// =============== Schedule APIs ===============
-
-// Data Ingestion Schedule
-export async function upsertDataIngestionSchedule(data: {
-  cron_expression?: string
-  status?: 'active' | 'inactive'
-}) {
-  return fetchFromDataService('data/schedule', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-}
-
-export async function getDataIngestionSchedule() {
-  return fetchFromDataService('data/schedule')
-}
-
-// Email Reports Schedule
-export async function upsertEmailSchedule(data: {
-  cron_expression?: string
-  status?: 'active' | 'inactive'
-}) {
-  return fetchFromAnalyticsService('email/schedule', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(data),
-  })
-}
-
-export async function getEmailSchedule() {
-  return fetchFromAnalyticsService('email/schedule')
-}
-
 // =============== Auth Service APIs ===============
 
 export async function authenticateWithCode(code: string) {
@@ -419,7 +359,7 @@ export async function deleteBranchEmailMapping(mappingId: string) {
 }
 
 export async function sendEmailReports(data: {
-  report_date?: string
+  report_date: string
   branch_codes?: string[]
 }) {
   return fetchFromAnalyticsService('email/send-reports', {

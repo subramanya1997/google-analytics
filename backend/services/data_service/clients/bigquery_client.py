@@ -2,21 +2,12 @@
 Enhanced BigQuery client for comprehensive GA4 analytics data extraction
 """
 
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 
 import pandas as pd
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from loguru import logger
-
-# Dedicated thread pool for BigQuery operations
-# Allows parallel extraction of all 6 event types
-_BIGQUERY_EXECUTOR = ThreadPoolExecutor(
-    max_workers=6,  # One per event type
-    thread_name_prefix="bigquery-worker"
-)
 
 
 class BigQueryClient:
@@ -44,7 +35,6 @@ class BigQueryClient:
     ) -> Dict[str, List[Dict[str, Any]]]:
         """
         Get all event types for a date range, properly structured for analytics.
-        (Legacy synchronous method - kept for backward compatibility)
 
         Returns:
             Dictionary with event types as keys and lists of records as values
@@ -73,62 +63,6 @@ class BigQueryClient:
                 logger.error(f"Error extracting {event_type} events: {e}")
                 results[event_type] = []
 
-        return results
-
-    async def get_date_range_events_async(
-        self, start_date: str, end_date: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """
-        Get all event types in parallel for maximum performance.
-        
-        Runs all 6 event type extractions concurrently using thread pool,
-        providing up to 6x performance improvement over sequential extraction.
-
-        Args:
-            start_date: Start date in YYYY-MM-DD format
-            end_date: End date in YYYY-MM-DD format
-
-        Returns:
-            Dictionary with event types as keys and lists of records as values
-        """
-        logger.info(f"Starting parallel extraction for {start_date} to {end_date}")
-        
-        event_extractors = {
-            "purchase": self._extract_purchase_events,
-            "add_to_cart": self._extract_add_to_cart_events,
-            "page_view": self._extract_page_view_events,
-            "view_search_results": self._extract_view_search_results_events,
-            "no_search_results": self._extract_no_search_results_events,
-            "view_item": self._extract_view_item_events,
-        }
-
-        # Run all extractors in parallel using thread pool
-        loop = asyncio.get_event_loop()
-        tasks = []
-        for event_type, extractor in event_extractors.items():
-            logger.info(f"Scheduling {event_type} extraction")
-            task = loop.run_in_executor(
-                _BIGQUERY_EXECUTOR, 
-                extractor, 
-                start_date, 
-                end_date
-            )
-            tasks.append((event_type, task))
-
-        # Wait for all tasks to complete
-        results = {}
-        for event_type, task in tasks:
-            try:
-                events = await task
-                results[event_type] = events
-                logger.info(f"Extracted {len(events)} {event_type} events")
-            except Exception as e:
-                logger.error(f"Error extracting {event_type} events: {e}")
-                results[event_type] = []
-
-        total_events = sum(len(events) for events in results.values())
-        logger.info(f"Parallel extraction complete: {total_events} total events across all types")
-        
         return results
 
     def _execute_query(self, query: str) -> pd.DataFrame:

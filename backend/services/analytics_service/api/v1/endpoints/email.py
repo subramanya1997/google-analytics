@@ -9,7 +9,6 @@ from loguru import logger
 
 from services.analytics_service.api.dependencies import get_tenant_id
 from common.config import get_settings
-from common.database import get_tenant_service_status
 from services.analytics_service.api.v1.models import (
     BranchEmailMappingRequest,
     BranchEmailMappingResponse,
@@ -193,43 +192,13 @@ async def send_reports(
     db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
 ):
     """
-    Initiate automated branch report distribution via email.
-
-    Creates and queues a background job for generating branch-specific analytics
-    reports and distributing them to configured sales representatives via SMTP.
-
-    Args:
-        request (SendReportsRequest): Report distribution request containing:
-            - report_date (date): Date for report generation
-            - branch_codes (Optional[List[str]]): Specific branches or None for all
-        background_tasks (BackgroundTasks): FastAPI background task scheduler
-        tenant_id (str): Unique tenant identifier (from X-Tenant-Id header)
-        db_client (AnalyticsPostgresClient): Database client dependency
-
-    Returns:
-        EmailJobResponse: Job information containing:
-            - job_id (str): Unique job identifier for progress tracking
-            - status (str): Initial job status
-            - tenant_id (str): Tenant identifier
-            - report_date (date): Report generation date
-            - target_branches (List[str]): Target branch codes
-            - message (Optional[str]): Status message
-
-    Raises:
-        HTTPException: 500 error for database failures or job creation errors
+    Send individual branch reports via email.
+    
+    Generates individual branch reports for the specified date and branches, 
+    then sends them to the configured sales representatives. Each recipient gets 
+    individual reports for each branch they handle.
     """
     try:
-        # Check SMTP service status
-        service_status = await get_tenant_service_status(tenant_id, "analytics-service")
-        
-        if not service_status["smtp"]["enabled"]:
-            error_msg = service_status["smtp"]["error"] or "SMTP service is disabled"
-            logger.warning(f"Email sending blocked for tenant {tenant_id}: {error_msg}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot send emails. SMTP service is disabled: {error_msg}"
-            )
-        
         # Initialize email service
         email_service = EmailService(db_client)
         

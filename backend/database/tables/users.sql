@@ -36,14 +36,6 @@ CREATE TABLE public.users (
 );
 
 -- ======================================
--- STATISTICS TARGETS FOR QUERY OPTIMIZER
--- ======================================
--- Increase statistics for frequently joined columns to improve cardinality estimates
-
-ALTER TABLE users ALTER COLUMN user_id SET STATISTICS 1000;
-ALTER TABLE users ALTER COLUMN tenant_id SET STATISTICS 1000;
-
--- ======================================
 -- USERS TABLE CONSTRAINTS AND INDEXES
 -- ======================================
 

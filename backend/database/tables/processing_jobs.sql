@@ -4,11 +4,11 @@ CREATE TABLE public.processing_jobs (
   tenant_id uuid NOT NULL,
   job_id character varying(255) NOT NULL,
   status character varying(50) NOT NULL,
-  data_types jsonb NOT NULL,
+  data_types json NOT NULL,
   start_date date NOT NULL,
   end_date date NOT NULL,
-  progress jsonb NOT NULL,
-  records_processed jsonb NOT NULL,
+  progress json NOT NULL,
+  records_processed json NOT NULL,
   error_message text,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   started_at timestamp with time zone,
@@ -16,16 +16,6 @@ CREATE TABLE public.processing_jobs (
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
   PRIMARY KEY (id)
 );
-
--- ======================================
--- STATISTICS TARGETS FOR QUERY OPTIMIZER
--- ======================================
--- Increase statistics for frequently filtered/joined columns to improve cardinality estimates
-
-ALTER TABLE processing_jobs ALTER COLUMN tenant_id SET STATISTICS 1000;
-ALTER TABLE processing_jobs ALTER COLUMN job_id SET STATISTICS 1000;
-ALTER TABLE processing_jobs ALTER COLUMN status SET STATISTICS 1000;
-ALTER TABLE processing_jobs ALTER COLUMN created_at SET STATISTICS 1000;
 
 -- ======================================
 -- PROCESSING_JOBS TABLE INDEXES

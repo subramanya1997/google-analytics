@@ -96,22 +96,16 @@ class EmailService:
             if not email_config:
                 raise Exception("Email configuration not found for tenant")
 
-            # Get ALL branch email mappings in one query (optimization)
-            all_mappings = await self.db_client.get_branch_email_mappings(tenant_id, None)
-            
-            if not all_mappings:
-                raise Exception("No branch email mappings configured")
-            
-            # Filter mappings by requested branches if specified
+            # Get branch email mappings
             if request.branch_codes:
-                filtered_mappings = [
-                    m for m in all_mappings 
-                    if m["branch_code"] in request.branch_codes
-                ]
+                # Send to specific branches
+                target_branches = request.branch_codes
             else:
-                filtered_mappings = all_mappings
-            
-            if not filtered_mappings:
+                # Send to all branches with mappings
+                all_mappings = await self.db_client.get_branch_email_mappings(tenant_id, None)
+                target_branches = list(set(mapping["branch_code"] for mapping in all_mappings))
+
+            if not target_branches:
                 raise Exception("No branches found to send reports to")
 
             # Send individual branch reports
@@ -119,17 +113,12 @@ class EmailService:
             emails_sent = 0
             emails_failed = 0
             
-            # Group mappings by branch for easier processing
-            from collections import defaultdict
-            mappings_by_branch = defaultdict(list)
-            for mapping in filtered_mappings:
-                mappings_by_branch[mapping["branch_code"]].append(mapping)
-            
-            logger.info(f"Generating individual branch reports for {len(mappings_by_branch)} branches")
+            logger.info(f"Generating individual branch reports for branches: {target_branches}")
             
             try:
                 # Send individual reports for each branch
-                for branch_code, branch_mappings in mappings_by_branch.items():
+                for branch_code in target_branches:
+                    branch_mappings = await self.db_client.get_branch_email_mappings(tenant_id, branch_code)
                     
                     for mapping in branch_mappings:
                         if mapping.get("is_enabled", True):
@@ -176,15 +165,8 @@ class EmailService:
                 logger.error(f"Error generating individual branch reports: {report_error}")
 
             # Update job completion status
-            # Use different status for partial failures
-            if emails_failed > 0 and emails_sent > 0:
-                final_status = "completed_with_errors"
-            elif emails_failed > 0 and emails_sent == 0:
-                final_status = "failed"
-            else:
-                final_status = "completed"
-            
             completion_data = {
+                "status": "completed",
                 "completed_at": datetime.now(),
                 "total_emails": total_emails,
                 "emails_sent": emails_sent,
@@ -193,11 +175,11 @@ class EmailService:
             
             await self.db_client.update_email_job_status(
                 job_id,
-                final_status,
+                "completed",
                 completion_data
             )
             
-            logger.info(f"Email job {job_id} finished with status '{final_status}': {emails_sent}/{total_emails} sent successfully")
+            logger.info(f"Completed email job {job_id}: {emails_sent}/{total_emails} sent successfully")
 
         except Exception as e:
             logger.error(f"Email job {job_id} failed: {e}")

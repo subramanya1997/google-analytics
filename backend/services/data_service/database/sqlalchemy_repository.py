@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
 import uuid
 from datetime import date, datetime
@@ -123,7 +121,6 @@ class SqlAlchemyRepository:
                 return 0
 
             # normalize event_date, coerce types, filter to known columns
-            # Optimized for performance with large datasets
             normalized: List[Dict[str, Any]] = []
             table_cols = set(c.name for c in table.c)
             decimal_fields = {
@@ -131,9 +128,6 @@ class SqlAlchemyRepository:
                 "add_to_cart": {"first_item_price"},
                 "view_item": {"first_item_price"},
             }.get(event_type, set())
-            
-            # Pre-check if we need JSON parsing (only once, not per record)
-            has_json_fields = "items_json" in table_cols or "raw_data" in table_cols
 
             for ev in events_data:
                 ev_copy: Dict[str, Any] = {}
@@ -141,8 +135,8 @@ class SqlAlchemyRepository:
                 for k, v in ev.items():
                     if k not in table_cols:
                         continue
-                    # JSON fields: parse string to python (only if needed)
-                    if has_json_fields and k in ("items_json", "raw_data") and isinstance(v, str):
+                    # JSON fields: parse string to python
+                    if k in ("items_json", "raw_data") and isinstance(v, str):
                         try:
                             v = json.loads(v)
                         except Exception:
@@ -154,8 +148,6 @@ class SqlAlchemyRepository:
                         except Exception:
                             pass
                     ev_copy[k] = v
-                    
-                # Date conversion - optimized
                 ev_date = ev_copy.get("event_date")
                 if isinstance(ev_date, str) and len(ev_date) == 8 and ev_date.isdigit():
                     ev_copy["event_date"] = date(
@@ -165,27 +157,24 @@ class SqlAlchemyRepository:
                 ev_copy["tenant_id"] = tenant_uuid_str
                 normalized.append(ev_copy)
 
-            # Batch inserts to avoid PostgreSQL parameter limit (32,767)
-            total = len(normalized)
-            
-            if total == 0:
-                logger.info(f"No {event_type} events to insert")
-                return 0
-            
-            # Safe batch size: 32,767 params ÷ ~19 columns ≈ 1,724 max, use 1,500 for safety
-            batch_size = 1500
-            logger.info(f"Inserting {total} {event_type} events in batches of {batch_size}")
-            
-            for i in range(0, total, batch_size):
+            batch_size = 1000
+            total = 0
+            logger.info(
+                f"Inserting {len(normalized)} new {event_type} events in batches of {batch_size}"
+            )
+            for i in range(0, len(normalized), batch_size):
                 batch = normalized[i : i + batch_size]
                 ins = table.insert().values(batch)
-                await session.execute(ins)
-                logger.debug(f"Inserted batch {i//batch_size + 1}: {len(batch)} {event_type} events")
-            
+                result = await session.execute(ins)
+                batch_count = result.rowcount or 0
+                total += batch_count
+                logger.debug(
+                    f"Inserted batch {i//batch_size + 1}: {batch_count} {event_type} events"
+                )
+
             await session.commit()
-            
             logger.info(
-                f"Successfully inserted {total} {event_type} events for tenant {tenant_id}"
+                f"Successfully inserted {total} new {event_type} events for tenant {tenant_id}"
             )
             return total
 

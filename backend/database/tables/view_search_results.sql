@@ -22,6 +22,16 @@ CREATE TABLE public.view_search_results (
 );
 
 -- ======================================
+-- STATISTICS TARGETS FOR QUERY OPTIMIZER
+-- ======================================
+-- Increase statistics for frequently aggregated columns to improve cardinality estimates
+
+ALTER TABLE view_search_results ALTER COLUMN user_prop_default_branch_id SET STATISTICS 1000;
+ALTER TABLE view_search_results ALTER COLUMN param_ga_session_id SET STATISTICS 1000;
+ALTER TABLE view_search_results ALTER COLUMN user_prop_webuserid SET STATISTICS 1000;
+ALTER TABLE view_search_results ALTER COLUMN param_search_term SET STATISTICS 1000;
+
+-- ======================================
 -- VIEW_SEARCH_RESULTS TABLE INDEXES
 -- ======================================
 
@@ -32,10 +42,25 @@ ON view_search_results (tenant_id, event_date);
 CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_session 
 ON view_search_results (tenant_id, param_ga_session_id);
 
+CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_user 
+ON view_search_results (tenant_id, user_prop_webuserid);
+
+CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_date_branch 
+ON view_search_results (tenant_id, event_date, user_prop_default_branch_id);
+
 CREATE INDEX IF NOT EXISTS idx_view_search_results_term 
 ON view_search_results (tenant_id, param_search_term);
+
+-- Time-series index for dashboard
+CREATE INDEX IF NOT EXISTS idx_view_search_results_time_series 
+ON view_search_results (tenant_id, event_date DESC, event_timestamp DESC);
 
 -- Specialized index for search conversion analysis
 CREATE INDEX IF NOT EXISTS idx_search_session_lookup 
 ON view_search_results (param_ga_session_id, tenant_id) 
 WHERE param_ga_session_id IS NOT NULL;
+
+-- Partial index for recent data
+CREATE INDEX IF NOT EXISTS idx_view_search_results_recent 
+ON view_search_results (tenant_id, event_date DESC) 
+WHERE event_date >= '2024-01-01';

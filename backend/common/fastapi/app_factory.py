@@ -62,10 +62,16 @@ def create_fastapi_app(
             allow_headers=["*"],
         )
     else:
-        # Allow all origins in development
+        # Allow common development origins
+        # Note: allow_credentials=True is incompatible with allow_origins=["*"]
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=[
+                "http://localhost:3000",
+                "http://localhost:3001", 
+                "http://127.0.0.1:3000",
+                "http://127.0.0.1:3001",
+            ],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

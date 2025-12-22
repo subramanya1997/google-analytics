@@ -22,6 +22,8 @@ class Tenants(Base):
     bigquery_credentials: Mapped[Optional[dict]] = mapped_column(JSONB)
     postgres_config: Mapped[Optional[dict]] = mapped_column(JSONB)
     sftp_config: Mapped[Optional[dict]] = mapped_column(JSONB)
+    email_schedule: Mapped[Optional[str]] = mapped_column(String(255))
+    data_ingestion_schedule: Mapped[Optional[str]] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     __table_args__ = (

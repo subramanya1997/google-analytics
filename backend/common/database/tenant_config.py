@@ -3,6 +3,7 @@ Tenant configuration utilities for retrieving configurations from the database.
 """
 import json
 from typing import Dict, Any, Optional
+from functools import lru_cache
 from sqlalchemy import text
 from loguru import logger
 
@@ -150,16 +151,10 @@ class TenantConfigManager:
             return False
 
 
-# Global instance for easy access
-_tenant_config_manager: Optional[TenantConfigManager] = None
-
-
+@lru_cache(maxsize=10)
 def get_tenant_config_manager(service_name: str = None) -> TenantConfigManager:
-    """Get a cached tenant config manager instance."""
-    global _tenant_config_manager
-    if _tenant_config_manager is None:
-        _tenant_config_manager = TenantConfigManager(service_name)
-    return _tenant_config_manager
+    """Get a cached tenant config manager instance per service."""
+    return TenantConfigManager(service_name)
 
 
 async def get_tenant_bigquery_config(tenant_id: str, service_name: str = None) -> Optional[Dict[str, Any]]:
@@ -178,3 +173,68 @@ async def get_tenant_sftp_config(tenant_id: str, service_name: str = None) -> Op
     """Convenience function to get SFTP config for a tenant."""
     manager = get_tenant_config_manager(service_name)
     return await manager.get_sftp_config(tenant_id)
+
+
+async def get_tenant_service_status(tenant_id: str, service_name: str = None) -> Dict[str, Dict[str, Any]]:
+    """
+    Get service enable/disable status for a tenant.
+    
+    Args:
+        tenant_id: The tenant ID
+        service_name: Service name for DB connection (optional)
+    
+    Returns:
+        Dict containing service status for each service:
+        {
+            "bigquery": {"enabled": bool, "error": str|None},
+            "sftp": {"enabled": bool, "error": str|None},
+            "smtp": {"enabled": bool, "error": str|None}
+        }
+    """
+    try:
+        async with get_async_db_session(service_name) as session:
+            result = await session.execute(
+                text("""
+                    SELECT 
+                        bigquery_enabled, bigquery_validation_error,
+                        sftp_enabled, sftp_validation_error,
+                        smtp_enabled, smtp_validation_error
+                    FROM tenants 
+                    WHERE id = :tenant_id AND is_active = true
+                """),
+                {"tenant_id": tenant_id}
+            )
+            row = result.fetchone()
+            
+            if not row:
+                logger.warning(f"Tenant not found or inactive: {tenant_id}")
+                # Return all services disabled if tenant not found
+                return {
+                    "bigquery": {"enabled": False, "error": "Tenant not found or inactive"},
+                    "sftp": {"enabled": False, "error": "Tenant not found or inactive"},
+                    "smtp": {"enabled": False, "error": "Tenant not found or inactive"}
+                }
+            
+            return {
+                "bigquery": {
+                    "enabled": row.bigquery_enabled if row.bigquery_enabled is not None else True,
+                    "error": row.bigquery_validation_error
+                },
+                "sftp": {
+                    "enabled": row.sftp_enabled if row.sftp_enabled is not None else True,
+                    "error": row.sftp_validation_error
+                },
+                "smtp": {
+                    "enabled": row.smtp_enabled if row.smtp_enabled is not None else True,
+                    "error": row.smtp_validation_error
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Failed to get service status for tenant {tenant_id}: {e}")
+        # Return all services disabled on error
+        return {
+            "bigquery": {"enabled": False, "error": f"Failed to retrieve status: {str(e)}"},
+            "sftp": {"enabled": False, "error": f"Failed to retrieve status: {str(e)}"},
+            "smtp": {"enabled": False, "error": f"Failed to retrieve status: {str(e)}"}
+        }

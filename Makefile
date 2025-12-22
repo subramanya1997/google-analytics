@@ -1,4 +1,4 @@
-.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean services_start service_analytics service_data service_auth stop_services clean logs
+.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean db_optimize services_start service_analytics service_data service_auth stop_services clean logs
 
 # Variables
 BACKEND_DIR = backend

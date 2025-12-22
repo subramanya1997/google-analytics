@@ -39,6 +39,14 @@ CREATE TABLE public.locations (
 );
 
 -- ======================================
+-- STATISTICS TARGETS FOR QUERY OPTIMIZER
+-- ======================================
+-- Increase statistics for frequently joined columns to improve cardinality estimates
+
+ALTER TABLE locations ALTER COLUMN warehouse_code SET STATISTICS 1000;
+ALTER TABLE locations ALTER COLUMN tenant_id SET STATISTICS 1000;
+
+-- ======================================
 -- LOCATIONS TABLE CONSTRAINTS AND INDEXES  
 -- ======================================
 

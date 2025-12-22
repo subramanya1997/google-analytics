@@ -19,8 +19,7 @@ from .session import (
     
     # Database utilities
     database_exists,
-    create_database,
-    ensure_database_exists,
+    create_database
 )
 from .tenant_config import (
     TenantConfigManager, 
@@ -29,6 +28,12 @@ from .tenant_config import (
     get_tenant_postgres_config,
     get_tenant_sftp_config,
     get_tenant_service_status
+)
+from .tenant_provisioning import (
+    get_tenant_database_name,
+    tenant_database_exists,
+    provision_tenant_database,
+    drop_tenant_database,
 )
 
 __all__ = [
@@ -50,8 +55,7 @@ __all__ = [
     
     # Database utilities
     "database_exists",
-    "create_database", 
-    "ensure_database_exists",
+    "create_database",
     
     # Tenant configuration
     "TenantConfigManager",
@@ -60,4 +64,10 @@ __all__ = [
     "get_tenant_postgres_config", 
     "get_tenant_sftp_config",
     "get_tenant_service_status",
+    
+    # Tenant provisioning
+    "get_tenant_database_name",
+    "tenant_database_exists",
+    "provision_tenant_database",
+    "drop_tenant_database",
 ]

@@ -234,7 +234,7 @@ JOB_TIMEOUT_SECONDS=1800  # 30 minutes
 
 ### Tenant Configuration
 
-Each tenant's BigQuery and SFTP configuration is stored in the `tenants` table:
+Each tenant's BigQuery and SFTP configuration is stored in the `tenant_config` table:
 
 ```sql
 SELECT 
@@ -242,7 +242,7 @@ SELECT
   bigquery_dataset_id,
   bigquery_credentials,  -- Service account JSON
   sftp_config            -- {host, port, username, password}
-FROM tenants 
+FROM tenant_config 
 WHERE id = 'tenant-uuid';
 ```
 
@@ -357,7 +357,7 @@ uv run python scripts/cancel_running_jobs.py
 **Solution**: Verify tenant BigQuery configuration
 
 ```sql
-SELECT bigquery_credentials FROM tenants WHERE id = 'tenant-uuid';
+SELECT bigquery_credentials FROM tenant_config WHERE id = 'tenant-uuid';
 ```
 
 ### SFTP File Not Found

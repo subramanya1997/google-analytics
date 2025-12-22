@@ -1,5 +1,5 @@
 -- Generated schema for public.processing_jobs
-CREATE TABLE public.processing_jobs (
+CREATE TABLE IF NOT EXISTS public.processing_jobs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   job_id character varying(255) NOT NULL,

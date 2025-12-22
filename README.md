@@ -151,7 +151,6 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=analytics_user
 POSTGRES_PASSWORD=your_password
-POSTGRES_DATABASE=google_analytics_db
 
 # Service Ports
 ANALYTICS_SERVICE_PORT=8001

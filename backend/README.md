@@ -55,24 +55,25 @@ The backend consists of three main microservices:
 
 ### Database Setup
 
-1. **Create Database and User**
+1. **Create PostgreSQL User (Tenant Databases Created Automatically)**
    ```sql
    -- Connect to PostgreSQL as superuser
    sudo -u postgres psql
    
-   -- Create database
-   CREATE DATABASE google_analytics_db;
-   
    -- Create user with password
    CREATE USER analytics_user WITH PASSWORD 'your_secure_password';
    
-   -- Grant privileges
-   GRANT ALL PRIVILEGES ON DATABASE google_analytics_db TO analytics_user;
-   GRANT CREATE ON SCHEMA public TO analytics_user;
+   -- Grant database creation privileges (needed for tenant provisioning)
+   ALTER USER analytics_user CREATEDB;
    
    -- Exit psql
    \q
    ```
+   
+   **Note**: Tenant-specific databases are **automatically created** during OAuth authentication.
+   - Format: `google-analytics-{tenant_id}`
+   - Example: `google-analytics-550e8400-e29b-41d4-a716-446655440000`
+   - Each tenant has complete data isolation (SOC2 compliant)
 
 2. **Environment Configuration**
    ```bash
@@ -86,11 +87,12 @@ The backend consists of three main microservices:
    Required environment variables:
    ```env
    # Database Configuration (PostgreSQL)
+   # Note: No POSTGRES_DATABASE needed - each tenant gets their own database
+   # Format: google-analytics-{tenant_id} (created automatically)
    POSTGRES_HOST=localhost
    POSTGRES_PORT=5432
    POSTGRES_USER=analytics_user
    POSTGRES_PASSWORD=your_secure_password
-   POSTGRES_DATABASE=google_analytics_db
    
    # Database Connection Pool Settings
    DATABASE_POOL_SIZE=10
@@ -112,6 +114,11 @@ The backend consists of three main microservices:
    # Auth Service Base URL
    BASE_URL=https://your-domain.com
    ```
+   
+   **Important**: This system uses **tenant-isolated databases** for SOC2 compliance:
+   - Each tenant gets their own PostgreSQL database: `google-analytics-{tenant_id}`
+   - Databases are automatically created during OAuth authentication
+   - No master/shared database - complete data isolation between tenants
 
 ## 🚀 Installation & Setup
 
@@ -130,12 +137,16 @@ uv sync
 ```
 
 ### 3. Database Schema Setup
-```bash
-# Initialize database tables and functions
-make db_setup
 
-# Or manually
-uv run python scripts/init_db.py
+**Not required!** Tenant databases are automatically provisioned during authentication.
+
+For manual tenant database creation (if needed):
+```bash
+# Manually provision a tenant database
+uv run python scripts/init_db.py <tenant_id>
+
+# Example:
+uv run python scripts/init_db.py 550e8400-e29b-41d4-a716-446655440000
 ```
 
 ### 4. Verify Installation
@@ -327,7 +338,6 @@ POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USER=analytics_user
 POSTGRES_PASSWORD=your_secure_password
-POSTGRES_DATABASE=google_analytics_db
 
 # Database Connection Pool Settings
 DATABASE_POOL_SIZE=10
@@ -535,35 +545,24 @@ uv run mypy .
 
 ### Database Operations
 ```bash
-# Setup database
-make db_setup
+# Tenant databases are created automatically during authentication
+# No setup command needed!
 
-# Clean database (WARNING: Deletes all data)
+# Manual tenant database creation (if needed for testing)
+uv run python scripts/init_db.py <tenant_id>
+
+# Example:
+uv run python scripts/init_db.py 550e8400-e29b-41d4-a716-446655440000
+
+# Clean database (WARNING: Use with extreme caution)
 make db_clean
 
-# Optimize database performance (indexes + statistics)
-make db_optimize
-
-# Manual database operations
-uv run python scripts/init_db.py
-uv run python scripts/clear_db.py
-uv run python scripts/optimize_indexes.py
+# Note: Database optimization happens per-tenant automatically
 ```
 
 ### Database Performance Optimization
 
 The system includes comprehensive index optimizations for analytics queries:
-
-```bash
-# Optimize existing database (recommended after data ingestion)
-make db_optimize
-
-# This adds:
-# - 18 new indexes across all event tables
-# - 3 covering indexes for aggregation performance  
-# - Enhanced statistics for query planning
-# - Results in 40-80% faster analytics queries
-```
 
 **For detailed optimization information:**
 - See `database/OPTIMIZATION_GUIDE.md` for comprehensive details
@@ -581,10 +580,10 @@ make db_optimize
    brew services list | grep postgres  # macOS
    
    # Test connection (using environment variables)
-   psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DATABASE
+   psql -h $POSTGRES_HOST -U $POSTGRES_USER -d postgres
    
-   # Or with explicit values
-   psql -h localhost -U analytics_user -d google_analytics_db
+   # Test connection to a tenant database
+   psql -h localhost -U analytics_user -d google-analytics-{tenant_id}
    ```
 
 2. **Port Already in Use**
@@ -671,10 +670,8 @@ make setup
 # Start development environment
 make dev
 
-# Database operations
-make db_setup
-make db_clean
-make db_optimize  # Optimize indexes and statistics for performance
+# Database operations (tenant DBs created automatically)
+# Manual tenant DB creation (if needed): python scripts/init_db.py <tenant_id>
 
 # Individual services
 make service_analytics

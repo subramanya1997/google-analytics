@@ -1,5 +1,5 @@
 -- Generated schema for public.locations
-CREATE TABLE public.locations (
+CREATE TABLE IF NOT EXISTS public.locations (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   warehouse_id character varying(100),

@@ -1,5 +1,5 @@
 -- Generated schema for public.add_to_cart
-CREATE TABLE public.add_to_cart (
+CREATE TABLE IF NOT EXISTS public.add_to_cart (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   event_date date NOT NULL,

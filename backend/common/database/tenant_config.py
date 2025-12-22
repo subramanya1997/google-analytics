@@ -43,15 +43,15 @@ class TenantConfigManager:
             Dict containing all tenant configurations or None if not found
         """
         try:
-            async with get_async_db_session(self.service_name) as session:
+            async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text("""
                         SELECT 
-                            id, name, domain,
+                            id, name,
                             bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
-                            postgres_config, sftp_config,
+                            postgres_config, sftp_config, email_config,
                             is_active, created_at, updated_at
-                        FROM tenants 
+                        FROM tenant_config 
                         WHERE id = :tenant_id AND is_active = true
                     """),
                     {"tenant_id": tenant_id}
@@ -66,11 +66,11 @@ class TenantConfigManager:
                 bigquery_credentials = _safe_json_parse(row.bigquery_credentials)
                 postgres_config = _safe_json_parse(row.postgres_config)
                 sftp_config = _safe_json_parse(row.sftp_config)
+                email_config = _safe_json_parse(row.email_config)
                 
                 return {
                     "tenant_id": row.id,
                     "name": row.name,
-                    "domain": row.domain,
                     "bigquery_config": {
                         "project_id": row.bigquery_project_id,
                         "dataset_id": row.bigquery_dataset_id,
@@ -78,6 +78,7 @@ class TenantConfigManager:
                     },
                     "postgres_config": postgres_config,
                     "sftp_config": sftp_config,
+                    "email_config": email_config,
                     "is_active": row.is_active,
                     "created_at": row.created_at,
                     "updated_at": row.updated_at
@@ -137,9 +138,9 @@ class TenantConfigManager:
             True if tenant exists and is active, False otherwise
         """
         try:
-            async with get_async_db_session(self.service_name) as session:
+            async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
                 result = await session.execute(
-                    text("SELECT COUNT(*) FROM tenants WHERE id = :tenant_id AND is_active = true"),
+                    text("SELECT COUNT(*) FROM tenant_config WHERE id = :tenant_id AND is_active = true"),
                     {"tenant_id": tenant_id}
                 )
                 count = result.scalar()
@@ -192,14 +193,14 @@ async def get_tenant_service_status(tenant_id: str, service_name: str = None) ->
         }
     """
     try:
-        async with get_async_db_session(service_name) as session:
+        async with get_async_db_session(service_name, tenant_id=tenant_id) as session:
             result = await session.execute(
                 text("""
                     SELECT 
                         bigquery_enabled, bigquery_validation_error,
                         sftp_enabled, sftp_validation_error,
                         smtp_enabled, smtp_validation_error
-                    FROM tenants 
+                    FROM tenant_config 
                     WHERE id = :tenant_id AND is_active = true
                 """),
                 {"tenant_id": tenant_id}

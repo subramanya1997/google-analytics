@@ -5,12 +5,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, Body
 from pydantic import BaseModel
 from loguru import logger
-from sqlalchemy import text
 
 from services.analytics_service.api.dependencies import get_tenant_id
 from common.scheduler_client import create_scheduler_client
 from common.config import get_settings
-from common.database import get_async_db_session
 
 
 router = APIRouter()
@@ -95,7 +93,7 @@ async def upsert_email_schedule(
         job_config = {
             "job_name": job_name,
             "app_name": app_name,
-            "url": "https://devenv-ai-tech-assistant.extremeb2b.com/analytics/api/v1/email/send-reports",
+            "url": f"{_settings.ANALYTICS_SERVICE_URL}/api/v1/email/send-reports",
             "method": "POST",
             "cron_exp": cron_exp,
             "status": schedule_status,
@@ -136,21 +134,8 @@ async def upsert_email_schedule(
                 body=job_config["body"]
             )
         
-        # Update the cron expression in the database
-        try:
-            async with get_async_db_session("analytics-service") as session:
-                await session.execute(
-                    text("""
-                        UPDATE tenants 
-                        SET email_schedule = :cron_exp, updated_at = NOW()
-                        WHERE id = :tenant_id
-                    """),
-                    {"cron_exp": cron_exp, "tenant_id": tenant_id}
-                )
-                await session.commit()
-        except Exception as db_error:
-            logger.error(f"Failed to update email_schedule in database: {db_error}")
-            # Don't fail the whole operation if database update fails
+        # Schedule is stored in external scheduler service (source of truth)
+        # No need to duplicate in database
         
         return {
             "message": f"Schedule {'updated' if schedule_exists else 'created'} successfully",

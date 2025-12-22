@@ -10,121 +10,55 @@ load_dotenv()
 # Add the project's root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.database.session import get_async_engine, ensure_database_exists
+from common.database import provision_tenant_database
 
-# Define paths
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.path.join(BASE_DIR, "..", "database")
-TABLES_DIR = os.path.join(DB_DIR, "tables")
-FUNCTIONS_DIR = os.path.join(DB_DIR, "functions")
-
-# Define the correct order for table creation to respect dependencies
-TABLE_CREATION_ORDER = [
-    "tenants.sql",
-    "branch_email_mappings.sql",
-    "email_sending_jobs.sql",
-    "email_send_history.sql",
-    "users.sql",
-    "locations.sql",
-    "processing_jobs.sql",
-    "page_view.sql",
-    "add_to_cart.sql",
-    "purchase.sql",
-    "view_item.sql",
-    "view_search_results.sql",
-    "no_search_results.sql"
-]
+# Paths no longer needed - provisioning handled by tenant_provisioning.py
 
 async def main():
-    """Main function to initialize the database."""
-    logger.info("Starting database initialization...")
+    """
+    DEPRECATED: Master database concept removed for SOC2 compliance.
     
-    # First, ensure the database exists
-    logger.info("Ensuring database exists...")
-    if not ensure_database_exists():
-        logger.error("Failed to ensure database exists")
+    Tenant databases are automatically created during OAuth authentication.
+    
+    This script is kept for manual tenant database creation if needed.
+    Usage: python init_db.py <tenant_id>
+    
+    Example: python init_db.py 550e8400-e29b-41d4-a716-446655440000
+    """
+    logger.warning("=" * 80)
+    logger.warning("NOTICE: Master database concept has been removed.")
+    logger.warning("Tenant databases are automatically created during authentication.")
+    logger.warning("=" * 80)
+    
+    # Check if tenant_id provided as command line argument
+    if len(sys.argv) < 2:
+        logger.info("")
+        logger.info("For manual tenant database creation, provide tenant_id:")
+        logger.info(f"  python {sys.argv[0]} <tenant_id>")
+        logger.info("")
+        logger.info("Example:")
+        logger.info(f"  python {sys.argv[0]} 550e8400-e29b-41d4-a716-446655440000")
+        logger.info("")
         return
+    
+    tenant_id = sys.argv[1]
+    logger.info(f"Manually provisioning database for tenant: {tenant_id}")
     
     try:
-        engine = get_async_engine()
-    except Exception as e:
-        logger.error(f"Failed to get database engine: {e}")
-        return
-
-    sql_files_to_execute = []
-
-    # Get tables in the specified order
-    logger.info(f"Looking for table SQL files in: {TABLES_DIR}")
-    
-    # Get all SQL files from the directory
-    try:
-        all_table_files = {f for f in os.listdir(TABLES_DIR) if f.endswith(".sql")}
-    except FileNotFoundError:
-        logger.error(f"Directory not found: {TABLES_DIR}")
-        return
-
-    # Add files in the specified order
-    for filename in TABLE_CREATION_ORDER:
-        if filename in all_table_files:
-            sql_files_to_execute.append(os.path.join(TABLES_DIR, filename))
-            all_table_files.remove(filename)
+        success = await provision_tenant_database(tenant_id, force_recreate=False)
+        
+        if success:
+            logger.info(f"✓ Successfully provisioned database for tenant {tenant_id}")
+            from common.database.tenant_provisioning import get_tenant_database_name
+            db_name = get_tenant_database_name(tenant_id)
+            logger.info(f"✓ Database name: {db_name}")
         else:
-            logger.warning(f"Specified table file not found, skipping: {filename}")
+            logger.error(f"✗ Failed to provision database for tenant {tenant_id}")
+            sys.exit(1)
             
-    # Add any remaining files that were not in the ordered list
-    if all_table_files:
-        logger.info(f"Adding remaining table files: {', '.join(sorted(list(all_table_files)))}")
-        for filename in sorted(list(all_table_files)):
-            sql_files_to_execute.append(os.path.join(TABLES_DIR, filename))
-
-    # Get functions (order is less critical for functions)
-    logger.info(f"Looking for function SQL files in: {FUNCTIONS_DIR}")
-    try:
-        for filename in sorted(os.listdir(FUNCTIONS_DIR)):
-            if filename.endswith(".sql"):
-                sql_files_to_execute.append(os.path.join(FUNCTIONS_DIR, filename))
-    except FileNotFoundError:
-        logger.error(f"Directory not found: {FUNCTIONS_DIR}")
-        return
-
-    if not sql_files_to_execute:
-        logger.warning("No SQL files found to execute.")
-        return
-
-    async with engine.begin() as connection:
-        try:
-            for filepath in sql_files_to_execute:
-                try:
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        sql_content = f.read()
-                        if sql_content.strip(): #  Ensure content is not empty
-                            logger.info(f"Executing {os.path.basename(filepath)}...")
-                            
-                            # Check if this is a function file (contains dollar-quoted strings)
-                            if '$function$' in sql_content or '$body$' in sql_content or 'CREATE OR REPLACE FUNCTION' in sql_content.upper():
-                                # For function files, execute the entire content as one statement
-                                logger.debug(f"Executing function file {os.path.basename(filepath)} as single statement")
-                                await connection.execute(text(sql_content))
-                            else:
-                                # Split SQL content by semicolons to handle multiple statements
-                                statements = [stmt.strip() for stmt in sql_content.split(';') if stmt.strip()]
-                                
-                                for i, statement in enumerate(statements):
-                                    if statement:
-                                        logger.debug(f"Executing statement {i+1}/{len(statements)} from {os.path.basename(filepath)}")
-                                        await connection.execute(text(statement))
-                            
-                            logger.info(f"Successfully executed {os.path.basename(filepath)}.")
-                        else:
-                            logger.warning(f"Skipping empty file: {os.path.basename(filepath)}")
-
-                except Exception as e:
-                    logger.error(f"Error executing file {filepath}: {e}")
-                    raise  # This will trigger the rollback of the transaction
-            logger.info("Database initialization completed successfully.")
-        except Exception as e:
-            logger.error(f"Database initialization failed. Transaction rolled back. Error: {e}")
-            raise
+    except Exception as e:
+        logger.error(f"✗ Error during provisioning: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     # Configure logger

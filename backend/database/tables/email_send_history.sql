@@ -1,5 +1,5 @@
 -- Generated schema for public.email_send_history
-CREATE TABLE public.email_send_history (
+CREATE TABLE IF NOT EXISTS public.email_send_history (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   job_id character varying(100),
@@ -40,7 +40,16 @@ CREATE INDEX IF NOT EXISTS idx_email_history_status
 ON email_send_history (tenant_id, status, sent_at DESC) 
 WHERE status != 'sent';
 
--- Foreign key reference to email jobs
-ALTER TABLE email_send_history 
-ADD CONSTRAINT fk_email_history_job 
-FOREIGN KEY (job_id) REFERENCES email_sending_jobs(job_id);
+-- Foreign key reference to email jobs (idempotent - only add if not exists)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE constraint_name = 'fk_email_history_job' 
+    AND table_name = 'email_send_history'
+  ) THEN
+    ALTER TABLE email_send_history 
+    ADD CONSTRAINT fk_email_history_job 
+    FOREIGN KEY (job_id) REFERENCES email_sending_jobs(job_id);
+  END IF;
+END $$;

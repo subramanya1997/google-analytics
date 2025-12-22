@@ -58,7 +58,10 @@ class SqlAlchemyRepository:
 
     # ---------- Job operations ----------
     async def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
-        async with get_async_db_session(self.service_name) as session:
+        # Extract tenant_id for database routing
+        tenant_id = job_data.get("tenant_id")
+        
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             # Ensure tenant_id is properly formatted for UUID column
             if "tenant_id" in job_data:
                 job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
@@ -73,8 +76,8 @@ class SqlAlchemyRepository:
             row = result.mappings().first()
             return dict(row) if row else {}
 
-    async def update_job_status(self, job_id: str, status: str, **kwargs) -> bool:
-        async with get_async_db_session(self.service_name) as session:
+    async def update_job_status(self, job_id: str, status: str, tenant_id: str = None, **kwargs) -> bool:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             update_data = {"status": status}
             update_data.update(kwargs)
             stmt = (
@@ -86,8 +89,8 @@ class SqlAlchemyRepository:
             await session.commit()
             return result.rowcount > 0
 
-    async def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
-        async with get_async_db_session(self.service_name) as session:
+    async def get_job_by_id(self, job_id: str, tenant_id: str = None) -> Optional[Dict[str, Any]]:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             stmt = select(ProcessingJobs.__table__).where(
                 ProcessingJobs.__table__.c.job_id == job_id
             )
@@ -106,7 +109,7 @@ class SqlAlchemyRepository:
     ) -> int:
         table = EVENT_TABLES[event_type]
         tenant_uuid_str = ensure_uuid_string(tenant_id)
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             # delete date range
             del_stmt = delete(table).where(
                 table.c.tenant_id == tenant_uuid_str,
@@ -197,7 +200,7 @@ class SqlAlchemyRepository:
         total = 0
         batch_size = 500
         logger.info(f"Upserting {len(users_data)} users for tenant {tenant_id}")
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             # add tenant_id to each
             rows = []
             for u in users_data:
@@ -238,7 +241,7 @@ class SqlAlchemyRepository:
         total = 0
         batch_size = 500
         logger.info(f"Upserting {len(locations_data)} locations for tenant {tenant_id}")
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             rows = []
             for loc in locations_data:
                 r = dict(loc)
@@ -287,7 +290,7 @@ class SqlAlchemyRepository:
         # Convert tenant_id to proper UUID string
         tenant_uuid_str = ensure_uuid_string(tenant_id)
 
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             for key, table in EVENT_TABLES.items():
                 conds = [table.c.tenant_id == tenant_uuid_str]
                 if start_date and end_date:
@@ -320,7 +323,7 @@ class SqlAlchemyRepository:
         """Get the date range of available data for a tenant."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             results = {}
             earliest_date = None
             latest_date = None
@@ -358,7 +361,7 @@ class SqlAlchemyRepository:
         """Get data availability summary using optimized function."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             # Call simplified function that only returns summary data
             combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
             result_obj = await session.execute(combined_query, {"tenant_id": tenant_uuid_str})
@@ -387,7 +390,7 @@ class SqlAlchemyRepository:
         """Get job history for a tenant - ULTRA-FAST PostgreSQL function only."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_async_db_session(self.service_name) as session:
+        async with get_async_db_session(self.service_name, tenant_id=tenant_id) as session:
             # Call optimized PostgreSQL function (ULTRA FAST!)
             jobs_query = text("SELECT * FROM get_tenant_jobs_paginated(:tenant_id, :limit, :offset)")
             

@@ -2,12 +2,14 @@ import os
 import sys
 import asyncio
 from sqlalchemy import text, inspect
+from sqlalchemy.ext.asyncio import create_async_engine
 from loguru import logger
 
 # Add the project's root directory to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from common.database.session import get_async_engine
+from common.database.session import create_sqlalchemy_url
+from common.database.tenant_provisioning import drop_tenant_database
 
 # Define paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +20,7 @@ FUNCTIONS_DIR = os.path.join(DB_DIR, "functions")
 # Define the correct order for table creation (from init_db.py)
 # We'll reverse this for deletion to respect dependencies
 TABLE_CREATION_ORDER = [
-    "tenants.sql",
+    "tenant_config.sql",
     "branch_email_mappings.sql",
     "email_sending_jobs.sql",
     "email_send_history.sql",
@@ -171,38 +173,200 @@ async def list_remaining_objects(connection):
     except Exception as e:
         logger.warning(f"Could not list remaining objects: {e}")
 
-async def main():
-    """Main function to clear the database."""
-    logger.info("Starting database cleanup...")
-    
-    # Confirm action
-    response = input("This will DELETE ALL tables and functions from the database. Are you sure? (yes/no): ").lower().strip()
-    if response not in ['yes', 'y']:
-        logger.info("Database cleanup cancelled.")
-        return
+async def list_tenant_databases():
+    """List all tenant databases by connecting to postgres database."""
+    # Use same pattern as tenant_provisioning.py - connect to postgres database
+    postgres_url = create_sqlalchemy_url("postgres", async_driver=True)
+    engine = create_async_engine(postgres_url)
     
     try:
-        engine = get_async_engine()
-    except Exception as e:
-        logger.error(f"Failed to get database engine: {e}")
-        return
+        async with engine.connect() as connection:
+            # List all databases that match tenant database pattern (google-analytics-*)
+            # Excluding system databases
+            result = await connection.execute(text("""
+                SELECT datname 
+                FROM pg_database 
+                WHERE datistemplate = false 
+                AND datname NOT IN ('postgres', 'template0', 'template1')
+                AND datname LIKE 'google-analytics-%'
+                ORDER BY datname
+            """))
+            databases = [row[0] for row in result]
+            return databases
+    finally:
+        await engine.dispose()
 
-    async with engine.begin() as connection:
-        try:
+async def clear_tenant_database(db_name: str):
+    """Clear all tables and functions from a specific tenant database."""
+    logger.info(f"Clearing tenant database: {db_name}")
+    
+    try:
+        # Create engine for this specific database (same pattern as tenant_provisioning.py)
+        url = create_sqlalchemy_url(db_name, async_driver=True)
+        engine = create_async_engine(url, echo=False)
+    except Exception as e:
+        logger.error(f"Failed to get database engine for {db_name}: {e}")
+        return False
+
+    try:
+        async with engine.begin() as connection:
             # First drop all functions (they may depend on tables)
             await drop_all_functions(connection)
             
             # Then drop all tables
             await drop_all_tables(connection)
             
-            logger.info("Database cleanup completed successfully.")
+            logger.info(f"Database cleanup completed successfully for {db_name}.")
             
             # List any remaining objects
             await list_remaining_objects(connection)
             
-        except Exception as e:
-            logger.error(f"Database cleanup failed. Transaction rolled back. Error: {e}")
-            raise
+        return True
+    except Exception as e:
+        logger.error(f"Database cleanup failed for {db_name}. Error: {e}")
+        return False
+    finally:
+        await engine.dispose()
+
+def extract_tenant_id_from_db_name(db_name: str) -> str:
+    """Extract tenant_id from database name (google-analytics-{tenant_id})."""
+    prefix = "google-analytics-"
+    if db_name.startswith(prefix):
+        return db_name[len(prefix):]
+    return db_name
+
+async def main():
+    """Main function to list tenants and clear/delete selected databases."""
+    logger.info("Starting multi-tenant database cleanup...")
+    
+    # List all tenant databases
+    try:
+        tenant_databases = await list_tenant_databases()
+    except Exception as e:
+        logger.error(f"Failed to list tenant databases: {e}")
+        return
+    
+    if not tenant_databases:
+        logger.info("No tenant databases found.")
+        return
+    
+    # Display tenant databases
+    logger.info(f"\nFound {len(tenant_databases)} tenant database(s):")
+    for idx, db_name in enumerate(tenant_databases, 1):
+        print(f"  {idx}. {db_name}")
+    
+    # Ask user which databases to operate on
+    print("\nSelect databases:")
+    print("  - Enter database numbers separated by commas (e.g., 1,3,5)")
+    print("  - Enter 'all' to select all databases")
+    print("  - Enter 'cancel' to exit")
+    
+    selection = input("\nSelect databases: ").strip().lower()
+    
+    if selection == 'cancel':
+        logger.info("Database cleanup cancelled.")
+        return
+    
+    # Determine which databases to operate on
+    databases_selected = []
+    
+    if selection == 'all':
+        databases_selected = tenant_databases
+    else:
+        try:
+            indices = [int(idx.strip()) for idx in selection.split(',')]
+            for idx in indices:
+                if 1 <= idx <= len(tenant_databases):
+                    databases_selected.append(tenant_databases[idx - 1])
+                else:
+                    logger.warning(f"Invalid index: {idx}")
+        except ValueError:
+            logger.error("Invalid input. Please enter numbers separated by commas.")
+            return
+    
+    if not databases_selected:
+        logger.info("No databases selected.")
+        return
+    
+    # Ask for operation type
+    print("\nOperation type:")
+    print("  1. CLEAR - Drop all tables and functions (keeps database)")
+    print("  2. DELETE - Completely delete the database(s)")
+    
+    operation = input("\nSelect operation (1 or 2): ").strip()
+    
+    if operation == '2':
+        # DELETE entire database
+        logger.info(f"\nYou are about to PERMANENTLY DELETE {len(databases_selected)} database(s):")
+        for db in databases_selected:
+            print(f"  - {db}")
+        
+        print("\n⚠️  WARNING: This action cannot be undone!")
+        response = input("\nType 'DELETE' to confirm: ").strip()
+        if response != 'DELETE':
+            logger.info("Database deletion cancelled.")
+            return
+        
+        # Delete selected databases
+        success_count = 0
+        failed_count = 0
+        
+        for db_name in databases_selected:
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Deleting: {db_name}")
+            logger.info(f"{'='*60}")
+            
+            tenant_id = extract_tenant_id_from_db_name(db_name)
+            success = drop_tenant_database(tenant_id)
+            if success:
+                success_count += 1
+                logger.info(f"Successfully deleted database: {db_name}")
+            else:
+                failed_count += 1
+                logger.error(f"Failed to delete database: {db_name}")
+        
+        # Summary
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Deletion Summary:")
+        logger.info(f"  Successfully deleted: {success_count} database(s)")
+        if failed_count > 0:
+            logger.error(f"  Failed: {failed_count} database(s)")
+            logger.info("  Note: For Cloud SQL, you may need to use the Google Cloud Console or gcloud CLI.")
+        logger.info(f"{'='*60}")
+        
+    else:
+        # CLEAR tables/functions (keep database)
+        logger.info(f"\nYou are about to CLEAR all tables and functions from {len(databases_selected)} database(s):")
+        for db in databases_selected:
+            print(f"  - {db}")
+        
+        response = input("\nAre you sure you want to proceed? (yes/no): ").lower().strip()
+        if response not in ['yes', 'y']:
+            logger.info("Database cleanup cancelled.")
+            return
+        
+        # Clear selected databases
+        success_count = 0
+        failed_count = 0
+        
+        for db_name in databases_selected:
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Clearing: {db_name}")
+            logger.info(f"{'='*60}")
+            
+            success = await clear_tenant_database(db_name)
+            if success:
+                success_count += 1
+            else:
+                failed_count += 1
+        
+        # Summary
+        logger.info(f"\n{'='*60}")
+        logger.info(f"Cleanup Summary:")
+        logger.info(f"  Successfully cleared: {success_count} database(s)")
+        if failed_count > 0:
+            logger.info(f"  Failed: {failed_count} database(s)")
+        logger.info(f"{'='*60}")
 
 if __name__ == "__main__":
     # Configure logger

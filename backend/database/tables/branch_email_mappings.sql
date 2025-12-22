@@ -1,5 +1,5 @@
 -- Generated schema for public.branch_email_mappings
-CREATE TABLE public.branch_email_mappings (
+CREATE TABLE IF NOT EXISTS public.branch_email_mappings (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   branch_code character varying(100) NOT NULL,

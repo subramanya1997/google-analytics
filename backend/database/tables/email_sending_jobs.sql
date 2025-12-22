@@ -1,5 +1,5 @@
 -- Generated schema for public.email_sending_jobs
-CREATE TABLE public.email_sending_jobs (
+CREATE TABLE IF NOT EXISTS public.email_sending_jobs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   job_id character varying(100) NOT NULL,

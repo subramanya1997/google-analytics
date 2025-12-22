@@ -260,7 +260,7 @@ async def _test_bigquery_config_async(self, config: dict) -> bool:
 
 ```sql
 -- After background validation completes
-UPDATE tenants SET
+UPDATE tenant_config SET
     bigquery_enabled = true,
     bigquery_validation_error = NULL,
     sftp_enabled = false,

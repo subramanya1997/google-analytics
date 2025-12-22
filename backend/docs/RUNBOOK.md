@@ -261,7 +261,7 @@ psql -c "SELECT job_id, status, total_emails, emails_sent, emails_failed, error_
 psql -c "SELECT status, count(*) FROM email_send_history WHERE sent_at > now() - interval '1 day' GROUP BY status;"
 
 # Check SMTP config
-psql -c "SELECT id, name, email_config->>'server' as smtp_server FROM tenants WHERE id = 'tenant_id_here';"
+psql -c "SELECT id, name, email_config->>'server' as smtp_server FROM tenant_config WHERE id = 'tenant_id_here';"
 ```
 
 **Resolution**:
@@ -329,7 +329,7 @@ tail -100 logs/auth-service-error.log
 curl -v "https://idp.example.com/health"
 
 # Check tenant config
-psql -c "SELECT id, name, is_active FROM tenants WHERE id = 'tenant_id_here';"
+psql -c "SELECT id, name, is_active FROM tenant_config WHERE id = 'tenant_id_here';"
 ```
 
 **Resolution**:
@@ -337,7 +337,7 @@ psql -c "SELECT id, name, is_active FROM tenants WHERE id = 'tenant_id_here';"
 # If IdP is down, wait for recovery
 
 # If tenant disabled
-psql -c "UPDATE tenants SET is_active = true WHERE id = 'tenant_id_here';"
+psql -c "UPDATE tenant_config SET is_active = true WHERE id = 'tenant_id_here';"
 
 # Restart auth service
 pkill -f "uvicorn services.auth_service"

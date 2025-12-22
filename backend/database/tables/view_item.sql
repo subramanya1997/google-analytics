@@ -1,5 +1,5 @@
 -- Generated schema for public.view_item
-CREATE TABLE public.view_item (
+CREATE TABLE IF NOT EXISTS public.view_item (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   event_date date NOT NULL,

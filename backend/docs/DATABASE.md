@@ -48,7 +48,7 @@ DATABASE_MAX_OVERFLOW=5
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  ┌──────────────────┐                                                        │
-│  │     tenants      │◄──────────────────────────────────────────────┐       │
+│  │  tenant_config   │◄──────────────────────────────────────────────┐       │
 │  ├──────────────────┤                                               │       │
 │  │ id (PK, UUID)    │                                               │       │
 │  │ name             │                                               │       │
@@ -132,46 +132,39 @@ DATABASE_MAX_OVERFLOW=5
 
 ## Tables
 
-### tenants
+### tenant_config
 
-Central tenant configuration table.
+Tenant configuration table (single-tenant-per-database model). Each database has exactly one configuration row.
 
 ```sql
-CREATE TABLE tenants (
+CREATE TABLE tenant_config (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(255) NOT NULL,
-    domain VARCHAR(255),
     
-    -- BigQuery configuration
+    -- BigQuery configuration (optional)
     bigquery_project_id VARCHAR(255),
     bigquery_dataset_id VARCHAR(255),
     bigquery_credentials JSONB,
-    bigquery_enabled BOOLEAN DEFAULT FALSE,
+    bigquery_enabled BOOLEAN DEFAULT TRUE,
     bigquery_validation_error TEXT,
     
-    -- PostgreSQL configuration (for tenant's own database)
-    postgres_config JSONB,
+    -- PostgreSQL configuration (REQUIRED)
+    postgres_config JSONB NOT NULL,
     
-    -- SFTP configuration
+    -- SFTP configuration (optional)
     sftp_config JSONB,
-    sftp_enabled BOOLEAN DEFAULT FALSE,
+    sftp_enabled BOOLEAN DEFAULT TRUE,
     sftp_validation_error TEXT,
     
-    -- Email configuration
+    -- Email configuration (optional)
     email_config JSONB,
-    email_schedule VARCHAR(255),
-    smtp_enabled BOOLEAN DEFAULT FALSE,
+    smtp_enabled BOOLEAN DEFAULT TRUE,
     smtp_validation_error TEXT,
-    
-    -- Scheduling
-    data_ingestion_schedule VARCHAR(255),
     
     -- Status
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    
-    CONSTRAINT uq_tenants_domain UNIQUE (domain)
+    updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
 
@@ -179,7 +172,6 @@ CREATE TABLE tenants (
 |--------|------|-------------|
 | `id` | UUID | Primary key, auto-generated |
 | `name` | VARCHAR(255) | Tenant display name |
-| `domain` | VARCHAR(255) | Unique domain identifier |
 | `bigquery_*` | Various | GA4 BigQuery connection config |
 | `postgres_config` | JSONB | Tenant's PostgreSQL connection |
 | `sftp_config` | JSONB | SFTP server for master data |
@@ -196,7 +188,7 @@ Customer/user master data from SFTP.
 ```sql
 CREATE TABLE users (
     user_id VARCHAR(100) NOT NULL,
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     buying_company_name VARCHAR(255),
     email VARCHAR(255),
     cell_phone VARCHAR(50),
@@ -214,7 +206,7 @@ CREATE INDEX idx_users_email ON users(email);
 | Column | Type | Description |
 |--------|------|-------------|
 | `user_id` | VARCHAR(100) | User identifier from source system |
-| `tenant_id` | UUID | Foreign key to tenants |
+| `tenant_id` | UUID | Foreign key to tenant_config |
 | `buying_company_name` | VARCHAR(255) | Customer company name |
 | `email` | VARCHAR(255) | Contact email |
 | `cell_phone` | VARCHAR(50) | Mobile phone |
@@ -229,7 +221,7 @@ Branch/location master data from SFTP.
 ```sql
 CREATE TABLE locations (
     location_id VARCHAR(100) NOT NULL,
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     location_name VARCHAR(255),
     city VARCHAR(100),
     state VARCHAR(100),
@@ -245,7 +237,7 @@ CREATE INDEX idx_locations_tenant ON locations(tenant_id);
 | Column | Type | Description |
 |--------|------|-------------|
 | `location_id` | VARCHAR(100) | Branch code (e.g., "D01") |
-| `tenant_id` | UUID | Foreign key to tenants |
+| `tenant_id` | UUID | Foreign key to tenant_config |
 | `location_name` | VARCHAR(255) | Branch display name |
 | `city` | VARCHAR(100) | City name |
 | `state` | VARCHAR(100) | State/province |
@@ -489,7 +481,7 @@ Data ingestion job tracking.
 ```sql
 CREATE TABLE processing_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     job_id VARCHAR(100) UNIQUE NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'queued',
     data_types JSONB,
@@ -525,7 +517,7 @@ Branch to sales rep email mapping.
 ```sql
 CREATE TABLE branch_email_mappings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     branch_code VARCHAR(50) NOT NULL,
     branch_name VARCHAR(255),
     sales_rep_email VARCHAR(255) NOT NULL,
@@ -548,7 +540,7 @@ Email job tracking.
 ```sql
 CREATE TABLE email_sending_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     job_id VARCHAR(100) UNIQUE NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'queued',
     report_date DATE NOT NULL,
@@ -576,7 +568,7 @@ Individual email send records.
 ```sql
 CREATE TABLE email_send_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    tenant_id UUID NOT NULL REFERENCES tenant_config(id),
     job_id VARCHAR(100),
     branch_code VARCHAR(50),
     sales_rep_email VARCHAR(255),
@@ -827,7 +819,7 @@ CREATE INDEX idx_processing_jobs_tenant_created ON processing_jobs(tenant_id, cr
 }
 ```
 
-#### postgres_config (tenants)
+#### postgres_config (tenant_config)
 
 ```json
 {

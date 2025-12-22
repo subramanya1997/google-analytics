@@ -4,7 +4,7 @@ Common ORM models for all backend services.
 
 # Import all models to make them available
 # TaskTracking import removed - functionality not needed
-from .tenants import Tenants
+from .tenants import TenantConfig
 from .users import Users
 from .locations import Locations
 from .events import Purchase, AddToCart, PageView, ViewSearchResults, NoSearchResults, ViewItem
@@ -12,7 +12,7 @@ from .control import ProcessingJobs
 
 __all__ = [
     # Control/Analytics models (SQLAlchemy ORM)
-    "Tenants",
+    "TenantConfig",
     
     # Dimension models (SQLAlchemy ORM)
     "Users", "Locations",

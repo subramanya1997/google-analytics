@@ -1,5 +1,5 @@
 -- Generated schema for public.page_view
-CREATE TABLE public.page_view (
+CREATE TABLE IF NOT EXISTS public.page_view (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   event_date date NOT NULL,

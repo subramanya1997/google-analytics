@@ -1,5 +1,5 @@
 -- Generated schema for public.purchase
-CREATE TABLE public.purchase (
+CREATE TABLE IF NOT EXISTS public.purchase (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   event_date date NOT NULL,

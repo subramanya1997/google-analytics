@@ -18,8 +18,32 @@ from loguru import logger
 
 load_dotenv()
 
-def create_sqlalchemy_url(database_name: str = None, async_driver: bool = False) -> URL:
-    """Create SQLAlchemy URL from environment variables."""
+# Global engine cache to avoid creating multiple engines
+_engines: Dict[str, Engine] = {}
+_async_engines: Dict[str, Any] = {}
+
+def create_sqlalchemy_url(database_name: str, async_driver: bool = False) -> URL:
+    """
+    Create SQLAlchemy URL from environment variables.
+    
+    Args:
+        database_name: Name of the database to connect to (required for tenant isolation)
+        async_driver: Whether to use async driver (asyncpg) or sync driver (pg8000)
+    
+    Returns:
+        SQLAlchemy URL object
+    
+    Note:
+        For tenant isolation, use get_tenant_database_name(tenant_id) to get the database name.
+        For admin operations (creating databases), use 'postgres' as the database name.
+    """
+    if not database_name:
+        raise ValueError(
+            "database_name is required for tenant-isolated architecture. "
+            "Use get_tenant_database_name(tenant_id) for tenant databases, "
+            "or 'postgres' for admin operations."
+        )
+    
     driver = "postgresql+asyncpg" if async_driver else "postgresql+pg8000"
     
     url = URL.create(
@@ -28,7 +52,7 @@ def create_sqlalchemy_url(database_name: str = None, async_driver: bool = False)
         password=os.getenv("POSTGRES_PASSWORD"),
         host=os.getenv("POSTGRES_HOST"),
         port=int(os.getenv("POSTGRES_PORT")),
-        database=database_name or os.getenv("POSTGRES_DATABASE"),
+        database=database_name,
     )
     return url
 
@@ -128,26 +152,45 @@ def create_database(database_name: str) -> bool:
         return False
 
 
-def ensure_database_exists() -> bool:
-    """Ensure the configured database exists, creating it if necessary."""
-    database_name = os.getenv("POSTGRES_DATABASE")
-    if not database_name:
-        logger.error("POSTGRES_DATABASE environment variable is not set")
-        return False
-        
-    return create_database(database_name)
-
-
 @lru_cache(maxsize=10)
-def get_engine(service_name: str = None, database_name: str = None) -> Engine:
-    """Get cached database engine with optimized connection pooling."""
+def get_engine(service_name: str = None, database_name: str = None, tenant_id: str = None) -> Engine:
+    """
+    Get cached database engine with optimized connection pooling.
+    
+    Args:
+        service_name: Name of the service (for logging)
+        database_name: Explicit database name
+        tenant_id: Tenant ID (will be converted to database name)
+    
+    Returns:
+        SQLAlchemy Engine instance
+    
+    Note:
+        Either database_name or tenant_id must be provided for tenant-isolated architecture.
+    """
+    # If tenant_id is provided, use tenant-specific database
+    if tenant_id and not database_name:
+        from common.database.tenant_provisioning import get_tenant_database_name
+        database_name = get_tenant_database_name(tenant_id)
+    
+    if not database_name:
+        raise ValueError(
+            "Either database_name or tenant_id must be provided. "
+            "Master database concept removed for SOC2 compliance."
+        )
+    
+    cache_key = f"{service_name or 'default'}_{database_name}"
+    
+    if cache_key in _engines:
+        return _engines[cache_key]
+    
     url = create_sqlalchemy_url(database_name)
     
-    # Conservative connection pool settings to prevent overloading
-    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 5))  # Reduced default
-    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 5))  # Reduced default
+    # Enhanced connection pool settings
+    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 20))  # Increased default
+    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 30))  # Increased default
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))  # 1 hour
     
     engine = create_engine(
         url,
@@ -176,21 +219,53 @@ def get_engine(service_name: str = None, database_name: str = None) -> Engine:
     # Setup connection monitoring
     _setup_engine_events(engine)
     
+    # Cache the engine
+    _engines[cache_key] = engine
+    
     logger.info(f"Created database engine for {service_name or 'default'} with pool_size={pool_size}, max_overflow={max_overflow}")
     
     return engine
 
 
 @lru_cache(maxsize=10)
-def get_async_engine(service_name: str = None, database_name: str = None):
-    """Get cached async database engine with optimized connection pooling."""
+def get_async_engine(service_name: str = None, database_name: str = None, tenant_id: str = None):
+    """
+    Get cached async database engine with optimized connection pooling.
+    
+    Args:
+        service_name: Name of the service (for logging)
+        database_name: Explicit database name
+        tenant_id: Tenant ID (will be converted to database name)
+    
+    Returns:
+        SQLAlchemy AsyncEngine instance
+    
+    Note:
+        Either database_name or tenant_id must be provided for tenant-isolated architecture.
+    """
+    # If tenant_id is provided, use tenant-specific database
+    if tenant_id and not database_name:
+        from common.database.tenant_provisioning import get_tenant_database_name
+        database_name = get_tenant_database_name(tenant_id)
+    
+    if not database_name:
+        raise ValueError(
+            "Either database_name or tenant_id must be provided. "
+            "Master database concept removed for SOC2 compliance."
+        )
+    
+    cache_key = f"async_{service_name or 'default'}_{database_name}"
+    
+    if cache_key in _async_engines:
+        return _async_engines[cache_key]
+    
     url = create_sqlalchemy_url(database_name, async_driver=True)
     
-    # Conservative connection pool settings for async to prevent overloading
-    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 5))
-    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 5))
+    # Enhanced connection pool settings for async
+    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 15))
+    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 25))
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))
     
     async_engine = create_async_engine(
         url,
@@ -213,6 +288,9 @@ def get_async_engine(service_name: str = None, database_name: str = None):
         }
     )
     
+    # Cache the async engine
+    _async_engines[cache_key] = async_engine
+    
     logger.info(f"Created async database engine for {service_name or 'default'} with pool_size={pool_size}, max_overflow={max_overflow}")
     
     return async_engine
@@ -220,9 +298,9 @@ def get_async_engine(service_name: str = None, database_name: str = None):
 
 # Session makers
 @lru_cache(maxsize=10)
-def get_session_maker(service_name: str = None) -> sessionmaker:
+def get_session_maker(service_name: str = None, tenant_id: str = None) -> sessionmaker:
     """Get cached session maker for sync operations."""
-    engine = get_engine(service_name)
+    engine = get_engine(service_name, tenant_id=tenant_id)
     return sessionmaker(
         bind=engine,
         autoflush=False,
@@ -232,9 +310,9 @@ def get_session_maker(service_name: str = None) -> sessionmaker:
 
 
 @lru_cache(maxsize=10) 
-def get_async_session_maker(service_name: str = None) -> async_sessionmaker:
+def get_async_session_maker(service_name: str = None, tenant_id: str = None) -> async_sessionmaker:
     """Get cached async session maker for async operations."""
-    async_engine = get_async_engine(service_name)
+    async_engine = get_async_engine(service_name, tenant_id=tenant_id)
     return async_sessionmaker(
         bind=async_engine,
         class_=AsyncSession,
@@ -246,17 +324,26 @@ def get_async_session_maker(service_name: str = None) -> async_sessionmaker:
 
 # Context managers for database sessions
 @contextmanager
-def get_db_session(service_name: str = None):
-    """
-    Context manager for database sessions with automatic cleanup.
+def get_db_session(service_name: str = None, tenant_id: str = None):
+    """Context manager for database sessions with automatic cleanup."""
+    # Auto-provision tenant database if it doesn't exist
+    if tenant_id:
+        from common.database.tenant_provisioning import (
+            tenant_database_exists,
+            provision_tenant_database
+        )
+        if not tenant_database_exists(tenant_id):
+            import asyncio
+            logger.info(f"Tenant database for {tenant_id} not found, auto-provisioning...")
+            success = asyncio.run(provision_tenant_database(tenant_id))
+            if not success:
+                raise RuntimeError(f"Failed to provision database for tenant {tenant_id}")
     
-    Note: Does NOT auto-commit. Caller must explicitly call session.commit()
-    to persist changes. Auto-rollback on exceptions.
-    """
-    session_maker = get_session_maker(service_name)
+    session_maker = get_session_maker(service_name, tenant_id=tenant_id)
     session = session_maker()
     try:
         yield session
+        session.commit()
     except Exception as e:
         session.rollback()
         logger.error(f"Database session error: {e}")
@@ -266,17 +353,13 @@ def get_db_session(service_name: str = None):
 
 
 @asynccontextmanager
-async def get_async_db_session(service_name: str = None):
-    """
-    Async context manager for database sessions with automatic cleanup.
-    
-    Note: Does NOT auto-commit. Caller must explicitly call await session.commit()
-    to persist changes. Auto-rollback on exceptions.
-    """
-    session_maker = get_async_session_maker(service_name)
+async def get_async_db_session(service_name: str = None, tenant_id: str = None):
+    """Async context manager for database sessions with automatic cleanup."""
+    session_maker = get_async_session_maker(service_name, tenant_id=tenant_id)
     session = session_maker()
     try:
         yield session
+        await session.commit()
     except Exception as e:
         await session.rollback()
         logger.error(f"Async database session error: {e}")

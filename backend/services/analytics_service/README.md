@@ -255,7 +255,7 @@ ANALYZE page_view;
 **Solution**: Verify tenant email_config in database
 
 ```sql
-SELECT email_config FROM tenants WHERE id = 'tenant-uuid';
+SELECT email_config FROM tenant_config WHERE id = 'tenant-uuid';
 ```
 
 ### Empty Task Lists

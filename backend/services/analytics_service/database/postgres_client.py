@@ -17,13 +17,21 @@ class AnalyticsPostgresClient:
         """Initialize PostgreSQL client."""
         logger.info("Initialized Analytics PostgreSQL client")
 
-    async def test_connection(self) -> Dict[str, Any]:
-        """Test the PostgreSQL connection."""
+    async def test_connection(self, tenant_id: str) -> Dict[str, Any]:
+        """
+        Test the PostgreSQL connection for a specific tenant.
+        
+        Args:
+            tenant_id: The tenant ID to test connection for
+            
+        Returns:
+            Dict with success status and connection details
+        """
         try:
-            async with get_async_db_session("analytics-service") as session:
-                # Try to query tenants table
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
+                # Try to query tenant_config table in tenant's database
                 result = await session.execute(
-                    text("SELECT COUNT(*) FROM tenants LIMIT 1")
+                    text("SELECT COUNT(*) FROM tenant_config LIMIT 1")
                 )
                 count = result.scalar()
                 return {
@@ -44,7 +52,7 @@ class AnalyticsPostgresClient:
     async def get_locations(self, tenant_id: str) -> List[Dict[str, Any]]:
         """Get all active locations for tenant."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Get all active locations using the optimized function
                 time_start = time.time()
                 result = await session.execute(
@@ -98,7 +106,7 @@ class AnalyticsPostgresClient:
                     "failedSearches": 0,
                 }
 
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -140,7 +148,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get purchase analysis tasks with pagination and filtering."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Use the existing RPC function from functions.sql
                 result = await session.execute(
                     text(
@@ -184,7 +192,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get cart abandonment tasks using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -228,7 +236,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get search analysis tasks using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -272,7 +280,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get repeat visit tasks using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -314,7 +322,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get performance tasks using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -349,7 +357,7 @@ class AnalyticsPostgresClient:
     ) -> List[Dict[str, Any]]:
         """Get the event history for a specific session using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -371,7 +379,7 @@ class AnalyticsPostgresClient:
     async def get_user_history(self, tenant_id: str, user_id: str) -> List[Dict[str, Any]]:
         """Get the event history for a specific user using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -393,7 +401,7 @@ class AnalyticsPostgresClient:
     ) -> List[Dict[str, Any]]:
         """Get bulk statistics for all locations using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -424,7 +432,7 @@ class AnalyticsPostgresClient:
     ) -> List[Dict[str, Any]]:
         """Get time-series chart data using the RPC function."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -457,7 +465,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get complete dashboard data in a single optimized call."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -487,9 +495,9 @@ class AnalyticsPostgresClient:
     async def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get email configuration for a tenant."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
-                    text("SELECT email_config FROM tenants WHERE id = :tenant_id"),
+                    text("SELECT email_config FROM tenant_config WHERE id = :tenant_id"),
                     {"tenant_id": tenant_id}
                 )
                 email_config = result.scalar()
@@ -512,7 +520,7 @@ class AnalyticsPostgresClient:
     ) -> List[Dict[str, Any]]:
         """Get branch email mappings for a tenant."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 query = """
                     SELECT id, branch_code, branch_name, sales_rep_email, 
                            sales_rep_name, is_enabled, created_at, updated_at
@@ -554,7 +562,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Create a new branch email mapping."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Handle both Pydantic models and dictionaries
                 if hasattr(mapping, 'branch_code'):
                     # Pydantic model
@@ -608,7 +616,7 @@ class AnalyticsPostgresClient:
     ) -> bool:
         """Update a specific branch email mapping by ID."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Handle both Pydantic models and dictionaries
                 if hasattr(mapping, 'branch_code'):
                     # Pydantic model
@@ -659,7 +667,7 @@ class AnalyticsPostgresClient:
     async def delete_branch_email_mapping(self, tenant_id: str, mapping_id: str) -> bool:
         """Delete a specific branch email mapping by ID."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text("""
                         DELETE FROM branch_email_mappings
@@ -684,7 +692,8 @@ class AnalyticsPostgresClient:
     async def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new email sending job."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            tenant_id = job_data.get("tenant_id")
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text("""
                         INSERT INTO email_sending_jobs (
@@ -719,11 +728,11 @@ class AnalyticsPostgresClient:
             raise
 
     async def update_email_job_status(
-        self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
+        self, tenant_id: str, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update email job status and other fields."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 set_clause = "status = :status, updated_at = NOW()"
                 params = {"job_id": job_id, "status": status}
                 
@@ -753,7 +762,7 @@ class AnalyticsPostgresClient:
     async def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
         """Get email job status."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text("""
                         SELECT job_id, status, report_date, target_branches,
@@ -796,7 +805,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get email job history with pagination - ULTRA-FAST PostgreSQL function only."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Calculate offset from page number
                 offset = (page - 1) * limit
                 
@@ -856,7 +865,8 @@ class AnalyticsPostgresClient:
     async def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
         """Log email send history record."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            tenant_id = history_data.get("tenant_id")
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Ensure all required fields are present
                 data = {
                     "tenant_id": history_data["tenant_id"],
@@ -902,7 +912,7 @@ class AnalyticsPostgresClient:
     ) -> Dict[str, Any]:
         """Get email send history with pagination and filtering."""
         try:
-            async with get_async_db_session("analytics-service") as session:
+            async with get_async_db_session("analytics-service", tenant_id=tenant_id) as session:
                 # Build WHERE clause
                 where_conditions = ["tenant_id = :tenant_id"]
                 params = {"tenant_id": tenant_id}

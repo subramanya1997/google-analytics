@@ -1,5 +1,5 @@
 -- Generated schema for public.users
-CREATE TABLE public.users (
+CREATE TABLE IF NOT EXISTS public.users (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL,
   user_id character varying(100),

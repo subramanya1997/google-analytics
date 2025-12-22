@@ -1,4 +1,4 @@
-.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean db_optimize services_start service_analytics service_data service_auth stop_services clean logs
+.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean start_services start_service_analytics start_service_data start_service_auth stop_services clean logs
 
 # Variables
 BACKEND_DIR = backend
@@ -15,26 +15,26 @@ help:
 	@echo "Available targets:"
 	@echo ""
 	@echo "Database Management:"
-	@echo "  db_setup        - Initialize database schema and functions"
-	@echo "  db_clean        - Clean/drop all database tables and functions"
+	@echo "  db_setup               - Initialize database schema and functions"
+	@echo "  db_clean               - Clean/drop all database tables and functions"
 	@echo ""
 	@echo "Backend Services:"
-	@echo "  install_backend - Install Python dependencies with uv"
-	@echo "  services_start  - Start all three backend services"
-	@echo "  service_analytics - Start analytics service only (port 8001)"
-	@echo "  service_data    - Start data service only (port 8002)"
-	@echo "  service_auth    - Start auth service only (port 8003)"
-	@echo "  stop_services   - Stop all running services"
+	@echo "  install_backend        - Install Python dependencies with uv"
+	@echo "  start_services         - Start all three backend services"
+	@echo "  start_service_analytics - Start analytics service only (port 8001)"
+	@echo "  start_service_data     - Start data service only (port 8002)"
+	@echo "  start_service_auth     - Start auth service only (port 8003)"
+	@echo "  stop_services          - Stop all running services"
 	@echo ""
 	@echo "Frontend Dashboard:"
-	@echo "  install_dashboard - Install Node.js dependencies"
-	@echo "  run_dashboard   - Start development server"
-	@echo "  build_dashboard - Build for production"
-	@echo "  start_dashboard - Start production server"
+	@echo "  install_dashboard      - Install Node.js dependencies"
+	@echo "  run_dashboard          - Start development server"
+	@echo "  build_dashboard        - Build for production"
+	@echo "  start_dashboard        - Start production server"
 	@echo ""
 	@echo "Maintenance:"
-	@echo "  clean          - Clean logs and temporary files"
-	@echo "  logs           - View service logs"
+	@echo "  clean                  - Clean logs and temporary files"
+	@echo "  logs                   - View service logs"
 
 # ================================
 # DATABASE MANAGEMENT
@@ -56,7 +56,7 @@ install_backend:
 	@echo "Installing backend dependencies with uv..."
 	cd $(BACKEND_DIR) && uv sync --dev
 
-services_start:
+start_services:
 	@echo "Starting all backend services..."
 	@echo "Analytics Service: http://localhost:8001"
 	@echo "Data Service: http://localhost:8002" 
@@ -69,17 +69,17 @@ services_start:
 	(uv run uvicorn services.auth_service:app --port 8003 --reload &) && \
 	wait
 
-service_analytics:
+start_service_analytics:
 	@echo "Starting Analytics Service on port 8001..."
 	@echo "API docs: http://localhost:8001/docs"
 	cd $(BACKEND_DIR) && uv run uvicorn services.analytics_service:app --port 8001 --reload
 
-service_data:
+start_service_data:
 	@echo "Starting Data Service on port 8002..."
 	@echo "API docs: http://localhost:8002/docs"
 	cd $(BACKEND_DIR) && uv run uvicorn services.data_service:app --port 8002 --reload
 
-service_auth:
+start_service_auth:
 	@echo "Starting Auth Service on port 8003..."
 	@echo "API docs: http://localhost:8003/docs"
 	cd $(BACKEND_DIR) && uv run uvicorn services.auth_service:app --port 8003 --reload
@@ -124,7 +124,7 @@ dev: install_backend install_dashboard
 	@echo "- Frontend dashboard (port 3000)"
 	@echo ""
 	@echo "Press Ctrl+C to stop all services"
-	@make -j2 services_start run_dashboard
+	@make -j2 start_services run_dashboard
 
 # ================================
 # MAINTENANCE

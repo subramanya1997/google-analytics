@@ -18,10 +18,6 @@ from loguru import logger
 
 load_dotenv()
 
-# Global engine cache to avoid creating multiple engines
-_engines: Dict[str, Engine] = {}
-_async_engines: Dict[str, Any] = {}
-
 def create_sqlalchemy_url(database_name: str = None, async_driver: bool = False) -> URL:
     """Create SQLAlchemy URL from environment variables."""
     driver = "postgresql+asyncpg" if async_driver else "postgresql+pg8000"
@@ -145,18 +141,13 @@ def ensure_database_exists() -> bool:
 @lru_cache(maxsize=10)
 def get_engine(service_name: str = None, database_name: str = None) -> Engine:
     """Get cached database engine with optimized connection pooling."""
-    cache_key = f"{service_name or 'default'}_{database_name or 'default'}"
-    
-    if cache_key in _engines:
-        return _engines[cache_key]
-    
     url = create_sqlalchemy_url(database_name)
     
-    # Enhanced connection pool settings
-    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 20))  # Increased default
-    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 30))  # Increased default
+    # Conservative connection pool settings to prevent overloading
+    pool_size = int(os.getenv("DATABASE_POOL_SIZE", 5))  # Reduced default
+    max_overflow = int(os.getenv("DATABASE_MAX_OVERFLOW", 5))  # Reduced default
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))  # 1 hour
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
     
     engine = create_engine(
         url,
@@ -185,9 +176,6 @@ def get_engine(service_name: str = None, database_name: str = None) -> Engine:
     # Setup connection monitoring
     _setup_engine_events(engine)
     
-    # Cache the engine
-    _engines[cache_key] = engine
-    
     logger.info(f"Created database engine for {service_name or 'default'} with pool_size={pool_size}, max_overflow={max_overflow}")
     
     return engine
@@ -196,18 +184,13 @@ def get_engine(service_name: str = None, database_name: str = None) -> Engine:
 @lru_cache(maxsize=10)
 def get_async_engine(service_name: str = None, database_name: str = None):
     """Get cached async database engine with optimized connection pooling."""
-    cache_key = f"async_{service_name or 'default'}_{database_name or 'default'}"
-    
-    if cache_key in _async_engines:
-        return _async_engines[cache_key]
-    
     url = create_sqlalchemy_url(database_name, async_driver=True)
     
-    # Enhanced connection pool settings for async
-    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 15))
-    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 25))
+    # Conservative connection pool settings for async to prevent overloading
+    pool_size = int(os.getenv("DATABASE_ASYNC_POOL_SIZE", 5))
+    max_overflow = int(os.getenv("DATABASE_ASYNC_MAX_OVERFLOW", 5))
     pool_timeout = int(os.getenv("DATABASE_POOL_TIMEOUT", 30))
-    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 3600))
+    pool_recycle = int(os.getenv("DATABASE_POOL_RECYCLE", 1800))  # 30 minutes
     
     async_engine = create_async_engine(
         url,
@@ -229,9 +212,6 @@ def get_async_engine(service_name: str = None, database_name: str = None):
             }
         }
     )
-    
-    # Cache the async engine
-    _async_engines[cache_key] = async_engine
     
     logger.info(f"Created async database engine for {service_name or 'default'} with pool_size={pool_size}, max_overflow={max_overflow}")
     
@@ -267,12 +247,16 @@ def get_async_session_maker(service_name: str = None) -> async_sessionmaker:
 # Context managers for database sessions
 @contextmanager
 def get_db_session(service_name: str = None):
-    """Context manager for database sessions with automatic cleanup."""
+    """
+    Context manager for database sessions with automatic cleanup.
+    
+    Note: Does NOT auto-commit. Caller must explicitly call session.commit()
+    to persist changes. Auto-rollback on exceptions.
+    """
     session_maker = get_session_maker(service_name)
     session = session_maker()
     try:
         yield session
-        session.commit()
     except Exception as e:
         session.rollback()
         logger.error(f"Database session error: {e}")
@@ -283,20 +267,19 @@ def get_db_session(service_name: str = None):
 
 @asynccontextmanager
 async def get_async_db_session(service_name: str = None):
-    """Async context manager for database sessions with automatic cleanup."""
+    """
+    Async context manager for database sessions with automatic cleanup.
+    
+    Note: Does NOT auto-commit. Caller must explicitly call await session.commit()
+    to persist changes. Auto-rollback on exceptions.
+    """
     session_maker = get_async_session_maker(service_name)
     session = session_maker()
     try:
         yield session
-        await session.commit()
     except Exception as e:
         await session.rollback()
         logger.error(f"Async database session error: {e}")
         raise
     finally:
         await session.close()
-
-
-# Legacy compatibility
-SessionLocal = get_session_maker()
-AsyncSessionLocal = get_async_session_maker()

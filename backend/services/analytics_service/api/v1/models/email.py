@@ -2,7 +2,7 @@
 Email-related Pydantic models
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 
 from pydantic import BaseModel, EmailStr, validator
@@ -32,10 +32,21 @@ class BranchEmailMappingResponse(BaseModel):
 
 
 class SendReportsRequest(BaseModel):
-    """Request model for sending reports."""
+    """Request model for initiating automated report distribution.
+    
+    Specifies the report date and optional branch code filters for targeted
+    report generation and email sending operations.
+    """
 
-    report_date: date
+    report_date: Optional[date] = None
     branch_codes: Optional[List[str]] = None  # None means all branches
+
+    def __init__(self, **data):
+        # Set default date if not provided
+        if 'report_date' not in data or data['report_date'] is None:
+            data['report_date'] = date.today() - timedelta(days=1)
+
+        super().__init__(**data)
 
 
 class EmailJobResponse(BaseModel):

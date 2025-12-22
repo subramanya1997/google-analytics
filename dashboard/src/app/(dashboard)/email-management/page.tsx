@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react"
 import { format } from "date-fns"
 import { toast } from "sonner"
-import { 
+import {
   fetchEmailConfig,
   fetchBranchEmailMappings,
   updateBranchEmailMapping,
@@ -14,14 +14,15 @@ import {
   fetchEmailJobs,
   fetchEmailHistory,
 } from "@/lib/api-utils"
-import { 
+import {
   EmailConfigResponse,
   BranchEmailMapping,
   Location,
   EmailJob,
   EmailJobsResponse,
   EmailHistory,
-  EmailHistoryResponse
+  EmailHistoryResponse,
+  SendReportsRequest
 } from "@/types"
 import {
   BranchMappingsTable,
@@ -29,6 +30,7 @@ import {
   EmailActivitySection,
   BranchMappingDialog
 } from "@/components/email-management"
+import { Scheduler } from "@/components/scheduler"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -100,6 +102,9 @@ export default function EmailManagementPage() {
   // Delete Confirmation Dialog State
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [mappingToDelete, setMappingToDelete] = useState<BranchEmailMapping | null>(null)
+
+  // Scheduler State
+  const [schedulerOpen, setSchedulerOpen] = useState(false)
 
   // Fetch Email Configuration
   const fetchEmailConfigData = useCallback(async () => {
@@ -210,6 +215,7 @@ export default function EmailManagementPage() {
     }
   }, [itemsPerPage])
 
+
   useEffect(() => {
     // Load all data in parallel
     Promise.all([
@@ -231,14 +237,32 @@ export default function EmailManagementPage() {
       setSendReportsDialogOpen(true)
     }
 
+    const handleOpenScheduler = () => {
+      setSchedulerOpen(true)
+    }
+
+    const handleRefreshEmail = () => {
+      // Refresh all email management data
+      fetchEmailConfigData()
+      fetchMappingsData()
+      fetchLocationsData()
+      fetchJobsData(currentJobsPage)
+      fetchHistoryData(currentHistoryPage)
+      toast.success('Email management data refreshed')
+    }
+
     window.addEventListener('openMappingDialog', handleOpenMappingDialog)
     window.addEventListener('openSendReportsDialog', handleOpenSendReportsDialog)
-    
+    window.addEventListener('openEmailReportsScheduler', handleOpenScheduler)
+    window.addEventListener('refreshEmailManagement', handleRefreshEmail)
+
     return () => {
       window.removeEventListener('openMappingDialog', handleOpenMappingDialog)
       window.removeEventListener('openSendReportsDialog', handleOpenSendReportsDialog)
+      window.removeEventListener('openEmailReportsScheduler', handleOpenScheduler)
+      window.removeEventListener('refreshEmailManagement', handleRefreshEmail)
     }
-  }, [])  // Empty dependency array since functions are stable
+  }, [currentJobsPage, currentHistoryPage, fetchEmailConfigData, fetchHistoryData, fetchJobsData, fetchLocationsData, fetchMappingsData])
 
   // Handle Send Reports
   const handleSendReports = async () => {
@@ -255,10 +279,12 @@ export default function EmailManagementPage() {
     try {
       setIsSendingReports(true)
       
-      const response = await sendEmailReports({
+      const requestData: SendReportsRequest = {
         report_date: format(sendDate, 'yyyy-MM-dd'),
         branch_codes: selectedBranches.length > 0 ? selectedBranches : undefined
-      })
+      }
+
+      const response = await sendEmailReports(requestData)
 
       if (!response.ok) {
         const errorData = await response.json()
@@ -413,6 +439,7 @@ export default function EmailManagementPage() {
     })
   }
 
+
   return (
     <div className="space-y-4">
       {/* Branch Email Mappings Section */}
@@ -496,6 +523,13 @@ export default function EmailManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Email Reports Scheduler */}
+      <Scheduler
+        open={schedulerOpen}
+        onOpenChange={setSchedulerOpen}
+        type="email_reports"
+      />
     </div>
   )
 }

@@ -180,9 +180,13 @@ class FunctionsRepository:
             if "tenant_id" in job_data:
                 job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
 
+            # Convert data_types to JSON string for JSONB column (matches data_service)
+            data_types = job_data.get("data_types", [])
+            data_types_json = json.dumps(data_types)
+
             stmt = text("""
                 INSERT INTO processing_jobs (job_id, tenant_id, status, data_types, start_date, end_date, created_at)
-                VALUES (:job_id, :tenant_id, :status, :data_types, :start_date, :end_date, NOW())
+                VALUES (:job_id, :tenant_id, :status, :data_types::jsonb, :start_date, :end_date, NOW())
                 RETURNING *
             """)
             
@@ -190,7 +194,7 @@ class FunctionsRepository:
                 "job_id": job_data["job_id"],
                 "tenant_id": job_data["tenant_id"],
                 "status": job_data["status"],
-                "data_types": job_data["data_types"],
+                "data_types": data_types_json,
                 "start_date": job_data["start_date"],
                 "end_date": job_data["end_date"],
             })
@@ -218,11 +222,11 @@ class FunctionsRepository:
                 params["error_message"] = kwargs["error_message"]
             
             if "progress" in kwargs:
-                set_clauses.append("progress = :progress")
+                set_clauses.append("progress = :progress::jsonb")
                 params["progress"] = json.dumps(kwargs["progress"]) if kwargs["progress"] else None
             
             if "records_processed" in kwargs:
-                set_clauses.append("records_processed = :records_processed")
+                set_clauses.append("records_processed = :records_processed::jsonb")
                 params["records_processed"] = json.dumps(kwargs["records_processed"]) if kwargs["records_processed"] else None
 
             stmt = text(f"""
@@ -521,14 +525,14 @@ class FunctionsRepository:
     async def get_tenant_service_status(self, tenant_id: str) -> Dict[str, Dict[str, Any]]:
         """Get service status for a tenant."""
         async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Each tenant database has a single-row tenant_config table
+            # Query tenant_config with explicit tenant_id for consistency with data_service
             stmt = text("""
                 SELECT bigquery_enabled, sftp_enabled, bigquery_validation_error, sftp_validation_error,
                        bigquery_project_id, sftp_config
                 FROM tenant_config
-                LIMIT 1
+                WHERE id = :tenant_id AND is_active = true
             """)
-            result = await session.execute(stmt)
+            result = await session.execute(stmt, {"tenant_id": tenant_id})
             row = result.mappings().first()
             
             if not row:
@@ -559,33 +563,38 @@ class FunctionsRepository:
     async def get_tenant_bigquery_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get BigQuery config for a tenant."""
         async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Each tenant database has a single-row tenant_config table
+            # Query tenant_config with explicit tenant_id for consistency with data_service
             stmt = text("""
                 SELECT bigquery_project_id, bigquery_dataset_id, bigquery_credentials, bigquery_enabled
                 FROM tenant_config
-                LIMIT 1
+                WHERE id = :tenant_id AND is_active = true
             """)
-            result = await session.execute(stmt)
+            result = await session.execute(stmt, {"tenant_id": tenant_id})
             row = result.mappings().first()
             
             if row and row.get("bigquery_enabled") and row.get("bigquery_project_id"):
+                # Parse credentials JSON if needed (matches data_service pattern)
+                credentials = row.get("bigquery_credentials")
+                if isinstance(credentials, str):
+                    credentials = json.loads(credentials)
+                
                 return {
                     "project_id": row["bigquery_project_id"],
                     "dataset_id": row["bigquery_dataset_id"],
-                    "credentials": row["bigquery_credentials"] if row.get("bigquery_credentials") else None
+                    "service_account": credentials  # Use "service_account" key to match BigQueryClient expectations
                 }
             return None
 
     async def get_tenant_sftp_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get SFTP config for a tenant."""
         async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Each tenant database has a single-row tenant_config table
+            # Query tenant_config with explicit tenant_id for consistency with data_service
             stmt = text("""
                 SELECT sftp_config, sftp_enabled
                 FROM tenant_config
-                LIMIT 1
+                WHERE id = :tenant_id AND is_active = true
             """)
-            result = await session.execute(stmt)
+            result = await session.execute(stmt, {"tenant_id": tenant_id})
             row = result.mappings().first()
             
             if row and row.get("sftp_enabled") and row.get("sftp_config"):

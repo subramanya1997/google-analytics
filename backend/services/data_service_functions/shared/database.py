@@ -1,0 +1,810 @@
+"""
+Database session management for Azure Functions.
+
+This module provides per-request database connections without connection pooling,
+suitable for the stateless nature of Azure Functions.
+"""
+
+import os
+import uuid
+from typing import Optional, Dict, Any, List
+from contextlib import asynccontextmanager
+from datetime import date, datetime
+from decimal import Decimal
+import json
+
+from sqlalchemy import create_engine, text, delete, func, select
+from sqlalchemy.engine import URL
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.dialects.postgresql import insert
+from loguru import logger
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def create_sqlalchemy_url(async_driver: bool = False) -> URL:
+    """Create SQLAlchemy URL from environment variables."""
+    driver = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
+    
+    url = URL.create(
+        drivername=driver,
+        username=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD"),
+        host=os.getenv("POSTGRES_HOST"),
+        port=int(os.getenv("POSTGRES_PORT", 5432)),
+        database=os.getenv("POSTGRES_DATABASE"),
+    )
+    return url
+
+
+def get_sync_engine():
+    """Get a fresh sync database engine (no pooling for serverless)."""
+    url = create_sqlalchemy_url(async_driver=False)
+    
+    engine = create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+        echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+    )
+    return engine
+
+
+def get_async_engine():
+    """Get a fresh async database engine (no pooling for serverless)."""
+    url = create_sqlalchemy_url(async_driver=True)
+    
+    async_engine = create_async_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=1,
+        max_overflow=0,
+        echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
+    )
+    return async_engine
+
+
+@asynccontextmanager
+async def get_db_session():
+    """
+    Async context manager for database sessions.
+    Creates a fresh connection per invocation (serverless pattern).
+    """
+    engine = get_async_engine()
+    session_maker = async_sessionmaker(
+        bind=engine,
+        class_=AsyncSession,
+        autoflush=False,
+        autocommit=False,
+        expire_on_commit=False
+    )
+    session = session_maker()
+    try:
+        yield session
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Database session error: {e}")
+        raise
+    finally:
+        await session.close()
+        await engine.dispose()
+
+
+def ensure_uuid_string(tenant_id: str) -> str:
+    """Convert tenant_id to a consistent UUID string format."""
+    try:
+        uuid_obj = uuid.UUID(tenant_id)
+        return str(uuid_obj)
+    except ValueError:
+        import hashlib
+        tenant_uuid = uuid.UUID(bytes=hashlib.md5(tenant_id.encode()).digest()[:16])
+        return str(tenant_uuid)
+
+
+class FunctionsRepository:
+    """
+    Data-access layer for Azure Functions.
+    Designed for stateless per-request connections.
+    """
+
+    def __init__(self):
+        pass
+
+    async def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new processing job."""
+        async with get_db_session() as session:
+            if "tenant_id" in job_data:
+                job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
+
+            stmt = text("""
+                INSERT INTO processing_jobs (job_id, tenant_id, status, data_types, start_date, end_date, created_at)
+                VALUES (:job_id, :tenant_id, :status, :data_types, :start_date, :end_date, NOW())
+                RETURNING *
+            """)
+            
+            result = await session.execute(stmt, {
+                "job_id": job_data["job_id"],
+                "tenant_id": job_data["tenant_id"],
+                "status": job_data["status"],
+                "data_types": job_data["data_types"],
+                "start_date": job_data["start_date"],
+                "end_date": job_data["end_date"],
+            })
+            await session.commit()
+            row = result.mappings().first()
+            return dict(row) if row else {}
+
+    async def update_job_status(self, job_id: str, status: str, **kwargs) -> bool:
+        """Update job status with optional additional fields."""
+        async with get_db_session() as session:
+            # Build dynamic update
+            set_clauses = ["status = :status"]
+            params = {"job_id": job_id, "status": status}
+            
+            if "started_at" in kwargs:
+                set_clauses.append("started_at = :started_at")
+                params["started_at"] = kwargs["started_at"]
+            
+            if "completed_at" in kwargs:
+                set_clauses.append("completed_at = :completed_at")
+                params["completed_at"] = kwargs["completed_at"]
+            
+            if "error_message" in kwargs:
+                set_clauses.append("error_message = :error_message")
+                params["error_message"] = kwargs["error_message"]
+            
+            if "progress" in kwargs:
+                set_clauses.append("progress = :progress")
+                params["progress"] = json.dumps(kwargs["progress"]) if kwargs["progress"] else None
+            
+            if "records_processed" in kwargs:
+                set_clauses.append("records_processed = :records_processed")
+                params["records_processed"] = json.dumps(kwargs["records_processed"]) if kwargs["records_processed"] else None
+
+            stmt = text(f"""
+                UPDATE processing_jobs 
+                SET {', '.join(set_clauses)}
+                WHERE job_id = :job_id
+            """)
+            
+            result = await session.execute(stmt, params)
+            await session.commit()
+            return result.rowcount > 0
+
+    async def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get job by ID."""
+        async with get_db_session() as session:
+            stmt = text("SELECT * FROM processing_jobs WHERE job_id = :job_id")
+            result = await session.execute(stmt, {"job_id": job_id})
+            row = result.mappings().first()
+            if row:
+                job = dict(row)
+                # Convert UUID to string
+                if job.get("tenant_id"):
+                    job["tenant_id"] = str(job["tenant_id"])
+                if job.get("id"):
+                    job["id"] = str(job["id"])
+                return job
+            return None
+
+    async def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Get job history for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            # Get jobs with pagination
+            jobs_stmt = text("""
+                SELECT *, COUNT(*) OVER() as total_count
+                FROM processing_jobs 
+                WHERE tenant_id = :tenant_id
+                ORDER BY created_at DESC
+                LIMIT :limit OFFSET :offset
+            """)
+            
+            result = await session.execute(jobs_stmt, {
+                "tenant_id": tenant_uuid_str,
+                "limit": limit,
+                "offset": offset
+            })
+            rows = result.mappings().all()
+            
+            jobs = []
+            total = 0
+            
+            for row in rows:
+                if total == 0:
+                    total = int(row.get("total_count", 0))
+                
+                job_data = {
+                    "id": str(row["id"]) if row.get("id") else None,
+                    "tenant_id": str(row["tenant_id"]) if row.get("tenant_id") else None,
+                    "job_id": row["job_id"],
+                    "status": row["status"],
+                    "data_types": row["data_types"],
+                    "start_date": row["start_date"].isoformat() if row.get("start_date") else None,
+                    "end_date": row["end_date"].isoformat() if row.get("end_date") else None,
+                    "progress": row.get("progress"),
+                    "records_processed": row.get("records_processed"),
+                    "error_message": row.get("error_message"),
+                    "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+                    "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
+                    "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
+                }
+                jobs.append(job_data)
+            
+            return {"jobs": jobs, "total": total}
+
+    async def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
+        """Get data availability summary."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            try:
+                # Try the optimized function first
+                combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
+                result_obj = await session.execute(combined_query, {"tenant_id": tenant_uuid_str})
+                result = result_obj.mappings().first()
+                
+                if result:
+                    return {
+                        "summary": {
+                            "earliest_date": result["earliest_date"].isoformat() if result.get("earliest_date") else None,
+                            "latest_date": result["latest_date"].isoformat() if result.get("latest_date") else None,
+                            "total_events": int(result.get("event_count", 0))
+                        }
+                    }
+            except Exception as e:
+                logger.warning(f"Optimized function not available, using fallback: {e}")
+            
+            # Fallback: query event tables directly
+            event_tables = ["purchase", "add_to_cart", "page_view", "view_search_results", "no_search_results", "view_item"]
+            
+            earliest_date = None
+            latest_date = None
+            total_events = 0
+            
+            for table_name in event_tables:
+                try:
+                    query = text(f"""
+                        SELECT MIN(event_date) as earliest, MAX(event_date) as latest, COUNT(*) as cnt
+                        FROM {table_name}
+                        WHERE tenant_id = :tenant_id
+                    """)
+                    result = await session.execute(query, {"tenant_id": tenant_uuid_str})
+                    row = result.mappings().first()
+                    
+                    if row and row["cnt"] > 0:
+                        if earliest_date is None or (row["earliest"] and row["earliest"] < earliest_date):
+                            earliest_date = row["earliest"]
+                        if latest_date is None or (row["latest"] and row["latest"] > latest_date):
+                            latest_date = row["latest"]
+                        total_events += row["cnt"]
+                except Exception as e:
+                    logger.warning(f"Error querying {table_name}: {e}")
+            
+            return {
+                "summary": {
+                    "earliest_date": earliest_date.isoformat() if earliest_date else None,
+                    "latest_date": latest_date.isoformat() if latest_date else None,
+                    "total_events": total_events
+                }
+            }
+
+    async def replace_event_data(
+        self,
+        tenant_id: str,
+        event_type: str,
+        start_date: date,
+        end_date: date,
+        events_data: List[Dict[str, Any]],
+    ) -> int:
+        """Replace event data for a date range."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            # Delete existing data
+            del_stmt = text(f"""
+                DELETE FROM {event_type}
+                WHERE tenant_id = :tenant_id
+                AND event_date BETWEEN :start_date AND :end_date
+            """)
+            
+            delete_result = await session.execute(del_stmt, {
+                "tenant_id": tenant_uuid_str,
+                "start_date": start_date,
+                "end_date": end_date
+            })
+            deleted_count = delete_result.rowcount or 0
+            logger.info(f"Deleted {deleted_count} existing {event_type} events")
+
+            if not events_data:
+                await session.commit()
+                return 0
+
+            # Insert in batches
+            total = len(events_data)
+            batch_size = 500
+            
+            for i in range(0, total, batch_size):
+                batch = events_data[i:i + batch_size]
+                
+                # Normalize each record
+                normalized_batch = []
+                for ev in batch:
+                    ev_copy = dict(ev)
+                    ev_copy["tenant_id"] = tenant_uuid_str
+                    
+                    # Handle date conversion
+                    if isinstance(ev_copy.get("event_date"), str):
+                        ev_date = ev_copy["event_date"]
+                        if len(ev_date) == 8 and ev_date.isdigit():
+                            ev_copy["event_date"] = date(
+                                int(ev_date[:4]), int(ev_date[4:6]), int(ev_date[6:8])
+                            )
+                    
+                    normalized_batch.append(ev_copy)
+                
+                # Build insert statement dynamically based on first record
+                if normalized_batch:
+                    columns = list(normalized_batch[0].keys())
+                    placeholders = ", ".join([f":{col}" for col in columns])
+                    columns_str = ", ".join(columns)
+                    
+                    insert_stmt = text(f"""
+                        INSERT INTO {event_type} ({columns_str})
+                        VALUES ({placeholders})
+                    """)
+                    
+                    for record in normalized_batch:
+                        await session.execute(insert_stmt, record)
+            
+            await session.commit()
+            logger.info(f"Inserted {total} {event_type} events")
+            return total
+
+    async def upsert_users(self, tenant_id: str, users_data: List[Dict[str, Any]]) -> int:
+        """Upsert users data."""
+        if not users_data:
+            return 0
+        
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            total = 0
+            batch_size = 500
+            
+            for i in range(0, len(users_data), batch_size):
+                batch = users_data[i:i + batch_size]
+                
+                for user in batch:
+                    user["tenant_id"] = tenant_uuid_str
+                    
+                    # Upsert using ON CONFLICT
+                    stmt = text("""
+                        INSERT INTO users (tenant_id, user_id, user_name, first_name, middle_name, last_name,
+                            job_title, user_erp_id, email, office_phone, cell_phone, fax,
+                            address1, address2, address3, city, state, country, zip,
+                            warehouse_code, registered_date, last_login_date,
+                            cimm_buying_company_id, buying_company_name, buying_company_erp_id,
+                            role_name, site_name, updated_at)
+                        VALUES (:tenant_id, :user_id, :user_name, :first_name, :middle_name, :last_name,
+                            :job_title, :user_erp_id, :email, :office_phone, :cell_phone, :fax,
+                            :address1, :address2, :address3, :city, :state, :country, :zip,
+                            :warehouse_code, :registered_date, :last_login_date,
+                            :cimm_buying_company_id, :buying_company_name, :buying_company_erp_id,
+                            :role_name, :site_name, NOW())
+                        ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+                            user_name = EXCLUDED.user_name,
+                            first_name = EXCLUDED.first_name,
+                            middle_name = EXCLUDED.middle_name,
+                            last_name = EXCLUDED.last_name,
+                            job_title = EXCLUDED.job_title,
+                            email = EXCLUDED.email,
+                            updated_at = NOW()
+                    """)
+                    
+                    try:
+                        await session.execute(stmt, user)
+                        total += 1
+                    except Exception as e:
+                        logger.warning(f"Error upserting user: {e}")
+            
+            await session.commit()
+            logger.info(f"Upserted {total} users")
+            return total
+
+    async def upsert_locations(self, tenant_id: str, locations_data: List[Dict[str, Any]]) -> int:
+        """Upsert locations data."""
+        if not locations_data:
+            return 0
+        
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            total = 0
+            batch_size = 500
+            
+            for i in range(0, len(locations_data), batch_size):
+                batch = locations_data[i:i + batch_size]
+                
+                for loc in batch:
+                    loc["tenant_id"] = tenant_uuid_str
+                    if loc.get("warehouse_id"):
+                        loc["warehouse_id"] = str(loc["warehouse_id"])
+                    
+                    stmt = text("""
+                        INSERT INTO locations (tenant_id, warehouse_id, warehouse_code, warehouse_name,
+                            city, state, country, address1, address2, zip, updated_at)
+                        VALUES (:tenant_id, :warehouse_id, :warehouse_code, :warehouse_name,
+                            :city, :state, :country, :address1, :address2, :zip, NOW())
+                        ON CONFLICT (tenant_id, warehouse_id) DO UPDATE SET
+                            warehouse_name = EXCLUDED.warehouse_name,
+                            city = EXCLUDED.city,
+                            state = EXCLUDED.state,
+                            updated_at = NOW()
+                    """)
+                    
+                    try:
+                        await session.execute(stmt, loc)
+                        total += 1
+                    except Exception as e:
+                        logger.warning(f"Error upserting location: {e}")
+            
+            await session.commit()
+            logger.info(f"Upserted {total} locations")
+            return total
+
+    async def get_tenant_service_status(self, tenant_id: str) -> Dict[str, Dict[str, Any]]:
+        """Get service status for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT bigquery_config, sftp_config
+                FROM tenants
+                WHERE id = :tenant_id
+            """)
+            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            row = result.mappings().first()
+            
+            if not row:
+                return {
+                    "bigquery": {"enabled": False, "error": "Tenant not found"},
+                    "sftp": {"enabled": False, "error": "Tenant not found"}
+                }
+            
+            bigquery_config = row.get("bigquery_config")
+            sftp_config = row.get("sftp_config")
+            
+            return {
+                "bigquery": {
+                    "enabled": bool(bigquery_config),
+                    "error": None if bigquery_config else "BigQuery not configured"
+                },
+                "sftp": {
+                    "enabled": bool(sftp_config),
+                    "error": None if sftp_config else "SFTP not configured"
+                }
+            }
+
+    async def get_tenant_bigquery_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+        """Get BigQuery config for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT bigquery_config
+                FROM tenants
+                WHERE id = :tenant_id
+            """)
+            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            row = result.mappings().first()
+            
+            if row and row.get("bigquery_config"):
+                config = row["bigquery_config"]
+                if isinstance(config, str):
+                    return json.loads(config)
+                return config
+            return None
+
+    async def get_tenant_sftp_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+        """Get SFTP config for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT sftp_config
+                FROM tenants
+                WHERE id = :tenant_id
+            """)
+            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            row = result.mappings().first()
+            
+            if row and row.get("sftp_config"):
+                config = row["sftp_config"]
+                if isinstance(config, str):
+                    return json.loads(config)
+                return config
+            return None
+
+    # ======================================
+    # EMAIL JOB METHODS
+    # ======================================
+
+    async def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new email sending job."""
+        async with get_db_session() as session:
+            tenant_uuid_str = ensure_uuid_string(job_data["tenant_id"])
+            
+            stmt = text("""
+                INSERT INTO email_sending_jobs (
+                    tenant_id, job_id, status, report_date, target_branches
+                ) VALUES (
+                    :tenant_id, :job_id, :status, :report_date, :target_branches
+                )
+                RETURNING id, job_id, status
+            """)
+            
+            result = await session.execute(stmt, {
+                "tenant_id": tenant_uuid_str,
+                "job_id": job_data["job_id"],
+                "status": job_data["status"],
+                "report_date": job_data["report_date"],
+                "target_branches": job_data.get("target_branches", [])
+            })
+            row = result.mappings().first()
+            await session.commit()
+            
+            return {
+                "id": str(row["id"]) if row else None,
+                "job_id": row["job_id"] if row else None,
+                "status": row["status"] if row else None
+            }
+
+    async def update_email_job_status(
+        self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Update email job status and other fields."""
+        async with get_db_session() as session:
+            set_clauses = ["status = :status", "updated_at = NOW()"]
+            params = {"job_id": job_id, "status": status}
+            
+            if updates:
+                for key, value in updates.items():
+                    if key in ["started_at", "completed_at", "total_emails", 
+                             "emails_sent", "emails_failed", "error_message"]:
+                        set_clauses.append(f"{key} = :{key}")
+                        params[key] = value
+            
+            stmt = text(f"""
+                UPDATE email_sending_jobs 
+                SET {', '.join(set_clauses)}
+                WHERE job_id = :job_id
+            """)
+            
+            result = await session.execute(stmt, params)
+            await session.commit()
+            return result.rowcount > 0
+
+    async def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get email job status."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT job_id, status, report_date, target_branches,
+                       total_emails, emails_sent, emails_failed, error_message,
+                       created_at, started_at, completed_at
+                FROM email_sending_jobs 
+                WHERE tenant_id = :tenant_id AND job_id = :job_id
+            """)
+            
+            result = await session.execute(stmt, {
+                "tenant_id": tenant_uuid_str,
+                "job_id": job_id
+            })
+            row = result.mappings().first()
+            
+            if row:
+                return {
+                    "job_id": row["job_id"],
+                    "status": row["status"],
+                    "tenant_id": tenant_id,
+                    "report_date": row["report_date"],
+                    "target_branches": row["target_branches"] or [],
+                    "total_emails": row["total_emails"] or 0,
+                    "emails_sent": row["emails_sent"] or 0,
+                    "emails_failed": row["emails_failed"] or 0,
+                    "error_message": row["error_message"],
+                    "created_at": row["created_at"],
+                    "started_at": row["started_at"],
+                    "completed_at": row["completed_at"]
+                }
+            return None
+
+    # ======================================
+    # EMAIL CONFIG & MAPPINGS METHODS
+    # ======================================
+
+    async def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
+        """Get email configuration for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT email_config
+                FROM tenants
+                WHERE id = :tenant_id
+            """)
+            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            row = result.mappings().first()
+            
+            if row and row.get("email_config"):
+                config = row["email_config"]
+                if isinstance(config, str):
+                    return json.loads(config)
+                return config
+            return None
+
+    async def get_smtp_service_status(self, tenant_id: str) -> Dict[str, Any]:
+        """Check if SMTP is configured for tenant."""
+        email_config = await self.get_email_config(tenant_id)
+        
+        if not email_config:
+            return {"enabled": False, "error": "SMTP not configured"}
+        
+        # Check required fields
+        required_fields = ["server", "from_address"]
+        missing = [f for f in required_fields if not email_config.get(f)]
+        
+        if missing:
+            return {"enabled": False, "error": f"Missing SMTP config: {', '.join(missing)}"}
+        
+        return {"enabled": True, "error": None}
+
+    async def get_branch_email_mappings(
+        self, tenant_id: str, branch_code: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Get branch email mappings for a tenant."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            query = """
+                SELECT id, branch_code, branch_name, sales_rep_email, 
+                       sales_rep_name, is_enabled, created_at, updated_at
+                FROM branch_email_mappings
+                WHERE tenant_id = :tenant_id
+            """
+            params = {"tenant_id": tenant_uuid_str}
+            
+            if branch_code:
+                query += " AND branch_code = :branch_code"
+                params["branch_code"] = branch_code
+            
+            query += " ORDER BY branch_code, sales_rep_email"
+            
+            result = await session.execute(text(query), params)
+            rows = result.mappings().all()
+            
+            mappings = []
+            for row in rows:
+                mappings.append({
+                    "id": str(row["id"]),
+                    "branch_code": row["branch_code"],
+                    "branch_name": row["branch_name"],
+                    "sales_rep_email": row["sales_rep_email"],
+                    "sales_rep_name": row["sales_rep_name"],
+                    "is_enabled": row["is_enabled"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"]
+                })
+            
+            return mappings
+
+    async def create_branch_email_mapping(
+        self, tenant_id: str, mapping: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Create a new branch email mapping."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                INSERT INTO branch_email_mappings (
+                    tenant_id, branch_code, branch_name,
+                    sales_rep_email, sales_rep_name, is_enabled
+                ) VALUES (
+                    :tenant_id, :branch_code, :branch_name,
+                    :sales_rep_email, :sales_rep_name, :is_enabled
+                )
+                RETURNING id
+            """)
+            
+            result = await session.execute(stmt, {
+                "tenant_id": tenant_uuid_str,
+                "branch_code": mapping["branch_code"],
+                "branch_name": mapping.get("branch_name"),
+                "sales_rep_email": mapping["sales_rep_email"],
+                "sales_rep_name": mapping.get("sales_rep_name"),
+                "is_enabled": mapping.get("is_enabled", True)
+            })
+            row = result.mappings().first()
+            await session.commit()
+            
+            return {"mapping_id": str(row["id"]) if row else None}
+
+    # ======================================
+    # EMAIL HISTORY METHODS
+    # ======================================
+
+    async def log_email_send_history(self, history_data: Dict[str, Any]) -> None:
+        """Log email send history record."""
+        tenant_uuid_str = ensure_uuid_string(history_data["tenant_id"])
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                INSERT INTO email_send_history (
+                    tenant_id, job_id, branch_code, sales_rep_email,
+                    sales_rep_name, subject, report_date, status,
+                    smtp_response, error_message
+                ) VALUES (
+                    :tenant_id, :job_id, :branch_code, :sales_rep_email,
+                    :sales_rep_name, :subject, :report_date, :status,
+                    :smtp_response, :error_message
+                )
+            """)
+            
+            await session.execute(stmt, {
+                "tenant_id": tenant_uuid_str,
+                "job_id": history_data.get("job_id"),
+                "branch_code": history_data["branch_code"],
+                "sales_rep_email": history_data["sales_rep_email"],
+                "sales_rep_name": history_data.get("sales_rep_name"),
+                "subject": history_data["subject"],
+                "report_date": history_data["report_date"],
+                "status": history_data["status"],
+                "smtp_response": history_data.get("smtp_response"),
+                "error_message": history_data.get("error_message")
+            })
+            await session.commit()
+
+    # ======================================
+    # LOCATION METHODS
+    # ======================================
+
+    async def get_location_by_code(self, tenant_id: str, branch_code: str) -> Optional[Dict[str, Any]]:
+        """Get location info by branch/warehouse code."""
+        tenant_uuid_str = ensure_uuid_string(tenant_id)
+        
+        async with get_db_session() as session:
+            stmt = text("""
+                SELECT warehouse_id, warehouse_code, warehouse_name, city, state, country
+                FROM locations
+                WHERE tenant_id = :tenant_id AND warehouse_code = :branch_code
+                LIMIT 1
+            """)
+            
+            result = await session.execute(stmt, {
+                "tenant_id": tenant_uuid_str,
+                "branch_code": branch_code
+            })
+            row = result.mappings().first()
+            
+            if row:
+                return {
+                    "warehouse_id": row["warehouse_id"],
+                    "warehouse_code": row["warehouse_code"],
+                    "warehouse_name": row["warehouse_name"],
+                    "city": row["city"],
+                    "state": row["state"],
+                    "country": row["country"]
+                }
+            return None
+
+
+def create_repository() -> FunctionsRepository:
+    """Factory function to create a repository instance."""
+    return FunctionsRepository()
+

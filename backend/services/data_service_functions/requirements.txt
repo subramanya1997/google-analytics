@@ -1,0 +1,27 @@
+# Azure Functions
+azure-functions>=1.17.0
+
+# Database
+asyncpg>=0.29.0
+sqlalchemy[asyncio]>=2.0.0
+
+# Google Cloud
+google-cloud-bigquery>=3.14.0
+google-auth>=2.25.0
+
+# Data processing
+pandas>=2.1.0
+numpy>=1.26.0
+openpyxl>=3.1.0
+
+# SFTP
+paramiko>=3.4.0
+
+# API & Validation
+pydantic>=2.5.0
+
+# Logging
+loguru>=0.7.0
+
+# Utilities
+python-dotenv>=1.0.0

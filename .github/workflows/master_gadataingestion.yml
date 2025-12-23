@@ -67,8 +67,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install --target="./.python_packages/lib/site-packages" -r requirements.txt
         echo "✓ Dependencies installed"
-        echo "Installed packages:"
-        ls -la .python_packages/lib/site-packages/ | head -20
+        echo "Verifying .python_packages directory:"
+        ls -la | grep python_packages
+        echo "Checking for SQLAlchemy:"
+        find .python_packages -name "*sqlalchemy*" -type d | head -5
 
     - name: Upload artifact for deployment
       uses: actions/upload-artifact@v4
@@ -76,6 +78,7 @@ jobs:
         name: function-app-package
         path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
         retention-days: 1
+        include-hidden-files: true
 
   # Job 2: Deploy to Azure
   deploy:

@@ -37,13 +37,18 @@ env:
   PYTHON_VERSION: '3.10'
 
 jobs:
-  # Job 1: Build and Package
+  # Job 1: Build and Package with Dependencies
   build:
     runs-on: ubuntu-latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+
+    - name: Setup Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Validate requirements.txt exists
       run: |
@@ -55,6 +60,15 @@ jobs:
         echo "✓ requirements.txt found"
         echo "Contents:"
         cat requirements.txt
+
+    - name: Install dependencies into .python_packages
+      run: |
+        cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        python -m pip install --upgrade pip
+        pip install --target="./.python_packages/lib/site-packages" -r requirements.txt
+        echo "✓ Dependencies installed"
+        echo "Installed packages:"
+        ls -la .python_packages/lib/site-packages/ | head -20
 
     - name: Upload artifact for deployment
       uses: actions/upload-artifact@v4
@@ -95,9 +109,7 @@ jobs:
         app-settings-json: |
           [
             {"name":"AzureWebJobsFeatureFlags","value":"EnableWorkerIndexing"},
-            {"name":"PYTHON_ENABLE_WORKER_EXTENSIONS","value":"1"},
-            {"name":"SCM_DO_BUILD_DURING_DEPLOYMENT","value":"true"},
-            {"name":"ENABLE_ORYX_BUILD","value":"true"}
+            {"name":"PYTHON_ENABLE_WORKER_EXTENSIONS","value":"1"}
           ]
 
     - name: Verify package contents
@@ -105,16 +117,22 @@ jobs:
         echo "Package contents:"
         ls -la ./function-app/
         echo ""
-        echo "requirements.txt contents:"
-        cat ./function-app/requirements.txt || echo "WARNING: requirements.txt not found!"
+        echo "Checking if dependencies were packaged:"
+        if [ -d "./function-app/.python_packages" ]; then
+          echo "✓ .python_packages directory found"
+          ls -la ./function-app/.python_packages/lib/site-packages/ | grep -i sql || echo "WARNING: sqlalchemy not found in packages!"
+        else
+          echo "ERROR: .python_packages directory not found!"
+          exit 1
+        fi
 
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./function-app
-        scm-do-build-during-deployment: true
-        enable-oryx-build: true
+        scm-do-build-during-deployment: false
+        enable-oryx-build: false
     
     - name: Wait for deployment to complete
       run: |

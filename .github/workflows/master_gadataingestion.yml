@@ -16,6 +16,7 @@ on:
     branches:
       - feat/azure_functions
       - main
+      - master
     paths:
       - 'backend/services/data_service_functions/**'
       - '.github/workflows/master_gadataingestion.yml'

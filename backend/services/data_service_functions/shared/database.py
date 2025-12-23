@@ -183,10 +183,21 @@ class FunctionsRepository:
             # Convert data_types to JSON string for JSONB column (matches data_service)
             data_types = job_data.get("data_types", [])
             data_types_json = json.dumps(data_types)
+            
+            # progress and records_processed are NOT NULL in schema
+            # SQLAlchemy ORM uses default=dict, but raw SQL needs explicit values
+            progress_json = json.dumps(job_data.get("progress", {}))
+            records_processed_json = json.dumps(job_data.get("records_processed", {}))
 
             stmt = text("""
-                INSERT INTO processing_jobs (job_id, tenant_id, status, data_types, start_date, end_date, created_at)
-                VALUES (:job_id, :tenant_id, :status, CAST(:data_types AS jsonb), :start_date, :end_date, NOW())
+                INSERT INTO processing_jobs (
+                    job_id, tenant_id, status, data_types, 
+                    start_date, end_date, progress, records_processed, created_at
+                )
+                VALUES (
+                    :job_id, :tenant_id, :status, CAST(:data_types AS jsonb), 
+                    :start_date, :end_date, CAST(:progress AS jsonb), CAST(:records_processed AS jsonb), NOW()
+                )
                 RETURNING *
             """)
             
@@ -197,6 +208,8 @@ class FunctionsRepository:
                 "data_types": data_types_json,
                 "start_date": job_data["start_date"],
                 "end_date": job_data["end_date"],
+                "progress": progress_json,
+                "records_processed": records_processed_json,
             })
             await session.commit()
             row = result.mappings().first()

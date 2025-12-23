@@ -30,6 +30,21 @@ stmt = text("""
 
 **Note**: Using `CAST(:param AS jsonb)` instead of `:param::jsonb` because SQLAlchemy's text() with asyncpg driver requires the CAST() syntax for proper parameter binding.
 
+**Additional Fix**: Must include `progress` and `records_processed` columns in INSERT with empty JSON objects (`{}`) since:
+- Database schema: `progress jsonb NOT NULL`, `records_processed jsonb NOT NULL`
+- SQLAlchemy ORM model uses `default=dict` which only works with ORM, not raw SQL
+
+```python
+# Must explicitly provide these NOT NULL columns:
+progress_json = json.dumps(job_data.get("progress", {}))
+records_processed_json = json.dumps(job_data.get("records_processed", {}))
+
+stmt = text("""
+    INSERT INTO processing_jobs (..., progress, records_processed, ...)
+    VALUES (..., CAST(:progress AS jsonb), CAST(:records_processed AS jsonb), ...)
+""")
+```
+
 **Reference**: 
 - Database schema: `backend/database/tables/processing_jobs.sql` line 7: `data_types jsonb NOT NULL`
 - SQLAlchemy model: `backend/common/models/control.py` line 20: `data_types: Mapped[dict] = mapped_column(JSONB)`

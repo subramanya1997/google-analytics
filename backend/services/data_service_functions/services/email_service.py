@@ -18,11 +18,21 @@ from shared.database import create_repository
 
 
 class EmailService:
-    """Service for handling email operations."""
+    """
+    Service for handling email operations.
+    
+    Each tenant has their own isolated database for SOC2 compliance.
+    """
 
-    def __init__(self):
-        """Initialize email service."""
-        self.repo = create_repository()
+    def __init__(self, tenant_id: str):
+        """
+        Initialize email service for a specific tenant.
+        
+        Args:
+            tenant_id: The tenant ID - determines which database to connect to.
+        """
+        self.tenant_id = tenant_id
+        self.repo = create_repository(tenant_id)
 
     async def create_and_process_email_job(
         self,

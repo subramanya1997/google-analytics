@@ -69,16 +69,22 @@ Before deploying, ensure you have:
 1. Go to your Function App → **"Configuration"** (under Settings)
 2. Click **"+ New application setting"** and add each of these:
 
-| Name | Value |
-|------|-------|
-| `POSTGRES_HOST` | Your PostgreSQL host (e.g., `mydb.postgres.database.azure.com`) |
-| `POSTGRES_PORT` | `5432` |
-| `POSTGRES_USER` | Your database username |
-| `POSTGRES_PASSWORD` | Your database password |
-| `POSTGRES_DATABASE` | `analytics` |
-| `DATA_INGESTION_CRON` | `0 2 * * *` |
-| `SCHEDULER_API_URL` | Your scheduler API URL (if applicable) |
-| `AzureWebJobsStorage` | Connection string from Step 2 |
+| Name | Value | Description |
+|------|-------|-------------|
+| `POSTGRES_HOST` | Your PostgreSQL host | e.g., `mydb.postgres.database.azure.com` |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `POSTGRES_USER` | Your database username | Database user with access to tenant DBs |
+| `POSTGRES_PASSWORD` | Your database password | Database password |
+| `SCHEDULED_TENANT_IDS` | `uuid1,uuid2` | Comma-separated tenant IDs for scheduled ingestion |
+| `DATA_INGESTION_CRON` | `0 2 * * *` | Cron schedule for daily ingestion |
+| `AzureWebJobsStorage` | Connection string | From Step 2 |
+
+> **Note: Tenant-Specific Databases**
+> 
+> This service uses tenant-specific databases for SOC2 compliance. Each tenant has their own database:
+> - Database name format: `google-analytics-{tenant_id}`
+> - Tenant ID is passed via `X-Tenant-Id` header in HTTP requests
+> - The service automatically connects to the correct tenant database
 
 3. Click **"Save"** at the top
 
@@ -261,6 +267,7 @@ az functionapp create \
   --functions-version 4
 
 # Configure app settings
+# Note: Each tenant has their own database (google-analytics-{tenant_id})
 az functionapp config appsettings set \
   --name func-data-ingestion-prod \
   --resource-group rg-google-analytics-prod \
@@ -269,7 +276,7 @@ az functionapp config appsettings set \
     POSTGRES_PORT=5432 \
     POSTGRES_USER=your-user \
     POSTGRES_PASSWORD=your-password \
-    POSTGRES_DATABASE=analytics \
+    SCHEDULED_TENANT_IDS="tenant-uuid-1,tenant-uuid-2" \
     DATA_INGESTION_CRON="0 2 * * *"
 
 # Deploy from local

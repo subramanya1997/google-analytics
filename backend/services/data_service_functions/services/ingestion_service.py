@@ -18,10 +18,21 @@ from shared.models import CreateIngestionJobRequest
 
 
 class IngestionService:
-    """Service for handling analytics data ingestion jobs."""
+    """
+    Service for handling analytics data ingestion jobs.
+    
+    Each tenant has their own isolated database for SOC2 compliance.
+    """
 
-    def __init__(self):
-        self.repo = create_repository()
+    def __init__(self, tenant_id: str):
+        """
+        Initialize ingestion service for a specific tenant.
+        
+        Args:
+            tenant_id: The tenant ID - determines which database to connect to.
+        """
+        self.tenant_id = tenant_id
+        self.repo = create_repository(tenant_id)
 
     async def run_job_safe(
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest

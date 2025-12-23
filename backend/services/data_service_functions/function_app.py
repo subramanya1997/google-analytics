@@ -87,7 +87,7 @@ async def start_ingestion_job(req: func.HttpRequest) -> func.HttpResponse:
         
         # Validate request
         request = CreateIngestionJobRequest(**body)
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         
         # Check service availability
         service_status = await repo.get_tenant_service_status(tenant_id)
@@ -117,7 +117,7 @@ async def start_ingestion_job(req: func.HttpRequest) -> func.HttpResponse:
         logging.info(f"Created job {job_id} for tenant {tenant_id}, starting processing...")
         
         # Start background processing immediately
-        ingestion_service = IngestionService()
+        ingestion_service = IngestionService(tenant_id)
         asyncio.create_task(ingestion_service.run_job_safe(job_id, tenant_id, request))
         
         return create_json_response({
@@ -150,7 +150,7 @@ async def get_data_availability(req: func.HttpRequest) -> func.HttpResponse:
     try:
         from shared.database import create_repository
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         data = await repo.get_data_availability_with_breakdown(tenant_id)
         return create_json_response(data)
         
@@ -176,7 +176,7 @@ async def list_jobs(req: func.HttpRequest) -> func.HttpResponse:
         
         from shared.database import create_repository
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         jobs_data = await repo.get_tenant_jobs(tenant_id, limit, offset)
         
         return create_json_response({
@@ -209,7 +209,7 @@ async def get_job_status(req: func.HttpRequest) -> func.HttpResponse:
     try:
         from shared.database import create_repository
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         job = await repo.get_job_by_id(job_id)
         
         if not job:
@@ -348,7 +348,7 @@ async def send_reports(req: func.HttpRequest) -> func.HttpResponse:
         
         # Validate request
         request = SendReportsRequest(**body)
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         
         # Check SMTP service status
         smtp_status = await repo.get_smtp_service_status(tenant_id)
@@ -358,7 +358,7 @@ async def send_reports(req: func.HttpRequest) -> func.HttpResponse:
             return create_error_response(400, f"Cannot send emails: {error_msg}")
         
         # Create and start email job
-        email_service = EmailService()
+        email_service = EmailService(tenant_id)
         job_id = await email_service.create_and_process_email_job(
             tenant_id, request.report_date, request.branch_codes
         )
@@ -402,7 +402,7 @@ async def get_email_job_status(req: func.HttpRequest) -> func.HttpResponse:
     try:
         from shared.database import create_repository
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         job = await repo.get_email_job_status(tenant_id, job_id)
         
         if not job:
@@ -431,7 +431,7 @@ async def get_email_mappings(req: func.HttpRequest) -> func.HttpResponse:
     try:
         from shared.database import create_repository
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         mappings = await repo.get_branch_email_mappings(tenant_id, branch_code)
         
         return create_json_response({
@@ -470,7 +470,7 @@ async def create_email_mapping(req: func.HttpRequest) -> func.HttpResponse:
         # Validate request
         mapping_request = BranchEmailMappingRequest(**body)
         
-        repo = create_repository()
+        repo = create_repository(tenant_id)
         result = await repo.create_branch_email_mapping(tenant_id, {
             "branch_code": mapping_request.branch_code,
             "branch_name": mapping_request.branch_name,
@@ -506,35 +506,37 @@ async def scheduled_ingestion(timer: func.TimerRequest) -> None:
     """
     Daily scheduled ingestion at 2 AM UTC.
     Creates and processes jobs for all tenants with active schedules.
+    
+    Note: Tenant discovery requires SCHEDULED_TENANT_IDS environment variable
+    containing comma-separated tenant IDs. Each tenant has their own database.
     """
     logging.info("Starting scheduled ingestion")
     
     try:
-        from shared.database import create_repository, get_db_session
+        from shared.database import create_repository
         from shared.models import CreateIngestionJobRequest
         from services.ingestion_service import IngestionService
-        from sqlalchemy import text
         import asyncio
         
-        async with get_db_session() as session:
-            result = await session.execute(
-                text("""
-                    SELECT id FROM tenants 
-                    WHERE data_ingestion_schedule IS NOT NULL
-                """)
-            )
-            tenants = result.mappings().all()
+        # Get tenant IDs from environment variable
+        # Format: comma-separated UUIDs, e.g., "uuid1,uuid2,uuid3"
+        tenant_ids_str = os.getenv("SCHEDULED_TENANT_IDS", "")
+        if not tenant_ids_str:
+            logging.warning("No SCHEDULED_TENANT_IDS configured, skipping scheduled ingestion")
+            return
+        
+        tenant_ids = [t.strip() for t in tenant_ids_str.split(",") if t.strip()]
         
         today = date.today()
         two_days_ago = today - timedelta(days=2)
         jobs_created = 0
         
-        for tenant in tenants:
-            tenant_id = str(tenant["id"])
+        for tenant_id in tenant_ids:
             job_id = f"scheduled_{uuid4().hex[:12]}"
             
             try:
-                repo = create_repository()
+                # Each tenant has their own database
+                repo = create_repository(tenant_id)
                 await repo.create_processing_job({
                     "job_id": job_id,
                     "tenant_id": tenant_id,
@@ -552,7 +554,7 @@ async def scheduled_ingestion(timer: func.TimerRequest) -> None:
                     start_date=two_days_ago,
                     end_date=today
                 )
-                ingestion_service = IngestionService()
+                ingestion_service = IngestionService(tenant_id)
                 asyncio.create_task(ingestion_service.run_job_safe(job_id, tenant_id, request))
                 
             except Exception as e:

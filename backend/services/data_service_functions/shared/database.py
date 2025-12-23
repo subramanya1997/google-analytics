@@ -3,6 +3,9 @@ Database session management for Azure Functions.
 
 This module provides per-request database connections without connection pooling,
 suitable for the stateless nature of Azure Functions.
+
+IMPORTANT: Uses tenant-specific databases for SOC2 compliance.
+Each tenant has their own database: google-analytics-{tenant_id}
 """
 
 import os
@@ -24,9 +27,60 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def create_sqlalchemy_url(async_driver: bool = False) -> URL:
-    """Create SQLAlchemy URL from environment variables."""
+def ensure_uuid_string(tenant_id: str) -> str:
+    """Convert tenant_id to a consistent UUID string format."""
+    try:
+        uuid_obj = uuid.UUID(tenant_id)
+        return str(uuid_obj)
+    except ValueError:
+        import hashlib
+        tenant_uuid = uuid.UUID(bytes=hashlib.md5(tenant_id.encode()).digest()[:16])
+        return str(tenant_uuid)
+
+
+def get_tenant_database_name(tenant_id: str) -> str:
+    """
+    Get the database name for a tenant.
+    
+    Each tenant has their own isolated database for SOC2 compliance.
+    Format: google-analytics-{tenant_id}
+    
+    Args:
+        tenant_id: The tenant ID (UUID string)
+        
+    Returns:
+        Database name in format: google-analytics-{tenant_id}
+    """
+    # Ensure tenant_id is a valid UUID string
+    tenant_uuid_str = ensure_uuid_string(tenant_id)
+    return f"google-analytics-{tenant_uuid_str}"
+
+
+def create_sqlalchemy_url(tenant_id: str = None, async_driver: bool = False) -> URL:
+    """
+    Create SQLAlchemy URL from environment variables.
+    
+    Args:
+        tenant_id: The tenant ID for tenant-specific database connection.
+                   If None, falls back to POSTGRES_DATABASE env var (for admin ops).
+        async_driver: Whether to use async driver (asyncpg) or sync driver (psycopg2)
+    
+    Returns:
+        SQLAlchemy URL object
+    """
     driver = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
+    
+    # Determine database name
+    if tenant_id:
+        database_name = get_tenant_database_name(tenant_id)
+    else:
+        # Fallback to env var for backwards compatibility or admin operations
+        database_name = os.getenv("POSTGRES_DATABASE")
+        if not database_name:
+            raise ValueError(
+                "Either tenant_id must be provided or POSTGRES_DATABASE env var must be set. "
+                "Tenant-specific databases are required for SOC2 compliance."
+            )
     
     url = URL.create(
         drivername=driver,
@@ -34,14 +88,14 @@ def create_sqlalchemy_url(async_driver: bool = False) -> URL:
         password=os.getenv("POSTGRES_PASSWORD"),
         host=os.getenv("POSTGRES_HOST"),
         port=int(os.getenv("POSTGRES_PORT", 5432)),
-        database=os.getenv("POSTGRES_DATABASE"),
+        database=database_name,
     )
     return url
 
 
-def get_sync_engine():
+def get_sync_engine(tenant_id: str = None):
     """Get a fresh sync database engine (no pooling for serverless)."""
-    url = create_sqlalchemy_url(async_driver=False)
+    url = create_sqlalchemy_url(tenant_id=tenant_id, async_driver=False)
     
     engine = create_engine(
         url,
@@ -53,9 +107,14 @@ def get_sync_engine():
     return engine
 
 
-def get_async_engine():
-    """Get a fresh async database engine (no pooling for serverless)."""
-    url = create_sqlalchemy_url(async_driver=True)
+def get_async_engine(tenant_id: str = None):
+    """
+    Get a fresh async database engine (no pooling for serverless).
+    
+    Args:
+        tenant_id: The tenant ID for tenant-specific database connection.
+    """
+    url = create_sqlalchemy_url(tenant_id=tenant_id, async_driver=True)
     
     async_engine = create_async_engine(
         url,
@@ -68,12 +127,16 @@ def get_async_engine():
 
 
 @asynccontextmanager
-async def get_db_session():
+async def get_db_session(tenant_id: str = None):
     """
     Async context manager for database sessions.
     Creates a fresh connection per invocation (serverless pattern).
+    
+    Args:
+        tenant_id: The tenant ID for tenant-specific database connection.
+                   Required for tenant data operations.
     """
-    engine = get_async_engine()
+    engine = get_async_engine(tenant_id=tenant_id)
     session_maker = async_sessionmaker(
         bind=engine,
         class_=AsyncSession,
@@ -93,29 +156,27 @@ async def get_db_session():
         await engine.dispose()
 
 
-def ensure_uuid_string(tenant_id: str) -> str:
-    """Convert tenant_id to a consistent UUID string format."""
-    try:
-        uuid_obj = uuid.UUID(tenant_id)
-        return str(uuid_obj)
-    except ValueError:
-        import hashlib
-        tenant_uuid = uuid.UUID(bytes=hashlib.md5(tenant_id.encode()).digest()[:16])
-        return str(tenant_uuid)
-
-
 class FunctionsRepository:
     """
     Data-access layer for Azure Functions.
     Designed for stateless per-request connections.
+    
+    Each tenant has their own isolated database (google-analytics-{tenant_id})
+    for SOC2 compliance and data isolation.
     """
 
-    def __init__(self):
-        pass
+    def __init__(self, tenant_id: str):
+        """
+        Initialize repository for a specific tenant.
+        
+        Args:
+            tenant_id: The tenant ID - used to connect to the correct database.
+        """
+        self.tenant_id = ensure_uuid_string(tenant_id)
 
     async def create_processing_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new processing job."""
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             if "tenant_id" in job_data:
                 job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
 
@@ -139,7 +200,7 @@ class FunctionsRepository:
 
     async def update_job_status(self, job_id: str, status: str, **kwargs) -> bool:
         """Update job status with optional additional fields."""
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             # Build dynamic update
             set_clauses = ["status = :status"]
             params = {"job_id": job_id, "status": status}
@@ -176,7 +237,7 @@ class FunctionsRepository:
 
     async def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get job by ID."""
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             stmt = text("SELECT * FROM processing_jobs WHERE job_id = :job_id")
             result = await session.execute(stmt, {"job_id": job_id})
             row = result.mappings().first()
@@ -194,7 +255,7 @@ class FunctionsRepository:
         """Get job history for a tenant."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             # Get jobs with pagination
             jobs_stmt = text("""
                 SELECT *, COUNT(*) OVER() as total_count
@@ -241,7 +302,7 @@ class FunctionsRepository:
         """Get data availability summary."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             try:
                 # Try the optimized function first
                 combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
@@ -304,7 +365,7 @@ class FunctionsRepository:
         """Replace event data for a date range."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             # Delete existing data
             del_stmt = text(f"""
                 DELETE FROM {event_type}
@@ -372,7 +433,7 @@ class FunctionsRepository:
         
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             total = 0
             batch_size = 500
             
@@ -423,7 +484,7 @@ class FunctionsRepository:
         
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             total = 0
             batch_size = 500
             
@@ -459,71 +520,75 @@ class FunctionsRepository:
 
     async def get_tenant_service_status(self, tenant_id: str) -> Dict[str, Dict[str, Any]]:
         """Get service status for a tenant."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
+            # Each tenant database has a single-row tenant_config table
             stmt = text("""
-                SELECT bigquery_config, sftp_config
-                FROM tenants
-                WHERE id = :tenant_id
+                SELECT bigquery_enabled, sftp_enabled, bigquery_validation_error, sftp_validation_error,
+                       bigquery_project_id, sftp_config
+                FROM tenant_config
+                LIMIT 1
             """)
-            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            result = await session.execute(stmt)
             row = result.mappings().first()
             
             if not row:
                 return {
-                    "bigquery": {"enabled": False, "error": "Tenant not found"},
-                    "sftp": {"enabled": False, "error": "Tenant not found"}
+                    "bigquery": {"enabled": False, "error": "Tenant config not found"},
+                    "sftp": {"enabled": False, "error": "Tenant config not found"}
                 }
             
-            bigquery_config = row.get("bigquery_config")
-            sftp_config = row.get("sftp_config")
+            # Check BigQuery status
+            bigquery_enabled = row.get("bigquery_enabled", False) and row.get("bigquery_project_id")
+            bigquery_error = row.get("bigquery_validation_error") or (None if bigquery_enabled else "BigQuery not configured")
+            
+            # Check SFTP status
+            sftp_enabled = row.get("sftp_enabled", False) and row.get("sftp_config")
+            sftp_error = row.get("sftp_validation_error") or (None if sftp_enabled else "SFTP not configured")
             
             return {
                 "bigquery": {
-                    "enabled": bool(bigquery_config),
-                    "error": None if bigquery_config else "BigQuery not configured"
+                    "enabled": bool(bigquery_enabled),
+                    "error": bigquery_error
                 },
                 "sftp": {
-                    "enabled": bool(sftp_config),
-                    "error": None if sftp_config else "SFTP not configured"
+                    "enabled": bool(sftp_enabled),
+                    "error": sftp_error
                 }
             }
 
     async def get_tenant_bigquery_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get BigQuery config for a tenant."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
+            # Each tenant database has a single-row tenant_config table
             stmt = text("""
-                SELECT bigquery_config
-                FROM tenants
-                WHERE id = :tenant_id
+                SELECT bigquery_project_id, bigquery_dataset_id, bigquery_credentials, bigquery_enabled
+                FROM tenant_config
+                LIMIT 1
             """)
-            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            result = await session.execute(stmt)
             row = result.mappings().first()
             
-            if row and row.get("bigquery_config"):
-                config = row["bigquery_config"]
-                if isinstance(config, str):
-                    return json.loads(config)
-                return config
+            if row and row.get("bigquery_enabled") and row.get("bigquery_project_id"):
+                return {
+                    "project_id": row["bigquery_project_id"],
+                    "dataset_id": row["bigquery_dataset_id"],
+                    "credentials": row["bigquery_credentials"] if row.get("bigquery_credentials") else None
+                }
             return None
 
     async def get_tenant_sftp_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get SFTP config for a tenant."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
+            # Each tenant database has a single-row tenant_config table
             stmt = text("""
-                SELECT sftp_config
-                FROM tenants
-                WHERE id = :tenant_id
+                SELECT sftp_config, sftp_enabled
+                FROM tenant_config
+                LIMIT 1
             """)
-            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            result = await session.execute(stmt)
             row = result.mappings().first()
             
-            if row and row.get("sftp_config"):
+            if row and row.get("sftp_enabled") and row.get("sftp_config"):
                 config = row["sftp_config"]
                 if isinstance(config, str):
                     return json.loads(config)
@@ -536,7 +601,7 @@ class FunctionsRepository:
 
     async def create_email_job(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new email sending job."""
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             tenant_uuid_str = ensure_uuid_string(job_data["tenant_id"])
             
             stmt = text("""
@@ -568,7 +633,7 @@ class FunctionsRepository:
         self, job_id: str, status: str, updates: Optional[Dict[str, Any]] = None
     ) -> bool:
         """Update email job status and other fields."""
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             set_clauses = ["status = :status", "updated_at = NOW()"]
             params = {"job_id": job_id, "status": status}
             
@@ -593,7 +658,7 @@ class FunctionsRepository:
         """Get email job status."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             stmt = text("""
                 SELECT job_id, status, report_date, target_branches,
                        total_emails, emails_sent, emails_failed, error_message,
@@ -631,18 +696,17 @@ class FunctionsRepository:
 
     async def get_email_config(self, tenant_id: str) -> Optional[Dict[str, Any]]:
         """Get email configuration for a tenant."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
+            # Each tenant database has a single-row tenant_config table
             stmt = text("""
-                SELECT email_config
-                FROM tenants
-                WHERE id = :tenant_id
+                SELECT email_config, smtp_enabled
+                FROM tenant_config
+                LIMIT 1
             """)
-            result = await session.execute(stmt, {"tenant_id": tenant_uuid_str})
+            result = await session.execute(stmt)
             row = result.mappings().first()
             
-            if row and row.get("email_config"):
+            if row and row.get("smtp_enabled") and row.get("email_config"):
                 config = row["email_config"]
                 if isinstance(config, str):
                     return json.loads(config)
@@ -671,7 +735,7 @@ class FunctionsRepository:
         """Get branch email mappings for a tenant."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             query = """
                 SELECT id, branch_code, branch_name, sales_rep_email, 
                        sales_rep_name, is_enabled, created_at, updated_at
@@ -710,7 +774,7 @@ class FunctionsRepository:
         """Create a new branch email mapping."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             stmt = text("""
                 INSERT INTO branch_email_mappings (
                     tenant_id, branch_code, branch_name,
@@ -743,7 +807,7 @@ class FunctionsRepository:
         """Log email send history record."""
         tenant_uuid_str = ensure_uuid_string(history_data["tenant_id"])
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             stmt = text("""
                 INSERT INTO email_send_history (
                     tenant_id, job_id, branch_code, sales_rep_email,
@@ -778,7 +842,7 @@ class FunctionsRepository:
         """Get location info by branch/warehouse code."""
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         
-        async with get_db_session() as session:
+        async with get_db_session(tenant_id=self.tenant_id) as session:
             stmt = text("""
                 SELECT warehouse_id, warehouse_code, warehouse_name, city, state, country
                 FROM locations
@@ -804,7 +868,16 @@ class FunctionsRepository:
             return None
 
 
-def create_repository() -> FunctionsRepository:
-    """Factory function to create a repository instance."""
-    return FunctionsRepository()
+def create_repository(tenant_id: str) -> FunctionsRepository:
+    """
+    Factory function to create a repository instance for a specific tenant.
+    
+    Args:
+        tenant_id: The tenant ID - determines which database to connect to.
+                   Each tenant has their own database: google-analytics-{tenant_id}
+    
+    Returns:
+        FunctionsRepository instance configured for the tenant's database.
+    """
+    return FunctionsRepository(tenant_id)
 

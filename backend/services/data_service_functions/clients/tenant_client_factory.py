@@ -14,7 +14,7 @@ async def get_tenant_bigquery_config(tenant_id: str) -> Optional[dict]:
     """Get BigQuery configuration for a tenant from the database."""
     from shared.database import create_repository
     
-    repo = create_repository()
+    repo = create_repository(tenant_id)
     return await repo.get_tenant_bigquery_config(tenant_id)
 
 
@@ -22,7 +22,7 @@ async def get_tenant_sftp_config(tenant_id: str) -> Optional[dict]:
     """Get SFTP configuration for a tenant from the database."""
     from shared.database import create_repository
     
-    repo = create_repository()
+    repo = create_repository(tenant_id)
     return await repo.get_tenant_sftp_config(tenant_id)
 
 

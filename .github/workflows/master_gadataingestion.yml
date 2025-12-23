@@ -18,7 +18,7 @@ on:
       - main
     paths:
       - 'backend/services/data_service_functions/**'
-      - '.github/workflows/feat-azure_functions_gadataingestion.yml'
+      - '.github/workflows/master_gadataingestion.yml'
   workflow_dispatch:
     inputs:
       environment:

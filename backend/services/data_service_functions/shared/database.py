@@ -186,7 +186,7 @@ class FunctionsRepository:
 
             stmt = text("""
                 INSERT INTO processing_jobs (job_id, tenant_id, status, data_types, start_date, end_date, created_at)
-                VALUES (:job_id, :tenant_id, :status, :data_types::jsonb, :start_date, :end_date, NOW())
+                VALUES (:job_id, :tenant_id, :status, CAST(:data_types AS jsonb), :start_date, :end_date, NOW())
                 RETURNING *
             """)
             
@@ -222,11 +222,11 @@ class FunctionsRepository:
                 params["error_message"] = kwargs["error_message"]
             
             if "progress" in kwargs:
-                set_clauses.append("progress = :progress::jsonb")
+                set_clauses.append("progress = CAST(:progress AS jsonb)")
                 params["progress"] = json.dumps(kwargs["progress"]) if kwargs["progress"] else None
             
             if "records_processed" in kwargs:
-                set_clauses.append("records_processed = :records_processed::jsonb")
+                set_clauses.append("records_processed = CAST(:records_processed AS jsonb)")
                 params["records_processed"] = json.dumps(kwargs["records_processed"]) if kwargs["records_processed"] else None
 
             stmt = text(f"""

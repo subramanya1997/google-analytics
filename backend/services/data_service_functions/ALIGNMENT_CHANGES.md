@@ -24,9 +24,11 @@ stmt = text("""
 data_types_json = json.dumps(data_types)
 stmt = text("""
     INSERT INTO processing_jobs (...)
-    VALUES (..., :data_types::jsonb, ...)
+    VALUES (..., CAST(:data_types AS jsonb), ...)
 """)
 ```
+
+**Note**: Using `CAST(:param AS jsonb)` instead of `:param::jsonb` because SQLAlchemy's text() with asyncpg driver requires the CAST() syntax for proper parameter binding.
 
 **Reference**: 
 - Database schema: `backend/database/tables/processing_jobs.sql` line 7: `data_types jsonb NOT NULL`
@@ -46,9 +48,11 @@ set_clauses.append("progress = :progress")
 set_clauses.append("records_processed = :records_processed")
 
 # AFTER:
-set_clauses.append("progress = :progress::jsonb")
-set_clauses.append("records_processed = :records_processed::jsonb")
+set_clauses.append("progress = CAST(:progress AS jsonb)")
+set_clauses.append("records_processed = CAST(:records_processed AS jsonb)")
 ```
+
+**Note**: Using `CAST(:param AS jsonb)` syntax is required for SQLAlchemy's text() with asyncpg driver.
 
 ---
 

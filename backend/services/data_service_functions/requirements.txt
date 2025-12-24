@@ -9,6 +9,7 @@ sqlalchemy[asyncio]>=2.0.0
 # Google Cloud
 google-cloud-bigquery>=3.14.0
 google-auth>=2.25.0
+db-dtypes>=1.2.0  # Required for BigQuery pandas integration
 
 # Data processing
 pandas>=2.1.0

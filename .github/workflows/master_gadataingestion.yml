@@ -152,10 +152,20 @@ jobs:
         echo "**Function App:** ${{ env.AZURE_FUNCTIONAPP_NAME }}" >> $GITHUB_STEP_SUMMARY
         echo "**URL:** https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Available Endpoints" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/health\` - Health check" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/ingest\` - Start data ingestion job (processes events, users, locations)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/email/send-reports\` - Send analytics reports via email" >> $GITHUB_STEP_SUMMARY
+        echo "### Architecture" >> $GITHUB_STEP_SUMMARY
+        echo "This Azure Function app runs as a **background worker** using Azure Storage Queues." >> $GITHUB_STEP_SUMMARY
+        echo "Job requests come from FastAPI services via queue messages." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### HTTP Endpoints" >> $GITHUB_STEP_SUMMARY
+        echo "- \`GET /api/v1/health\` - Health check and service status" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Queue Triggers (Background Processing)" >> $GITHUB_STEP_SUMMARY
+        echo "- **ingestion-jobs** queue → Processes data ingestion (BigQuery events, SFTP users/locations)" >> $GITHUB_STEP_SUMMARY
+        echo "- **email-jobs** queue → Sends analytics reports via email" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Job Flow" >> $GITHUB_STEP_SUMMARY
+        echo "1. FastAPI receives request → Creates job in DB → Sends to queue → Returns job_id" >> $GITHUB_STEP_SUMMARY
+        echo "2. Azure Functions queue trigger picks up message → Processes job → Updates status" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Trigger Conditions" >> $GITHUB_STEP_SUMMARY
         echo "Deployment is triggered by changes to:" >> $GITHUB_STEP_SUMMARY

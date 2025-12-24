@@ -14,12 +14,15 @@ name: Deploy Data Service to Azure Functions
 on:
   push:
     branches:
-      - feat/azure_functions
       - main
       - master
     paths:
       - 'backend/services/data_service_functions/**'
       - '.github/workflows/master_gadataingestion.yml'
+    paths-ignore:
+      - 'backend/services/data_service_functions/tests/**'
+      - 'backend/services/data_service_functions/README.md'
+      - 'backend/services/data_service_functions/DEPLOYMENT.md'
   workflow_dispatch:
     inputs:
       environment:

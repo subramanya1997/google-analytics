@@ -13,45 +13,38 @@ Serverless data ingestion and email service that:
 
 ## API Endpoints
 
-### Data Ingestion
-
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/v1/health` | GET | Health check |
-| `/api/v1/ingest` | POST | Start new ingestion job (creates + processes automatically) |
-| `/api/v1/jobs` | GET | List job history |
-| `/api/v1/jobs/{job_id}` | GET | Get job status |
-| `/api/v1/data-availability` | GET | Get data availability summary |
-| `/api/v1/data/schedule` | GET | Get ingestion schedule |
-| `/api/v1/data/schedule` | POST | Update ingestion schedule |
-
-### Email
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/email/send-reports` | POST | Send branch reports via email |
-| `/api/v1/email/jobs/{job_id}` | GET | Get email job status |
-| `/api/v1/email/mappings` | GET | List branch email mappings |
-| `/api/v1/email/mappings` | POST | Create branch email mapping |
+| `/api/v1/health` | GET | Health check - returns service status |
+| `/api/v1/ingest` | POST | Data ingestion from BigQuery & SFTP (synchronous) |
+| `/api/v1/email/send-reports` | POST | Send branch analytics reports via email (synchronous) |
 
 ## Project Structure
 
 ```
 data_service_functions/
-├── function_app.py           # Main function app with all triggers
+├── function_app.py           # 3 HTTP functions (health, ingest, email)
 ├── clients/
-│   ├── bigquery_client.py    # BigQuery client
-│   ├── sftp_client.py        # SFTP client
+│   ├── bigquery_client.py    # BigQuery client for event extraction
+│   ├── sftp_client.py        # SFTP client for users/locations
 │   └── tenant_client_factory.py
 ├── services/
-│   ├── ingestion_service.py  # Data ingestion logic
-│   └── email_service.py      # Email sending logic
+│   ├── ingestion_service.py  # Data ingestion orchestration
+│   ├── email_service.py      # Email job processing & SMTP
+│   ├── report_service.py     # Analytics report generation
+│   └── template_service.py   # Jinja2 HTML templating
 ├── shared/
-│   ├── database.py           # Database sessions & repository
+│   ├── database.py           # PostgreSQL async sessions & repository
 │   └── models.py             # Pydantic request/response models
-├── host.json                 # Function host configuration
+├── templates/
+│   └── branch_report.html    # Email report template
+├── tests/
+│   ├── test_ingestion.py     # Test data ingestion
+│   └── test_email_sending.py # Test email reports
+├── host.json                 # Azure Functions configuration
 ├── requirements.txt          # Python dependencies
-└── README.md
+├── README.md                 # This file
+└── DEPLOYMENT.md             # Deployment instructions
 ```
 
 ## Local Development
@@ -117,61 +110,105 @@ az functionapp config appsettings set \
 
 ## Testing
 
+### Health Check
+
+```bash
+curl https://gadataingestion.azurewebsites.net/api/v1/health
+# Returns: {"status": "healthy", "version": "1.0.0", "service": "data-ingestion-email", ...}
+```
+
 ### Data Ingestion
 
 ```bash
-# Health check
-curl https://gadataingestion.azurewebsites.net/api/v1/health
-
-# Start ingestion job (processes automatically)
+# Start ingestion job (runs synchronously - returns when complete)
 curl -X POST https://gadataingestion.azurewebsites.net/api/v1/ingest \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{"data_types": ["events"], "start_date": "2024-01-01", "end_date": "2024-01-15"}'
-# Returns: {"job_id": "job_xyz123", "status": "processing", ...}
+  -d '{
+    "data_types": ["events", "users", "locations"],
+    "start_date": "2025-01-01",
+    "end_date": "2025-01-15"
+  }'
+# Returns: {
+#   "job_id": "job_xyz123",
+#   "status": "completed",
+#   "records_processed": {"events": 1000, "users": 50, "locations": 10},
+#   ...
+# }
 
-# Check job status
-curl https://gadataingestion.azurewebsites.net/api/v1/jobs/job_xyz123 \
-  -H "X-Tenant-Id: your-tenant-uuid"
-# Returns: {"job_id": "job_xyz123", "status": "completed", "records_processed": {...}}
-
-# List all jobs
-curl https://gadataingestion.azurewebsites.net/api/v1/jobs \
-  -H "X-Tenant-Id: your-tenant-uuid"
+# Test with Python script
+python tests/test_ingestion.py \
+  --tenant-id "your-tenant-uuid" \
+  --days 7 \
+  --base-url "https://gadataingestion.azurewebsites.net"
 ```
 
-### Email
+### Email Reports
 
 ```bash
-# Send branch reports
+# Send branch reports (runs synchronously - returns when complete)
 curl -X POST https://gadataingestion.azurewebsites.net/api/v1/email/send-reports \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{"report_date": "2024-01-15", "branch_codes": ["BR001", "BR002"]}'
-# Returns: {"job_id": "email_abc456", "status": "processing", ...}
+  -d '{
+    "report_date": "2025-01-15",
+    "branch_codes": ["D01", "D02"]
+  }'
+# Returns: {
+#   "job_id": "email_abc456",
+#   "status": "completed",
+#   "emails_sent": 2,
+#   "emails_failed": 0,
+#   ...
+# }
 
-# Check email job status
-curl https://gadataingestion.azurewebsites.net/api/v1/email/jobs/email_abc456 \
-  -H "X-Tenant-Id: your-tenant-uuid"
-# Returns: {"job_id": "email_abc456", "status": "completed", "emails_sent": 5, ...}
-
-# List email mappings
-curl https://gadataingestion.azurewebsites.net/api/v1/email/mappings \
-  -H "X-Tenant-Id: your-tenant-uuid"
-
-# Create email mapping
-curl -X POST https://gadataingestion.azurewebsites.net/api/v1/email/mappings \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{"branch_code": "BR001", "sales_rep_email": "john@example.com", "sales_rep_name": "John Doe"}'
+# Test with Python script
+python tests/test_email_sending.py \
+  --tenant-id "your-tenant-uuid" \
+  --report-date "2025-01-15" \
+  --branch-codes "D01,D02" \
+  --base-url "https://gadataingestion.azurewebsites.net/api/v1"
 ```
+
+### Notes
+
+- Both ingestion and email endpoints run **synchronously**
+- Response times: 30 seconds to 10 minutes depending on data volume
+- Email mappings managed directly in database (`branch_email_mappings` table)
+- SMTP configuration in database (`tenant_config.smtp_credentials` JSONB field)
 
 ## Configuration
 
+### Azure Functions Settings
+
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `functionTimeout` | 10 min | Max execution time |
-| `routePrefix` | api/v1 | API route prefix |
+| `functionTimeout` | 10 min | Max execution time (both endpoints are synchronous) |
+| `routePrefix` | api/v1 | API route prefix for all endpoints |
+
+### Database Configuration
+
+**Email Mappings:** Managed in `branch_email_mappings` table
+```sql
+-- Example: Create email mapping
+INSERT INTO branch_email_mappings (tenant_id, branch_code, branch_name, sales_rep_email, sales_rep_name, is_enabled)
+VALUES ('tenant-uuid', 'D01', 'Main Branch', 'manager@company.com', 'John Doe', true);
+```
+
+**SMTP Configuration:** Stored in `tenant_config.smtp_credentials` (JSONB)
+```sql
+-- Example: Configure SMTP
+UPDATE tenant_config 
+SET smtp_credentials = '{
+  "server": "smtp.gmail.com",
+  "port": 587,
+  "username": "your-email@gmail.com",
+  "password": "your-app-password",
+  "from_address": "noreply@company.com",
+  "use_tls": true,
+  "use_ssl": false
+}'::jsonb;
+```
 
 ## Environment Variables
 
@@ -185,37 +222,42 @@ curl -X POST https://gadataingestion.azurewebsites.net/api/v1/email/mappings \
 
 ## Job Flow
 
-### Ingestion Job
+### Ingestion Job (Synchronous)
 ```
 POST /ingest
     └── Creates job record (status: queued)
-    └── Starts background processing
-    └── Returns immediately (status: processing)
-    
-Background Task:
     └── Updates status to "processing"
     └── Extracts events from BigQuery
     └── Downloads users from SFTP
     └── Downloads locations from SFTP
-    └── Updates status to "completed" (or "failed")
+    └── Updates status to "completed"/"failed"/"completed_with_warnings"
+    └── Returns final status with records processed
 
-Client polls GET /jobs/{job_id} until completed
+Response includes:
+- job_id: Unique identifier
+- status: completed | failed | completed_with_warnings
+- records_processed: {"events": N, "users": N, "locations": N}
+- error_message: (if applicable)
 ```
 
-### Email Job
+### Email Job (Synchronous)
 ```
 POST /email/send-reports
     └── Creates email job record
-    └── Starts background processing
-    └── Returns immediately (status: processing)
-    
-Background Task:
     └── Gets SMTP config from database
-    └── Gets branch-email mappings
-    └── Generates branch reports
-    └── Sends emails via SMTP
-    └── Logs results to email_send_history
-    └── Updates status to "completed" (or "failed")
+    └── Gets branch-email mappings from database
+    └── For each branch:
+        └── Fetches analytics data (purchases, carts, searches, visits)
+        └── Generates HTML report with Jinja2 template
+        └── Sends email via SMTP
+        └── Logs result to email_send_history
+    └── Updates job status to "completed"/"failed"/"completed_with_errors"
+    └── Returns final status with email counts
 
-Client polls GET /email/jobs/{job_id} until completed
+Response includes:
+- job_id: Unique identifier
+- status: completed | failed | completed_with_errors
+- total_emails: Number of emails attempted
+- emails_sent: Number successfully sent
+- emails_failed: Number that failed
 ```

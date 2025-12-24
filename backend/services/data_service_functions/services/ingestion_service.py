@@ -155,26 +155,20 @@ class IngestionService:
                     else:
                         raise Exception(f"Failed to download locations data from SFTP - {type(e).__name__}: {str(e)}") from e
 
-            # Determine final status based on warnings
+            # Log any warnings but keep status as completed
             if warnings:
-                final_status = "completed_with_warnings"
-                results["warnings"] = warnings
-                error_message = "; ".join(warnings)
                 logger.warning(f"Job {job_id} completed with warnings: {warnings}")
-            else:
-                final_status = "completed"
-                error_message = None
+                results["warnings"] = warnings
 
-            # Update job status
+            # Update job status to completed
             await self.repo.update_job_status(
                 job_id,
-                final_status,
+                "completed",
                 completed_at=datetime.now(),
                 records_processed=results,
-                error_message=error_message,
             )
 
-            logger.info(f"Completed processing job {job_id} with status {final_status}: {results}")
+            logger.info(f"Completed processing job {job_id}: {results}")
             return results
 
         except Exception as e:

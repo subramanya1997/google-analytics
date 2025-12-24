@@ -3,9 +3,9 @@ Test script for Azure Functions Email Service
 
 This script tests the email sending functionality including:
 - Health check
-- Branch email mappings retrieval
-- Email report sending
-- Email job status checking
+- Email report sending (synchronous)
+
+Note: Email mappings are managed directly in the database.
 
 Usage:
     python test_email_sending.py --tenant-id YOUR_TENANT_ID --report-date 2025-12-23 --branch-codes D01,D02
@@ -112,51 +112,6 @@ def test_health_check(session: requests.Session, base_url: str) -> bool:
         return False
 
 
-def get_email_mappings(
-    session: requests.Session,
-    base_url: str,
-    tenant_id: str,
-    branch_code: Optional[str] = None
-) -> Optional[List[dict]]:
-    """Get branch email mappings."""
-    print_header("Fetching Branch Email Mappings")
-    
-    try:
-        url = f"{base_url}/email/mappings"
-        if branch_code:
-            url += f"?branch_code={branch_code}"
-        
-        response = session.get(
-            url,
-            headers={"X-Tenant-Id": tenant_id},
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            mappings = data.get("mappings", [])
-            total = data.get("total", 0)
-            
-            print_success(f"Found {total} email mappings")
-            
-            if mappings:
-                print("\n" + f"{Colors.BOLD}Branch Email Mappings:{Colors.ENDC}")
-                for mapping in mappings:
-                    enabled = "✓" if mapping.get("is_enabled", True) else "✗"
-                    print(f"  {enabled} {mapping.get('branch_code')} - {mapping.get('branch_name', 'N/A')}")
-                    print(f"     → {mapping.get('sales_rep_name', 'Unknown')} <{mapping.get('sales_rep_email')}>")
-            
-            return mappings
-        else:
-            print_error(f"Failed to fetch mappings: {response.status_code}")
-            print_error(f"Response: {response.text}")
-            return None
-            
-    except Exception as e:
-        print_error(f"Error fetching mappings: {e}")
-        return None
-
-
 def send_email_reports(
     session: requests.Session,
     base_url: str,
@@ -229,74 +184,6 @@ def send_email_reports(
         return None
 
 
-def get_email_job_status(
-    session: requests.Session,
-    base_url: str,
-    tenant_id: str,
-    job_id: str
-) -> Optional[dict]:
-    """Get email job status."""
-    print_header(f"Checking Email Job Status: {job_id}")
-    
-    try:
-        response = session.get(
-            f"{base_url}/email/jobs/{job_id}",
-            headers={"X-Tenant-Id": tenant_id},
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            status = data.get("status", "unknown")
-            
-            # Color code the status
-            if status == "completed":
-                status_display = f"{Colors.OKGREEN}{status}{Colors.ENDC}"
-            elif status == "failed":
-                status_display = f"{Colors.FAIL}{status}{Colors.ENDC}"
-            elif status in ["processing", "queued"]:
-                status_display = f"{Colors.WARNING}{status}{Colors.ENDC}"
-            elif status == "completed_with_errors":
-                status_display = f"{Colors.WARNING}{status}{Colors.ENDC}"
-            else:
-                status_display = status
-            
-            print(f"Status: {status_display}")
-            print_info(f"Job ID: {data.get('job_id')}")
-            print_info(f"Tenant ID: {data.get('tenant_id')}")
-            print_info(f"Report Date: {data.get('report_date')}")
-            print_info(f"Created At: {data.get('created_at')}")
-            
-            if data.get("started_at"):
-                print_info(f"Started At: {data.get('started_at')}")
-            
-            if data.get("completed_at"):
-                print_info(f"Completed At: {data.get('completed_at')}")
-            
-            # Show email results if available
-            if "total_emails" in data:
-                print(f"\n{Colors.BOLD}Email Results:{Colors.ENDC}")
-                print(f"  Total: {data.get('total_emails', 0)}")
-                print(f"  {Colors.OKGREEN}Sent: {data.get('emails_sent', 0)}{Colors.ENDC}")
-                print(f"  {Colors.FAIL}Failed: {data.get('emails_failed', 0)}{Colors.ENDC}")
-            
-            if data.get("error_message"):
-                print_error(f"Error: {data.get('error_message')}")
-            
-            return data
-        elif response.status_code == 404:
-            print_error("Email job not found")
-            return None
-        else:
-            print_error(f"Failed to get job status: {response.status_code}")
-            print_error(f"Response: {response.text}")
-            return None
-            
-    except Exception as e:
-        print_error(f"Error getting job status: {e}")
-        return None
-
-
 def main():
     """Main test function."""
     parser = argparse.ArgumentParser(description="Test Azure Functions Email Service")
@@ -314,11 +201,6 @@ def main():
         "--branch-codes",
         default=None,
         help="Comma-separated branch codes (e.g., D01,D02). Default: all branches"
-    )
-    parser.add_argument(
-        "--job-id",
-        default=None,
-        help="Check status of existing job instead of sending new emails"
     )
     parser.add_argument(
         "--skip-health-check",
@@ -367,10 +249,9 @@ def main():
     else:
         print(f"  Target Branches: All configured branches")
     
-    # If job_id provided, just check status
-    if args.job_id:
-        get_email_job_status(session, base_url, args.tenant_id, args.job_id)
-        return
+    print(f"\n{Colors.BOLD}Note:{Colors.ENDC} Email mappings must be configured in the database.")
+    print(f"  Table: branch_email_mappings")
+    print(f"  Required: branch_code, sales_rep_email, is_enabled=true")
     
     # Run tests
     success = True
@@ -380,26 +261,11 @@ def main():
         if not test_health_check(session, base_url):
             print_warning("Health check failed, but continuing...")
     
-    # 2. Get email mappings
-    mappings = get_email_mappings(session, base_url, args.tenant_id)
-    if not mappings:
-        print_error("No email mappings found. Please configure branch email mappings first.")
+    # 2. Send email reports (synchronous - returns when complete)
+    result = send_email_reports(session, base_url, args.tenant_id, report_date, branch_codes)
+    
+    if not result:
         success = False
-    else:
-        # 3. Send email reports
-        result = send_email_reports(session, base_url, args.tenant_id, report_date, branch_codes)
-        
-        if result:
-            job_id = result.get("job_id")
-            status = result.get("status")
-            
-            # If status is not final, wait a bit and check again
-            if status in ["processing", "queued"]:
-                print_info("\nWaiting 5 seconds before checking final status...")
-                time.sleep(5)
-                get_email_job_status(session, base_url, args.tenant_id, job_id)
-        else:
-            success = False
     
     # Final summary
     print_header("Test Summary")

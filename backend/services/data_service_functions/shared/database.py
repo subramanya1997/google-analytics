@@ -479,7 +479,7 @@ class FunctionsRepository:
                     :{prefix}city, :{prefix}state, :{prefix}country, :{prefix}zip,
                     :{prefix}warehouse_code, :{prefix}registered_date, :{prefix}last_login_date,
                     :{prefix}cimm_buying_company_id, :{prefix}buying_company_name, :{prefix}buying_company_erp_id,
-                    :{prefix}role_name, :{prefix}site_name, NOW()
+                    :{prefix}role_name, :{prefix}site_name, true, NOW()
                 )""")
                 
                 # Add all user fields with prefix
@@ -492,7 +492,7 @@ class FunctionsRepository:
                     address1, address2, address3, city, state, country, zip,
                     warehouse_code, registered_date, last_login_date,
                     cimm_buying_company_id, buying_company_name, buying_company_erp_id,
-                    role_name, site_name, updated_at)
+                    role_name, site_name, is_active, updated_at)
                 VALUES {', '.join(values_clauses)}
                 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
                     user_name = EXCLUDED.user_name,
@@ -501,6 +501,7 @@ class FunctionsRepository:
                     last_name = EXCLUDED.last_name,
                     job_title = EXCLUDED.job_title,
                     email = EXCLUDED.email,
+                    is_active = EXCLUDED.is_active,
                     updated_at = NOW()
             """)
             
@@ -552,7 +553,7 @@ class FunctionsRepository:
                 values_clauses.append(f"""(
                     :{prefix}tenant_id, :{prefix}warehouse_id, :{prefix}warehouse_code, :{prefix}warehouse_name,
                     :{prefix}city, :{prefix}state, :{prefix}country, 
-                    :{prefix}address1, :{prefix}address2, :{prefix}zip, NOW()
+                    :{prefix}address1, :{prefix}address2, :{prefix}zip, true, NOW()
                 )""")
                 
                 # Add all location fields with prefix
@@ -561,7 +562,7 @@ class FunctionsRepository:
             
             stmt = text(f"""
                 INSERT INTO locations (tenant_id, warehouse_id, warehouse_code, warehouse_name,
-                    city, state, country, address1, address2, zip, updated_at)
+                    city, state, country, address1, address2, zip, is_active, updated_at)
                 VALUES {', '.join(values_clauses)}
                 ON CONFLICT (tenant_id, warehouse_id) DO UPDATE SET
                     warehouse_code = EXCLUDED.warehouse_code,
@@ -572,6 +573,7 @@ class FunctionsRepository:
                     address1 = EXCLUDED.address1,
                     address2 = EXCLUDED.address2,
                     zip = EXCLUDED.zip,
+                    is_active = EXCLUDED.is_active,
                     updated_at = NOW()
             """)
             

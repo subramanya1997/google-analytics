@@ -85,13 +85,13 @@ def print_warning(text: str):
     print(f"{Colors.WARNING}⚠ {text}{Colors.ENDC}")
 
 
-def test_health_check(session: requests.Session) -> bool:
+def test_health_check(session: requests.Session, base_url: str) -> bool:
     """Test the health check endpoint."""
     print_header("Testing Health Check")
     
     try:
         response = session.get(
-            f"{BASE_URL}/health",
+            f"{base_url}/health",
             timeout=30
         )
         
@@ -114,6 +114,7 @@ def test_health_check(session: requests.Session) -> bool:
 
 def get_email_mappings(
     session: requests.Session,
+    base_url: str,
     tenant_id: str,
     branch_code: Optional[str] = None
 ) -> Optional[List[dict]]:
@@ -121,7 +122,7 @@ def get_email_mappings(
     print_header("Fetching Branch Email Mappings")
     
     try:
-        url = f"{BASE_URL}/email/mappings"
+        url = f"{base_url}/email/mappings"
         if branch_code:
             url += f"?branch_code={branch_code}"
         
@@ -158,6 +159,7 @@ def get_email_mappings(
 
 def send_email_reports(
     session: requests.Session,
+    base_url: str,
     tenant_id: str,
     report_date: date,
     branch_codes: Optional[List[str]] = None
@@ -180,7 +182,7 @@ def send_email_reports(
         start_time = time.time()
         
         response = session.post(
-            f"{BASE_URL}/email/send-reports",
+            f"{base_url}/email/send-reports",
             headers={
                 "X-Tenant-Id": tenant_id,
                 "Content-Type": "application/json"
@@ -229,6 +231,7 @@ def send_email_reports(
 
 def get_email_job_status(
     session: requests.Session,
+    base_url: str,
     tenant_id: str,
     job_id: str
 ) -> Optional[dict]:
@@ -237,7 +240,7 @@ def get_email_job_status(
     
     try:
         response = session.get(
-            f"{BASE_URL}/email/jobs/{job_id}",
+            f"{base_url}/email/jobs/{job_id}",
             headers={"X-Tenant-Id": tenant_id},
             timeout=30
         )
@@ -330,9 +333,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Update base URL if provided
-    global BASE_URL
-    BASE_URL = args.base_url
+    # Use the provided base URL
+    base_url = args.base_url
     
     # Parse report date
     if args.report_date:
@@ -357,7 +359,7 @@ def main():
     print(f"{Colors.BOLD}Azure Functions Email Service Test{Colors.ENDC}".center(80))
     print(f"{Colors.BOLD}{'='*80}{Colors.ENDC}")
     print(f"\n{Colors.BOLD}Configuration:{Colors.ENDC}")
-    print(f"  Base URL: {BASE_URL}")
+    print(f"  Base URL: {base_url}")
     print(f"  Tenant ID: {args.tenant_id}")
     print(f"  Report Date: {report_date.strftime('%Y-%m-%d')}")
     if branch_codes:
@@ -367,7 +369,7 @@ def main():
     
     # If job_id provided, just check status
     if args.job_id:
-        get_email_job_status(session, args.tenant_id, args.job_id)
+        get_email_job_status(session, base_url, args.tenant_id, args.job_id)
         return
     
     # Run tests
@@ -375,17 +377,17 @@ def main():
     
     # 1. Health check
     if not args.skip_health_check:
-        if not test_health_check(session):
+        if not test_health_check(session, base_url):
             print_warning("Health check failed, but continuing...")
     
     # 2. Get email mappings
-    mappings = get_email_mappings(session, args.tenant_id)
+    mappings = get_email_mappings(session, base_url, args.tenant_id)
     if not mappings:
         print_error("No email mappings found. Please configure branch email mappings first.")
         success = False
     else:
         # 3. Send email reports
-        result = send_email_reports(session, args.tenant_id, report_date, branch_codes)
+        result = send_email_reports(session, base_url, args.tenant_id, report_date, branch_codes)
         
         if result:
             job_id = result.get("job_id")
@@ -395,7 +397,7 @@ def main():
             if status in ["processing", "queued"]:
                 print_info("\nWaiting 5 seconds before checking final status...")
                 time.sleep(5)
-                get_email_job_status(session, args.tenant_id, job_id)
+                get_email_job_status(session, base_url, args.tenant_id, job_id)
         else:
             success = False
     

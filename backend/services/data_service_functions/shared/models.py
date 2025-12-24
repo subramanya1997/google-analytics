@@ -139,35 +139,6 @@ class SendReportsRequest(BaseModel):
         super().__init__(**data)
 
 
-class BranchEmailMappingRequest(BaseModel):
-    """Request model for creating/updating branch email mappings."""
-    
-    branch_code: str
-    branch_name: Optional[str] = None
-    sales_rep_email: str
-    sales_rep_name: Optional[str] = None
-    is_enabled: bool = True
-
-    @field_validator("sales_rep_email")
-    @classmethod
-    def validate_email(cls, v):
-        """Basic email validation."""
-        if "@" not in v or "." not in v:
-            raise ValueError("Invalid email address format")
-        return v.lower().strip()
-
-
-class BranchEmailMappingResponse(BaseModel):
-    """Response model for branch email mappings."""
-    
-    id: str
-    branch_code: str
-    branch_name: Optional[str] = None
-    sales_rep_email: str
-    sales_rep_name: Optional[str] = None
-    is_enabled: bool
-    created_at: datetime
-    updated_at: datetime
 
 
 class EmailJobResponse(BaseModel):

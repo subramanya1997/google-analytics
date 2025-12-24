@@ -268,108 +268,6 @@ class FunctionsRepository:
                 return job
             return None
 
-    async def get_tenant_jobs(self, tenant_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
-        """Get job history for a tenant."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Get jobs with pagination
-            jobs_stmt = text("""
-                SELECT *, COUNT(*) OVER() as total_count
-                FROM processing_jobs 
-                WHERE tenant_id = :tenant_id
-                ORDER BY created_at DESC
-                LIMIT :limit OFFSET :offset
-            """)
-            
-            result = await session.execute(jobs_stmt, {
-                "tenant_id": tenant_uuid_str,
-                "limit": limit,
-                "offset": offset
-            })
-            rows = result.mappings().all()
-            
-            jobs = []
-            total = 0
-            
-            for row in rows:
-                if total == 0:
-                    total = int(row.get("total_count", 0))
-                
-                job_data = {
-                    "id": str(row["id"]) if row.get("id") else None,
-                    "tenant_id": str(row["tenant_id"]) if row.get("tenant_id") else None,
-                    "job_id": row["job_id"],
-                    "status": row["status"],
-                    "data_types": row["data_types"],
-                    "start_date": row["start_date"].isoformat() if row.get("start_date") else None,
-                    "end_date": row["end_date"].isoformat() if row.get("end_date") else None,
-                    "progress": row.get("progress"),
-                    "records_processed": row.get("records_processed"),
-                    "error_message": row.get("error_message"),
-                    "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
-                    "started_at": row["started_at"].isoformat() if row.get("started_at") else None,
-                    "completed_at": row["completed_at"].isoformat() if row.get("completed_at") else None,
-                }
-                jobs.append(job_data)
-            
-            return {"jobs": jobs, "total": total}
-
-    async def get_data_availability_with_breakdown(self, tenant_id: str) -> Dict[str, Any]:
-        """Get data availability summary."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            try:
-                # Try the optimized function first
-                combined_query = text("SELECT * FROM get_data_availability_combined(:tenant_id)")
-                result_obj = await session.execute(combined_query, {"tenant_id": tenant_uuid_str})
-                result = result_obj.mappings().first()
-                
-                if result:
-                    return {
-                        "summary": {
-                            "earliest_date": result["earliest_date"].isoformat() if result.get("earliest_date") else None,
-                            "latest_date": result["latest_date"].isoformat() if result.get("latest_date") else None,
-                            "total_events": int(result.get("event_count", 0))
-                        }
-                    }
-            except Exception as e:
-                logger.warning(f"Optimized function not available, using fallback: {e}")
-            
-            # Fallback: query event tables directly
-            event_tables = ["purchase", "add_to_cart", "page_view", "view_search_results", "no_search_results", "view_item"]
-            
-            earliest_date = None
-            latest_date = None
-            total_events = 0
-            
-            for table_name in event_tables:
-                try:
-                    query = text(f"""
-                        SELECT MIN(event_date) as earliest, MAX(event_date) as latest, COUNT(*) as cnt
-                        FROM {table_name}
-                        WHERE tenant_id = :tenant_id
-                    """)
-                    result = await session.execute(query, {"tenant_id": tenant_uuid_str})
-                    row = result.mappings().first()
-                    
-                    if row and row["cnt"] > 0:
-                        if earliest_date is None or (row["earliest"] and row["earliest"] < earliest_date):
-                            earliest_date = row["earliest"]
-                        if latest_date is None or (row["latest"] and row["latest"] > latest_date):
-                            latest_date = row["latest"]
-                        total_events += row["cnt"]
-                except Exception as e:
-                    logger.warning(f"Error querying {table_name}: {e}")
-            
-            return {
-                "summary": {
-                    "earliest_date": earliest_date.isoformat() if earliest_date else None,
-                    "latest_date": latest_date.isoformat() if latest_date else None,
-                    "total_events": total_events
-                }
-            }
 
     async def replace_event_data(
         self,
@@ -734,42 +632,6 @@ class FunctionsRepository:
             await session.commit()
             return result.rowcount > 0
 
-    async def get_email_job_status(self, tenant_id: str, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get email job status."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            stmt = text("""
-                SELECT job_id, status, report_date, target_branches,
-                       total_emails, emails_sent, emails_failed, error_message,
-                       created_at, started_at, completed_at
-                FROM email_sending_jobs 
-                WHERE tenant_id = :tenant_id AND job_id = :job_id
-            """)
-            
-            result = await session.execute(stmt, {
-                "tenant_id": tenant_uuid_str,
-                "job_id": job_id
-            })
-            row = result.mappings().first()
-            
-            if row:
-                return {
-                    "job_id": row["job_id"],
-                    "status": row["status"],
-                    "tenant_id": tenant_id,
-                    "report_date": row["report_date"],
-                    "target_branches": row["target_branches"] or [],
-                    "total_emails": row["total_emails"] or 0,
-                    "emails_sent": row["emails_sent"] or 0,
-                    "emails_failed": row["emails_failed"] or 0,
-                    "error_message": row["error_message"],
-                    "created_at": row["created_at"],
-                    "started_at": row["started_at"],
-                    "completed_at": row["completed_at"]
-                }
-            return None
-
     # ======================================
     # EMAIL CONFIG & MAPPINGS METHODS
     # ======================================
@@ -847,37 +709,6 @@ class FunctionsRepository:
                 })
             
             return mappings
-
-    async def create_branch_email_mapping(
-        self, tenant_id: str, mapping: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Create a new branch email mapping."""
-        tenant_uuid_str = ensure_uuid_string(tenant_id)
-        
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            stmt = text("""
-                INSERT INTO branch_email_mappings (
-                    tenant_id, branch_code, branch_name,
-                    sales_rep_email, sales_rep_name, is_enabled
-                ) VALUES (
-                    :tenant_id, :branch_code, :branch_name,
-                    :sales_rep_email, :sales_rep_name, :is_enabled
-                )
-                RETURNING id
-            """)
-            
-            result = await session.execute(stmt, {
-                "tenant_id": tenant_uuid_str,
-                "branch_code": mapping["branch_code"],
-                "branch_name": mapping.get("branch_name"),
-                "sales_rep_email": mapping["sales_rep_email"],
-                "sales_rep_name": mapping.get("sales_rep_name"),
-                "is_enabled": mapping.get("is_enabled", True)
-            })
-            row = result.mappings().first()
-            await session.commit()
-            
-            return {"mapping_id": str(row["id"]) if row else None}
 
     # ======================================
     # EMAIL HISTORY METHODS

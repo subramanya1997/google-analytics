@@ -1,144 +1,172 @@
 #!/usr/bin/env python3
 """
-Test script for data ingestion endpoint.
+Test script for data ingestion queue messaging.
 
-Tests the Azure Functions data ingestion API (synchronous processing).
-The ingestion endpoint runs synchronously and returns when complete.
+This script sends messages directly to the Azure Storage Queue to trigger
+data ingestion jobs. It tests the queue-based architecture where:
+1. This script sends a message to 'ingestion-jobs' queue
+2. Azure Functions Queue Trigger picks up the message and processes it
+3. Check Azure Functions logs or database to see job progress
 
 Usage:
-    python test_ingestion.py --tenant-id <tenant-uuid> [--base-url <url>]
+    python test_ingestion.py --tenant-id <tenant-uuid> --connection-string <conn-str>
     
 Example:
-    python test_ingestion.py --tenant-id "123e4567-e89b-12d3-a456-426614174000" \
-      --base-url "https://gadataingestion.azurewebsites.net"
+    python test_ingestion.py \\
+      --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
+      --connection-string "DefaultEndpointsProtocol=https;AccountName=..."
 """
 
 import argparse
+import json
+import os
 from datetime import date, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional
 
-import requests
+from azure.storage.queue import QueueClient
+from dotenv import load_dotenv
+import asyncio
+import sys
+
+# Add parent directory to path to import shared modules
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from shared.database import create_repository
+
+# Load environment variables from .env file
+load_dotenv()
 
 
-class IngestionTester:
-    """Test client for data ingestion API."""
+class IngestionQueueTester:
+    """Test client for sending ingestion messages to Azure Storage Queue."""
     
-    def __init__(self, base_url: str, tenant_id: str):
+    def __init__(self, connection_string: str, tenant_id: str):
         """
-        Initialize test client.
+        Initialize queue test client.
         
         Args:
-            base_url: Base URL of the Azure Functions app (without trailing slash)
+            connection_string: Azure Storage connection string
             tenant_id: Tenant UUID to test with
         """
-        self.base_url = base_url.rstrip('/')
+        self.connection_string = connection_string
         self.tenant_id = tenant_id
-        self.headers = {
-            "X-Tenant-Id": tenant_id,
-            "Content-Type": "application/json"
-        }
+        self.queue_name = "ingestion-jobs"
+        self.repo = create_repository(tenant_id)
     
-    def health_check(self) -> bool:
-        """Check if the service is healthy."""
-        try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/health",
-                timeout=30  # Increased for Azure Functions cold start
-            )
-            response.raise_for_status()
-            data = response.json()
-            print(f"✓ Health check passed: {data.get('status', 'unknown')}")
-            return True
-        except Exception as e:
-            print(f"✗ Health check failed: {e}")
-            return False
-    
-    def start_ingestion_job(
+    async def send_ingestion_message(
         self,
+        job_id: str,
         start_date: date,
         end_date: date,
         data_types: list = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> bool:
         """
-        Start a data ingestion job.
+        Send an ingestion job message to the queue.
         
         Args:
+            job_id: Unique job ID (will be generated if not provided)
             start_date: Start date for ingestion (inclusive)
             end_date: End date for ingestion (inclusive)
             data_types: List of data types to ingest. Default: ["events", "users", "locations"]
             
         Returns:
-            Job response dictionary or None if failed
+            True if message was sent successfully, False otherwise
         """
         if data_types is None:
             data_types = ["events", "users", "locations"]
         
-        payload = {
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
-            "data_types": data_types
-        }
-        
-        print(f"\n📤 Starting ingestion job...")
+        print(f"\n📝 Step 1: Creating job record in database...")
+        print(f"   Job ID: {job_id}")
         print(f"   Tenant ID: {self.tenant_id}")
         print(f"   Date range: {start_date} to {end_date}")
         print(f"   Data types: {', '.join(data_types)}")
         
         try:
-            response = requests.post(
-                f"{self.base_url}/api/v1/ingest",
-                headers=self.headers,
-                json=payload,
-                timeout=600  # 10 minutes - job now runs synchronously
-            )
-            response.raise_for_status()
-            result = response.json()
-            
-            print(f"✓ Job created successfully!")
-            print(f"   Job ID: {result.get('job_id')}")
-            print(f"   Status: {result.get('status')}")
-            print(f"   Message: {result.get('message', 'N/A')}")
-            
-            return result
-            
-        except requests.exceptions.HTTPError as e:
-            error_msg = "Unknown error"
-            try:
-                error_data = e.response.json()
-                error_msg = error_data.get('error', str(e))
-            except:
-                error_msg = str(e)
-            
-            print(f"✗ Failed to create job: {error_msg}")
-            print(f"   Status code: {e.response.status_code}")
-            return None
+            # Step 1: Create job record in database (just like FastAPI does)
+            await self.repo.create_processing_job({
+                "job_id": job_id,
+                "tenant_id": self.tenant_id,
+                "status": "queued",
+                "data_types": data_types,
+                "start_date": start_date,
+                "end_date": end_date,
+            })
+            print(f"✅ Job record created in database")
             
         except Exception as e:
-            print(f"✗ Unexpected error: {e}")
-            return None
+            print(f"\n❌ Failed to create job in database: {e}")
+            print(f"   Error type: {type(e).__name__}")
+            return False
+        
+        # Step 2: Send message to queue
+        message = {
+            "job_id": job_id,
+            "tenant_id": self.tenant_id,
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "data_types": data_types
+        }
+        
+        print(f"\n📤 Step 2: Sending message to '{self.queue_name}' queue...")
+        
+        try:
+            # Connect to queue
+            queue_client = QueueClient.from_connection_string(
+                self.connection_string,
+                self.queue_name
+            )
+            
+            # Send message
+            message_json = json.dumps(message)
+            queue_client.send_message(message_json)
+            
+            print(f"✅ Message sent to queue successfully!")
+            print(f"   Queue: {self.queue_name}")
+            print(f"   Message: {message_json}")
+            print(f"\n📊 What happens next:")
+            print(f"   1. Azure Functions Queue Trigger will pick up this message")
+            print(f"   2. It will process the ingestion job (5-10 minutes)")
+            print(f"   3. Job status will be updated from 'queued' → 'processing' → 'completed'")
+            print(f"   4. Check Azure Functions logs to see progress")
+            print(f"   5. Query the database 'processing_jobs' table for job status")
+            
+            return True
+            
+        except Exception as e:
+            print(f"\n❌ Failed to send message to queue: {e}")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"\n⚠️  Note: Job record was created in DB but message wasn't queued.")
+            print(f"   You may need to manually update job status or delete the record.")
+            return False
     
 
 
 def main():
     """Main test function."""
     parser = argparse.ArgumentParser(
-        description="Test data ingestion API for a tenant",
+        description="Test data ingestion by sending messages to Azure Storage Queue",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Test with default localhost URL
-  python test_ingestion.py --tenant-id "123e4567-e89b-12d3-a456-426614174000"
-  
-  # Test with production Azure Functions URL
+  # Send ingestion job to queue (reads connection string from .env file)
   python test_ingestion.py \\
-    --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
-    --base-url "https://gadataingestion.azurewebsites.net"
+    --tenant-id "123e4567-e89b-12d3-a456-426614174000"
   
-  # Test only events (skip users/locations)
+  # Test only events for last 3 days
   python test_ingestion.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --data-types events \\
     --days 3
+  
+  # Or explicitly provide connection string
+  python test_ingestion.py \\
+    --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
+    --connection-string "DefaultEndpointsProtocol=https;AccountName=..."
+
+Note:
+  - Automatically reads AZURE_STORAGE_CONNECTION_STRING from .env file
+  - Connection string is the same as AzureWebJobsStorage in Azure Functions
+  - Get it from: Azure Portal → Storage Account → Access keys
         """
     )
     
@@ -149,9 +177,9 @@ Examples:
     )
     
     parser.add_argument(
-        "--base-url",
-        default="http://localhost:7071",
-        help="Base URL of Azure Functions app (default: http://localhost:7071)"
+        "--connection-string",
+        default=None,
+        help="Azure Storage connection string (optional: reads from .env file or AZURE_STORAGE_CONNECTION_STRING env var)"
     )
     
     parser.add_argument(
@@ -169,68 +197,69 @@ Examples:
         help="Data types to ingest (default: all)"
     )
     
+    parser.add_argument(
+        "--job-id",
+        default=None,
+        help="Custom job ID (optional, will be generated if not provided)"
+    )
+    
     args = parser.parse_args()
+    
+    # Get connection string (automatically loads from .env file)
+    connection_string = args.connection_string or os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    if not connection_string:
+        print("❌ Error: Azure Storage connection string is required!")
+        print("\n   Option 1 (Recommended): Add to .env file:")
+        print("      AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;...")
+        print("\n   Option 2: Pass via command line:")
+        print("      --connection-string \"DefaultEndpointsProtocol=https;...\"")
+        print("\n   Get it from: Azure Portal → Storage Account → Access keys → Connection string")
+        return 1
+    
+    # Generate job ID if not provided
+    import uuid
+    job_id = args.job_id or f"job_{uuid.uuid4().hex[:12]}"
     
     # Calculate date range (last N days)
     today = date.today()
     start_date = today - timedelta(days=args.days)
     end_date = today
     
-    print("=" * 70)
-    print("Data Ingestion API Test")
-    print("=" * 70)
-    print(f"Base URL: {args.base_url}")
+    print("=" * 80)
+    print("Data Ingestion Queue Test".center(80))
+    print("=" * 80)
     print(f"Tenant ID: {args.tenant_id}")
+    print(f"Job ID: {job_id}")
     print(f"Date Range: {start_date} to {end_date} ({args.days} days)")
     print(f"Data Types: {', '.join(args.data_types)}")
-    print("=" * 70)
+    print(f"Queue: ingestion-jobs")
+    print("=" * 80)
     
     # Initialize tester
-    tester = IngestionTester(args.base_url, args.tenant_id)
+    tester = IngestionQueueTester(connection_string, args.tenant_id)
     
-    # Health check
-    if not tester.health_check():
-        print("\n⚠️  Health check failed. Continuing anyway...")
-    
-    # Start ingestion job (runs synchronously - returns when complete)
-    print("\n⚠️  Note: Ingestion runs synchronously. This may take several minutes...")
-    print(f"   Expected time: 30 seconds to 10 minutes depending on data volume")
-    
-    job_result = tester.start_ingestion_job(
+    # Send message to queue (async operation)
+    success = asyncio.run(tester.send_ingestion_message(
+        job_id=job_id,
         start_date=start_date,
         end_date=end_date,
         data_types=args.data_types
-    )
+    ))
     
-    if not job_result:
-        print("\n❌ Ingestion job failed")
-        return 1
-    
-    # Display results
-    job_status = job_result.get('status')
-    records = job_result.get('records_processed', {})
-    error_msg = job_result.get('error_message')
-    
-    print("\n" + "=" * 70)
-    print(f"Job Status: {job_status}")
-    
-    if records:
-        print(f"\nRecords Processed:")
-        for data_type, count in records.items():
-            print(f"  - {data_type}: {count:,}")
-    
-    if error_msg:
-        print(f"\nError: {error_msg}")
-    
-    print("=" * 70)
-    
-    if job_status in ['completed', 'completed_with_warnings']:
-        print("\n✅ Test completed successfully!")
-        if job_status == 'completed_with_warnings':
-            print("⚠️  Some records failed to process. Check error_message for details.")
+    if success:
+        print("\n" + "=" * 80)
+        print("✅ Message sent to queue successfully!")
+        print("\n📝 Next Steps:")
+        print("   1. Check Azure Functions logs:")
+        print("      Azure Portal → Function App → Log stream")
+        print(f"\n   2. Check job status in database:")
+        print(f"      SELECT * FROM processing_jobs WHERE job_id = '{job_id}';")
+        print("\n   3. Monitor queue:")
+        print("      Azure Portal → Storage Account → Queues → ingestion-jobs")
+        print("=" * 80)
         return 0
     else:
-        print("\n❌ Test completed with errors")
+        print("\n❌ Failed to send message to queue")
         return 1
 
 

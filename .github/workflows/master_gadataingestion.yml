@@ -17,12 +17,15 @@ on:
       - main
       - master
     paths:
-      - 'backend/services/data_service_functions/**'
+      - 'backend/services/data_service_functions/clients/**'
+      - 'backend/services/data_service_functions/services/**'
+      - 'backend/services/data_service_functions/shared/**'
+      - 'backend/services/data_service_functions/templates/**'
+      - 'backend/services/data_service_functions/*.py'
+      - 'backend/services/data_service_functions/*.json'
+      - 'backend/services/data_service_functions/*.txt'
+      - 'backend/services/data_service_functions/*.ini'
       - '.github/workflows/master_gadataingestion.yml'
-    paths-ignore:
-      - 'backend/services/data_service_functions/tests/**'
-      - 'backend/services/data_service_functions/README.md'
-      - 'backend/services/data_service_functions/DEPLOYMENT.md'
   workflow_dispatch:
     inputs:
       environment:
@@ -149,18 +152,16 @@ jobs:
         echo "**Function App:** ${{ env.AZURE_FUNCTIONAPP_NAME }}" >> $GITHUB_STEP_SUMMARY
         echo "**URL:** https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Data Ingestion Endpoints" >> $GITHUB_STEP_SUMMARY
+        echo "### Available Endpoints" >> $GITHUB_STEP_SUMMARY
         echo "- \`GET /api/v1/health\` - Health check" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/ingest\` - Start ingestion job (processes automatically)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/jobs\` - List ingestion jobs" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/jobs/{job_id}\` - Get job status" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/data-availability\` - Data availability" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/data/schedule\` - Get schedule" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/data/schedule\` - Update schedule" >> $GITHUB_STEP_SUMMARY
+        echo "- \`POST /api/v1/ingest\` - Start data ingestion job (processes events, users, locations)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`POST /api/v1/email/send-reports\` - Send analytics reports via email" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Email Endpoints" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/email/send-reports\` - Send branch reports" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/email/jobs/{job_id}\` - Get email job status" >> $GITHUB_STEP_SUMMARY
-        echo "- \`GET /api/v1/email/mappings\` - List email mappings" >> $GITHUB_STEP_SUMMARY
-        echo "- \`POST /api/v1/email/mappings\` - Create email mapping" >> $GITHUB_STEP_SUMMARY
+        echo "### Trigger Conditions" >> $GITHUB_STEP_SUMMARY
+        echo "Deployment is triggered by changes to:" >> $GITHUB_STEP_SUMMARY
+        echo "- Function code (clients, services, shared, templates)" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuration files (*.py, *.json, *.txt, *.ini)" >> $GITHUB_STEP_SUMMARY
+        echo "- This workflow file" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Note:** Changes to tests/ or documentation files do not trigger deployment." >> $GITHUB_STEP_SUMMARY
 

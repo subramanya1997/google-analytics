@@ -2,8 +2,12 @@
 Email management API endpoints
 """
 
+import json
+import os
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
+from azure.storage.queue.aio import QueueClient
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 
@@ -230,15 +234,37 @@ async def send_reports(
                 detail=f"Cannot send emails. SMTP service is disabled: {error_msg}"
             )
         
-        # Initialize email service
-        email_service = EmailService(db_client)
+        # Generate unique job ID
+        job_id = f"email_job_{uuid4().hex[:12]}"
         
-        # Create background email job
-        job_id = await email_service.create_send_reports_job(
-            tenant_id, request, background_tasks
-        )
+        # Create email job record in database
+        job_data = {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "status": "queued",
+            "report_date": request.report_date,
+            "target_branches": request.branch_codes or []
+        }
+        await db_client.create_email_job(job_data)
         
-        logger.info(f"Created email sending job {job_id} for tenant {tenant_id}")
+        logger.info(f"Created email job {job_id} for tenant {tenant_id}, sending to queue...")
+        
+        # Send message to Azure Queue for background processing
+        connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+        if not connection_string:
+            raise ValueError("AZURE_STORAGE_CONNECTION_STRING environment variable not set")
+        
+        queue_client = QueueClient.from_connection_string(connection_string, "email-jobs")
+        
+        message = {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "report_date": request.report_date.isoformat(),
+            "branch_codes": request.branch_codes
+        }
+        
+        await queue_client.send_message(json.dumps(message))
+        logger.info(f"Successfully queued email job {job_id} for processing")
         
         return EmailJobResponse(
             job_id=job_id,

@@ -87,6 +87,9 @@ class AnalyticsServiceSettings(BaseServiceSettings):
     # Scheduler Configuration
     EMAIL_NOTIFICATION_CRON: str = "0 8 * * *"  # Daily at 8 AM
     ANALYTICS_SERVICE_URL: str = "https://devenv-ai-tech-assistant.extremeb2b.com/analytics"
+    
+    # Azure Storage Queue Configuration
+    AZURE_STORAGE_CONNECTION_STRING: str = ""
 
 
 class DataServiceSettings(BaseServiceSettings):
@@ -99,6 +102,9 @@ class DataServiceSettings(BaseServiceSettings):
     # Scheduler Configuration
     DATA_INGESTION_CRON: str = "0 2 * * *"  # Daily at 2 AM
     DATA_SERVICE_URL: str = "https://devenv-ai-tech-assistant.extremeb2b.com/data"
+    
+    # Azure Storage Queue Configuration
+    AZURE_STORAGE_CONNECTION_STRING: str = ""
 
 
 class AuthServiceSettings(BaseServiceSettings):

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ location.warehouse_name }} Report - {{ report_date.strftime('%B %d, %Y') }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 14px; margin: 0; padding: 20px; background-color: #f8f9fa; color: #333; }
+        .container { max-width: 1200px; margin: auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .header { border-bottom: 2px solid #dee2e6; padding-bottom: 10px; margin-bottom: 20px; overflow: hidden; }
+        .header h1 { font-size: 24px; margin: 0; float: left; }
+        .header p { font-size: 16px; margin: 0; color: #6c757d; float: right; }
+        h2 { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 30px; }
+        h4 { font-size: 18px; margin-top: 20px; margin-bottom: 10px; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table th, .table td { padding: 8px 12px; border: 1px solid #dee2e6; text-align: left; }
+        .table th { background-color: #f2f2f2; }
+        .text-center { text-align: center; }
+        hr { border: 0; border-top: 1px solid #dee2e6; margin: 20px 0; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ location.warehouse_name }} - {{ location.city }}, {{ location.state }}</h1>
+            <p>Report for: {{ report_date.strftime('%B %d, %Y') }}</p>
+        </div>
+        
+        <!-- Location Summary Table -->
+        <div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Count</th>
+                        <th>Value/Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Purchases</td>
+                        <td>{{ data.purchases.total }}</td>
+                        <td>${{ "%.2f"|format(data.purchases.total_revenue) }} total revenue</td>
+                    </tr>
+                    <tr>
+                        <td>Cart Abandonments</td>
+                        <td>{{ data.cart_abandonment.total }}</td>
+                        <td>${{ "%.2f"|format(data.cart_abandonment.total_value) }} at risk</td>
+                    </tr>
+                    <tr>
+                        <td>Failed Searches</td>
+                        <td>{{ data.search_no_results.unique_terms }}</td>
+                        <td>{{ data.search_no_results.total_searches }} total searches</td>
+                    </tr>
+                    <tr>
+                        <td>Repeat Visits (No Purchase)</td>
+                        <td>{{ data.repeat_visits.total }}</td>
+                        <td>{{ "%.1f"|format(data.repeat_visits.avg_pages) }} avg pages viewed</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        {% if data.purchases.total > 0 %}
+        <h4>Purchase Follow-up Tasks</h4>
+        <div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Customer Details</th>
+                        <th>Products</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sample in data.purchases.samples %}
+                    <tr>
+                        <td>
+                            {{ sample.customer_name or 'Unknown' }}<br>
+                            {% if sample.company_name %}{{ sample.company_name }}<br>{% endif %}
+                            ID: {{ sample.trans_id or '-' }}<br>
+                            Total: ${{ "%.2f"|format(sample.revenue) }}<br>
+                            {% if sample.email %}Contact: <a href='mailto:{{ sample.email }}'>{{ sample.email }}</a><br>{% endif %}
+                            {% if sample.phone %}{{ sample.phone }}<br>{% endif %}
+                        </td>
+                        <td>
+                            {% if sample.products %}
+                                {% for product in sample.products %}
+                                    {{ product.quantity }} x {{ product.item_name }}{% if product.item_id %} ({{ product.item_id }}){% endif %}<br>
+                                {% endfor %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if data.cart_abandonment.total > 0 %}
+        <h4>Cart Abandonment Recovery Tasks</h4>
+        <div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Customer Details</th>
+                        <th>Products</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sample in data.cart_abandonment.samples %}
+                    <tr>
+                        <td>
+                            {{ sample.customer_name or 'Unknown' }}<br>
+                            {% if sample.company_name %}{{ sample.company_name }}<br>{% endif %}
+                            Cart ID: {{ sample.cart_id }}<br>
+                            Cart Value: ${{ "%.2f"|format(sample.cart_value) }}<br>
+                            {% if sample.email %}Contact: <a href='mailto:{{ sample.email }}'>{{ sample.email }}</a><br>{% endif %}
+                            {% if sample.phone %}{{ sample.phone }}<br>{% endif %}
+                        </td>
+                        <td>
+                            {% if sample.products %}
+                                {% for product in sample.products %}
+                                    {{ product.quantity }} x {{ product.item_name }}{% if product.item_id %} ({{ product.item_id }}){% endif %}<br>
+                                {% endfor %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if data.search_no_results.total_searches > 0 %}
+        <h4>Failed Search Recovery Tasks</h4>
+        <div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Search Details</th>
+                        <th>Customers</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sample in data.search_no_results.samples %}
+                    <tr>
+                        <td>
+                            <strong>Term:</strong> {{ sample.term or '-' }}<br>
+                            <strong>Total Searches:</strong> {{ sample.total_searches or 0 }}<br>
+                            <strong>Unique Sessions:</strong> {{ sample.unique_sessions or 0 }}
+                        </td>
+                        <td>
+                            {% if sample.user_details %}
+                                {% for user in sample.user_details %}
+                                    {% if user.name %}
+                                        {{ user.name }}<br>
+                                        {% if user.company %}{{ user.company }}<br>{% endif %}
+                                        {% if user.email %}<a href='mailto:{{ user.email }}'>{{ user.email }}</a><br>{% endif %}
+                                        {% if user.phone %}{{ user.phone }}<br>{% endif %}
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                No user details available
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if data.repeat_visits.total > 0 %}
+        <h4>Repeat Visit Conversion Tasks</h4>
+        <div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Customer Details</th>
+                        <th>Viewed Products (Top 5)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sample in data.repeat_visits.samples %}
+                    <tr>
+                        <td>
+                            {{ sample.customer or 'Unknown' }}<br>
+                            {% if sample.company and sample.company != '-' %}{{ sample.company }}<br>{% endif %}
+                            Pages Viewed: {{ sample.pages_viewed }}<br>
+                            {% if sample.email %}Contact: <a href='mailto:{{ sample.email }}'>{{ sample.email }}</a><br>{% endif %}
+                        </td>
+                        <td>
+                            {% if sample.pages_summary %}
+                                {% for product in sample.pages_summary %}
+                                    <a href='{{ product.url }}' target='_blank'>{{ product.title }}</a>
+                                    {% if product.price and product.price > 0 %} - ${{ "%.2f"|format(product.price) }}{% endif %}
+                                    {% if product.category %} ({{ product.category }}){% endif %}<br>
+                                {% endfor %}
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <hr class="my-5">
+        
+        <div class="mt-5 pt-3 border-top text-muted">
+            <p><strong>Report Generated:</strong> {{ datetime.now().strftime("%Y-%m-%d %H:%M:%S") }}</p>
+            <p>This report covers activity on {{ report_date.strftime("%Y-%m-%d") }}.</p>
+        </div>
+    </div>
+</body>
+</html>

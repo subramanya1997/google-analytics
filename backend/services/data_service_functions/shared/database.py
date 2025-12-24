@@ -947,6 +947,174 @@ class FunctionsRepository:
                 }
             return None
 
+    # Analytics task query methods
+    async def get_purchase_tasks(
+        self,
+        tenant_id: str,
+        page: int,
+        limit: int,
+        query: Optional[str] = None,
+        location_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get purchase analysis tasks with pagination and filtering."""
+        try:
+            async with get_db_session(tenant_id=self.tenant_id) as session:
+                # Use the existing RPC function from functions.sql
+                result = await session.execute(
+                    text("""
+                        SELECT get_purchase_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    """),
+                    {
+                        "p_tenant_id": tenant_id,
+                        "p_page": page,
+                        "p_limit": limit,
+                        "p_query": query,
+                        "p_location_id": location_id,
+                        "p_start_date": start_date,
+                        "p_end_date": end_date,
+                    },
+                )
+                tasks = result.scalar()
+
+                return tasks or {
+                    "data": [],
+                    "total": 0,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": False,
+                }
+
+        except Exception as e:
+            logger.error(f"Error fetching purchase tasks: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+
+    async def get_cart_abandonment_tasks(
+        self,
+        tenant_id: str,
+        page: int,
+        limit: int,
+        query: Optional[str] = None,
+        location_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get cart abandonment tasks using the RPC function."""
+        try:
+            async with get_db_session(tenant_id=self.tenant_id) as session:
+                result = await session.execute(
+                    text("""
+                        SELECT get_cart_abandonment_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    """),
+                    {
+                        "p_tenant_id": tenant_id,
+                        "p_page": page,
+                        "p_limit": limit,
+                        "p_query": query,
+                        "p_location_id": location_id,
+                        "p_start_date": start_date,
+                        "p_end_date": end_date,
+                    },
+                )
+                tasks = result.scalar()
+
+                return tasks or {
+                    "data": [],
+                    "total": 0,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": False,
+                }
+
+        except Exception as e:
+            logger.error(f"Error fetching cart abandonment tasks: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+
+    async def get_search_analysis_tasks(
+        self,
+        tenant_id: str,
+        page: int,
+        limit: int,
+        query: Optional[str] = None,
+        location_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        include_converted: bool = False,
+    ) -> Dict[str, Any]:
+        """Get search analysis tasks using the RPC function."""
+        try:
+            async with get_db_session(tenant_id=self.tenant_id) as session:
+                result = await session.execute(
+                    text("""
+                        SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted)
+                    """),
+                    {
+                        "p_tenant_id": tenant_id,
+                        "p_page": page,
+                        "p_limit": limit,
+                        "p_query": query,
+                        "p_location_id": location_id,
+                        "p_start_date": start_date,
+                        "p_end_date": end_date,
+                        "p_include_converted": include_converted,
+                    },
+                )
+                tasks = result.scalar()
+
+                return tasks or {
+                    "data": [],
+                    "total": 0,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": False,
+                }
+
+        except Exception as e:
+            logger.error(f"Error fetching search analysis tasks: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+
+    async def get_repeat_visit_tasks(
+        self,
+        tenant_id: str,
+        page: int,
+        limit: int,
+        query: Optional[str] = None,
+        location_id: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get repeat visit tasks using the RPC function."""
+        try:
+            async with get_db_session(tenant_id=self.tenant_id) as session:
+                result = await session.execute(
+                    text("""
+                        SELECT get_repeat_visit_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    """),
+                    {
+                        "p_tenant_id": tenant_id,
+                        "p_page": page,
+                        "p_limit": limit,
+                        "p_query": query,
+                        "p_location_id": location_id,
+                        "p_start_date": start_date,
+                        "p_end_date": end_date,
+                    },
+                )
+                tasks = result.scalar()
+
+                return tasks or {
+                    "data": [],
+                    "total": 0,
+                    "page": page,
+                    "limit": limit,
+                    "has_more": False,
+                }
+
+        except Exception as e:
+            logger.error(f"Error fetching repeat visit tasks: {e}")
+            return {"data": [], "total": 0, "page": page, "limit": limit, "has_more": False}
+
 
 def create_repository(tenant_id: str) -> FunctionsRepository:
     """

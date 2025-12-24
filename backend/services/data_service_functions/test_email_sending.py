@@ -1,0 +1,414 @@
+"""
+Test script for Azure Functions Email Service
+
+This script tests the email sending functionality including:
+- Health check
+- Branch email mappings retrieval
+- Email report sending
+- Email job status checking
+
+Usage:
+    python test_email_sending.py --tenant-id YOUR_TENANT_ID --report-date 2025-12-23 --branch-codes D01,D02
+    
+    # Or for all branches:
+    python test_email_sending.py --tenant-id YOUR_TENANT_ID --report-date 2025-12-23
+"""
+
+import argparse
+import json
+import sys
+import time
+from datetime import datetime, date, timedelta
+from typing import List, Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+# Configuration
+BASE_URL = "https://gadataingestion.azurewebsites.net/api/v1"
+# For local testing: BASE_URL = "http://localhost:7071/api/v1"
+
+# Colors for terminal output
+class Colors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+def create_session_with_retries() -> requests.Session:
+    """Create a requests session with retry logic."""
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"]
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def print_header(text: str):
+    """Print a formatted header."""
+    print(f"\n{Colors.HEADER}{Colors.BOLD}{'='*80}{Colors.ENDC}")
+    print(f"{Colors.HEADER}{Colors.BOLD}{text.center(80)}{Colors.ENDC}")
+    print(f"{Colors.HEADER}{Colors.BOLD}{'='*80}{Colors.ENDC}\n")
+
+
+def print_success(text: str):
+    """Print success message."""
+    print(f"{Colors.OKGREEN}✓ {text}{Colors.ENDC}")
+
+
+def print_error(text: str):
+    """Print error message."""
+    print(f"{Colors.FAIL}✗ {text}{Colors.ENDC}")
+
+
+def print_info(text: str):
+    """Print info message."""
+    print(f"{Colors.OKCYAN}ℹ {text}{Colors.ENDC}")
+
+
+def print_warning(text: str):
+    """Print warning message."""
+    print(f"{Colors.WARNING}⚠ {text}{Colors.ENDC}")
+
+
+def test_health_check(session: requests.Session) -> bool:
+    """Test the health check endpoint."""
+    print_header("Testing Health Check")
+    
+    try:
+        response = session.get(
+            f"{BASE_URL}/health",
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            print_success(f"Health check passed")
+            print_info(f"Status: {data.get('status')}")
+            print_info(f"Version: {data.get('version')}")
+            print_info(f"Timestamp: {data.get('timestamp')}")
+            return True
+        else:
+            print_error(f"Health check failed: {response.status_code}")
+            print_error(f"Response: {response.text}")
+            return False
+            
+    except Exception as e:
+        print_error(f"Health check error: {e}")
+        return False
+
+
+def get_email_mappings(
+    session: requests.Session,
+    tenant_id: str,
+    branch_code: Optional[str] = None
+) -> Optional[List[dict]]:
+    """Get branch email mappings."""
+    print_header("Fetching Branch Email Mappings")
+    
+    try:
+        url = f"{BASE_URL}/email/mappings"
+        if branch_code:
+            url += f"?branch_code={branch_code}"
+        
+        response = session.get(
+            url,
+            headers={"X-Tenant-Id": tenant_id},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            mappings = data.get("mappings", [])
+            total = data.get("total", 0)
+            
+            print_success(f"Found {total} email mappings")
+            
+            if mappings:
+                print("\n" + f"{Colors.BOLD}Branch Email Mappings:{Colors.ENDC}")
+                for mapping in mappings:
+                    enabled = "✓" if mapping.get("is_enabled", True) else "✗"
+                    print(f"  {enabled} {mapping.get('branch_code')} - {mapping.get('branch_name', 'N/A')}")
+                    print(f"     → {mapping.get('sales_rep_name', 'Unknown')} <{mapping.get('sales_rep_email')}>")
+            
+            return mappings
+        else:
+            print_error(f"Failed to fetch mappings: {response.status_code}")
+            print_error(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print_error(f"Error fetching mappings: {e}")
+        return None
+
+
+def send_email_reports(
+    session: requests.Session,
+    tenant_id: str,
+    report_date: date,
+    branch_codes: Optional[List[str]] = None
+) -> Optional[dict]:
+    """Send email reports."""
+    print_header("Sending Email Reports")
+    
+    branch_info = f"branches: {', '.join(branch_codes)}" if branch_codes else "all branches"
+    print_info(f"Sending reports for {report_date.strftime('%Y-%m-%d')} to {branch_info}")
+    print_warning("This may take several minutes depending on the number of branches...")
+    
+    try:
+        payload = {
+            "report_date": report_date.strftime("%Y-%m-%d"),
+        }
+        
+        if branch_codes:
+            payload["branch_codes"] = branch_codes
+        
+        start_time = time.time()
+        
+        response = session.post(
+            f"{BASE_URL}/email/send-reports",
+            headers={
+                "X-Tenant-Id": tenant_id,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=600  # 10 minutes for synchronous processing
+        )
+        
+        elapsed_time = time.time() - start_time
+        
+        if response.status_code in [200, 202]:
+            data = response.json()
+            job_id = data.get("job_id")
+            status = data.get("status")
+            
+            print_success(f"Email job completed in {elapsed_time:.1f}s")
+            print_info(f"Job ID: {job_id}")
+            print_info(f"Status: {status}")
+            print_info(f"Report Date: {data.get('report_date')}")
+            
+            # Show results
+            total_emails = data.get("total_emails", 0)
+            emails_sent = data.get("emails_sent", 0)
+            emails_failed = data.get("emails_failed", 0)
+            
+            print(f"\n{Colors.BOLD}Results:{Colors.ENDC}")
+            print(f"  Total Emails: {total_emails}")
+            print(f"  {Colors.OKGREEN}✓ Sent: {emails_sent}{Colors.ENDC}")
+            if emails_failed > 0:
+                print(f"  {Colors.FAIL}✗ Failed: {emails_failed}{Colors.ENDC}")
+            
+            return data
+        else:
+            print_error(f"Failed to send emails: {response.status_code}")
+            print_error(f"Response: {response.text}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        print_error("Request timed out after 10 minutes")
+        print_info("The job may still be processing. Check job status separately.")
+        return None
+    except Exception as e:
+        print_error(f"Error sending emails: {e}")
+        return None
+
+
+def get_email_job_status(
+    session: requests.Session,
+    tenant_id: str,
+    job_id: str
+) -> Optional[dict]:
+    """Get email job status."""
+    print_header(f"Checking Email Job Status: {job_id}")
+    
+    try:
+        response = session.get(
+            f"{BASE_URL}/email/jobs/{job_id}",
+            headers={"X-Tenant-Id": tenant_id},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            status = data.get("status", "unknown")
+            
+            # Color code the status
+            if status == "completed":
+                status_display = f"{Colors.OKGREEN}{status}{Colors.ENDC}"
+            elif status == "failed":
+                status_display = f"{Colors.FAIL}{status}{Colors.ENDC}"
+            elif status in ["processing", "queued"]:
+                status_display = f"{Colors.WARNING}{status}{Colors.ENDC}"
+            elif status == "completed_with_errors":
+                status_display = f"{Colors.WARNING}{status}{Colors.ENDC}"
+            else:
+                status_display = status
+            
+            print(f"Status: {status_display}")
+            print_info(f"Job ID: {data.get('job_id')}")
+            print_info(f"Tenant ID: {data.get('tenant_id')}")
+            print_info(f"Report Date: {data.get('report_date')}")
+            print_info(f"Created At: {data.get('created_at')}")
+            
+            if data.get("started_at"):
+                print_info(f"Started At: {data.get('started_at')}")
+            
+            if data.get("completed_at"):
+                print_info(f"Completed At: {data.get('completed_at')}")
+            
+            # Show email results if available
+            if "total_emails" in data:
+                print(f"\n{Colors.BOLD}Email Results:{Colors.ENDC}")
+                print(f"  Total: {data.get('total_emails', 0)}")
+                print(f"  {Colors.OKGREEN}Sent: {data.get('emails_sent', 0)}{Colors.ENDC}")
+                print(f"  {Colors.FAIL}Failed: {data.get('emails_failed', 0)}{Colors.ENDC}")
+            
+            if data.get("error_message"):
+                print_error(f"Error: {data.get('error_message')}")
+            
+            return data
+        elif response.status_code == 404:
+            print_error("Email job not found")
+            return None
+        else:
+            print_error(f"Failed to get job status: {response.status_code}")
+            print_error(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print_error(f"Error getting job status: {e}")
+        return None
+
+
+def main():
+    """Main test function."""
+    parser = argparse.ArgumentParser(description="Test Azure Functions Email Service")
+    parser.add_argument(
+        "--tenant-id",
+        required=True,
+        help="Tenant ID (UUID)"
+    )
+    parser.add_argument(
+        "--report-date",
+        default=None,
+        help="Report date (YYYY-MM-DD). Default: yesterday"
+    )
+    parser.add_argument(
+        "--branch-codes",
+        default=None,
+        help="Comma-separated branch codes (e.g., D01,D02). Default: all branches"
+    )
+    parser.add_argument(
+        "--job-id",
+        default=None,
+        help="Check status of existing job instead of sending new emails"
+    )
+    parser.add_argument(
+        "--skip-health-check",
+        action="store_true",
+        help="Skip health check"
+    )
+    parser.add_argument(
+        "--base-url",
+        default=BASE_URL,
+        help=f"Base URL for API (default: {BASE_URL})"
+    )
+    
+    args = parser.parse_args()
+    
+    # Update base URL if provided
+    global BASE_URL
+    BASE_URL = args.base_url
+    
+    # Parse report date
+    if args.report_date:
+        try:
+            report_date = datetime.strptime(args.report_date, "%Y-%m-%d").date()
+        except ValueError:
+            print_error(f"Invalid date format: {args.report_date}. Use YYYY-MM-DD")
+            sys.exit(1)
+    else:
+        # Default to yesterday
+        report_date = date.today() - timedelta(days=1)
+    
+    # Parse branch codes
+    branch_codes = None
+    if args.branch_codes:
+        branch_codes = [code.strip() for code in args.branch_codes.split(",")]
+    
+    # Create session
+    session = create_session_with_retries()
+    
+    print(f"\n{Colors.BOLD}{'='*80}{Colors.ENDC}")
+    print(f"{Colors.BOLD}Azure Functions Email Service Test{Colors.ENDC}".center(80))
+    print(f"{Colors.BOLD}{'='*80}{Colors.ENDC}")
+    print(f"\n{Colors.BOLD}Configuration:{Colors.ENDC}")
+    print(f"  Base URL: {BASE_URL}")
+    print(f"  Tenant ID: {args.tenant_id}")
+    print(f"  Report Date: {report_date.strftime('%Y-%m-%d')}")
+    if branch_codes:
+        print(f"  Target Branches: {', '.join(branch_codes)}")
+    else:
+        print(f"  Target Branches: All configured branches")
+    
+    # If job_id provided, just check status
+    if args.job_id:
+        get_email_job_status(session, args.tenant_id, args.job_id)
+        return
+    
+    # Run tests
+    success = True
+    
+    # 1. Health check
+    if not args.skip_health_check:
+        if not test_health_check(session):
+            print_warning("Health check failed, but continuing...")
+    
+    # 2. Get email mappings
+    mappings = get_email_mappings(session, args.tenant_id)
+    if not mappings:
+        print_error("No email mappings found. Please configure branch email mappings first.")
+        success = False
+    else:
+        # 3. Send email reports
+        result = send_email_reports(session, args.tenant_id, report_date, branch_codes)
+        
+        if result:
+            job_id = result.get("job_id")
+            status = result.get("status")
+            
+            # If status is not final, wait a bit and check again
+            if status in ["processing", "queued"]:
+                print_info("\nWaiting 5 seconds before checking final status...")
+                time.sleep(5)
+                get_email_job_status(session, args.tenant_id, job_id)
+        else:
+            success = False
+    
+    # Final summary
+    print_header("Test Summary")
+    if success:
+        print_success("All tests completed successfully!")
+    else:
+        print_error("Some tests failed. Check the output above for details.")
+    
+    sys.exit(0 if success else 1)
+
+
+if __name__ == "__main__":
+    main()
+

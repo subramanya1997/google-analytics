@@ -266,3 +266,320 @@ Common errors:
 
 *Times vary based on data volume and network conditions.*
 
+---
+
+## Email Service Testing
+
+### Prerequisites
+
+1. **Configure Email Mappings**
+   - Branch codes must be configured with sales rep emails
+   - Use `POST /api/v1/email/mappings` to create mappings
+   - Or configure directly in the database `branch_email_mappings` table
+
+2. **SMTP Configuration**
+   - SMTP credentials must be configured in `tenant_config.smtp_credentials`
+   - Test SMTP connectivity before sending emails
+
+### Quick Test (Bash)
+
+```bash
+# Make script executable (Linux/Mac)
+chmod +x test_email_sending.sh
+
+# Send emails for all branches (yesterday's data)
+./test_email_sending.sh --tenant-id YOUR_TENANT_ID
+
+# Send emails for specific branches
+./test_email_sending.sh \
+  --tenant-id YOUR_TENANT_ID \
+  --report-date 2025-12-23 \
+  --branch-codes D01,D02
+
+# Check existing job status
+./test_email_sending.sh \
+  --tenant-id YOUR_TENANT_ID \
+  --job-id email_abc123
+
+# Test against local Azure Functions (development)
+./test_email_sending.sh \
+  --tenant-id YOUR_TENANT_ID \
+  --report-date 2025-12-23 \
+  --base-url http://localhost:7071/api/v1
+```
+
+### Comprehensive Test (Python)
+
+```bash
+# Install dependencies
+pip install requests
+
+# Send emails for all branches
+python test_email_sending.py \
+  --tenant-id YOUR_TENANT_ID \
+  --report-date 2025-12-23
+
+# Send emails for specific branches
+python test_email_sending.py \
+  --tenant-id YOUR_TENANT_ID \
+  --report-date 2025-12-23 \
+  --branch-codes D01,D02,D03
+
+# Check existing job status
+python test_email_sending.py \
+  --tenant-id YOUR_TENANT_ID \
+  --job-id email_abc123
+
+# Skip health check
+python test_email_sending.py \
+  --tenant-id YOUR_TENANT_ID \
+  --report-date 2025-12-23 \
+  --skip-health-check
+```
+
+### Manual Testing with cURL
+
+#### 1. Check Email Mappings
+
+```bash
+curl -X GET \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/mappings" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID"
+
+# Filter by branch
+curl -X GET \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/mappings?branch_code=D01" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID"
+```
+
+**Expected Response:**
+```json
+{
+  "mappings": [
+    {
+      "branch_code": "D01",
+      "branch_name": "Main Branch",
+      "sales_rep_email": "manager@company.com",
+      "sales_rep_name": "John Doe",
+      "is_enabled": true
+    }
+  ],
+  "total": 1
+}
+```
+
+#### 2. Create Email Mapping
+
+```bash
+curl -X POST \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/mappings" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "branch_code": "D01",
+    "branch_name": "Main Branch",
+    "sales_rep_email": "manager@company.com",
+    "sales_rep_name": "John Doe",
+    "is_enabled": true
+  }'
+```
+
+**Expected Response:**
+```json
+{
+  "success": true,
+  "message": "Email mapping created successfully",
+  "mapping_id": "mapping-uuid-here"
+}
+```
+
+#### 3. Send Email Reports
+
+```bash
+# Send to all configured branches
+curl -X POST \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/send-reports" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "report_date": "2025-12-23"
+  }'
+
+# Send to specific branches
+curl -X POST \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/send-reports" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "report_date": "2025-12-23",
+    "branch_codes": ["D01", "D02"]
+  }'
+```
+
+**Expected Response (Synchronous):**
+```json
+{
+  "job_id": "email_abc123def456",
+  "tenant_id": "e0f01854-6c2e-4b76-bf7b-67f3c28dbdac",
+  "status": "completed",
+  "report_date": "2025-12-23",
+  "target_branches": ["D01", "D02"],
+  "total_emails": 2,
+  "emails_sent": 2,
+  "emails_failed": 0,
+  "message": "Email job completed. Check /email/jobs/email_abc123def456 for details."
+}
+```
+
+#### 4. Check Email Job Status
+
+```bash
+curl -X GET \
+  "https://gadataingestion.azurewebsites.net/api/v1/email/jobs/email_abc123def456" \
+  -H "X-Tenant-Id: YOUR_TENANT_ID"
+```
+
+**Expected Response:**
+```json
+{
+  "job_id": "email_abc123def456",
+  "tenant_id": "e0f01854-6c2e-4b76-bf7b-67f3c28dbdac",
+  "status": "completed",
+  "report_date": "2025-12-23",
+  "target_branches": ["D01", "D02"],
+  "total_emails": 2,
+  "emails_sent": 2,
+  "emails_failed": 0,
+  "created_at": "2025-12-24T03:00:00Z",
+  "started_at": "2025-12-24T03:00:01Z",
+  "completed_at": "2025-12-24T03:01:30Z"
+}
+```
+
+### Email Report Contents
+
+Each branch manager receives a comprehensive HTML email with:
+
+| Section | Description |
+|---------|-------------|
+| **Summary Metrics** | Total purchases, revenue, cart abandonments, failed searches |
+| **Purchase Follow-ups** | Customer details, products purchased, contact information |
+| **Cart Recovery** | Abandoned carts with value and customer contact info |
+| **Search Analysis** | Failed searches indicating catalog gaps |
+| **Repeat Visitors** | High-engagement customers ready for outreach |
+
+### Testing Checklist
+
+- [ ] Health check passes
+- [ ] Email mappings exist and are enabled
+- [ ] SMTP credentials are configured
+- [ ] Email job creates successfully
+- [ ] Emails send without errors
+- [ ] HTML report renders correctly
+- [ ] Customer data appears accurately
+- [ ] Contact information is present
+- [ ] Job status updates correctly
+- [ ] Failed emails are logged properly
+
+### Troubleshooting
+
+#### No Email Mappings
+
+**Error:** `No branch email mappings configured`
+
+**Solution:** Create email mappings using the API or database:
+```sql
+INSERT INTO branch_email_mappings (tenant_id, branch_code, branch_name, sales_rep_email, sales_rep_name, is_enabled)
+VALUES ('tenant-uuid', 'D01', 'Main Branch', 'manager@company.com', 'John Doe', true);
+```
+
+#### SMTP Configuration Missing
+
+**Error:** `Cannot send emails: SMTP service is disabled`
+
+**Solution:** Configure SMTP in `tenant_config`:
+```sql
+UPDATE tenant_config 
+SET smtp_credentials = '{
+  "server": "smtp.gmail.com",
+  "port": 587,
+  "username": "your-email@gmail.com",
+  "password": "your-app-password",
+  "from_address": "noreply@yourcompany.com",
+  "use_tls": true,
+  "use_ssl": false
+}'::jsonb
+WHERE tenant_id = 'tenant-uuid';
+```
+
+#### Timeout Errors
+
+**Error:** `Request timed out after 10 minutes`
+
+**Cause:** Too many branches being processed at once
+
+**Solution:** 
+- Reduce the number of branches per request
+- Send in batches of 10-20 branches
+- Check Azure Functions logs for processing details
+
+#### Email Not Received
+
+**Checklist:**
+1. Check spam folder
+2. Verify `sales_rep_email` is correct in mappings
+3. Check SMTP credentials are valid
+4. Review email send history in database:
+   ```sql
+   SELECT * FROM email_send_history 
+   WHERE tenant_id = 'tenant-uuid' 
+   ORDER BY sent_at DESC LIMIT 10;
+   ```
+5. Check Azure Functions logs for SMTP errors
+
+### Performance Expectations
+
+| Branches | Estimated Time | Notes |
+|----------|----------------|-------|
+| 1-5 | 30-60 seconds | Quick test |
+| 10-20 | 2-4 minutes | Standard daily run |
+| 50+ | 5-10 minutes | Large tenant |
+
+*Times include report generation, data fetching, and email sending.*
+
+### Integration Testing
+
+For automated testing in CI/CD:
+
+```python
+import requests
+import time
+
+def test_email_service(tenant_id: str, branch_code: str):
+    base_url = "https://gadataingestion.azurewebsites.net/api/v1"
+    headers = {"X-Tenant-Id": tenant_id}
+    
+    # 1. Verify mapping exists
+    resp = requests.get(f"{base_url}/email/mappings", headers=headers)
+    assert resp.status_code == 200
+    mappings = resp.json()["mappings"]
+    assert len(mappings) > 0
+    
+    # 2. Send email
+    resp = requests.post(
+        f"{base_url}/email/send-reports",
+        headers=headers,
+        json={"report_date": "2025-12-23", "branch_codes": [branch_code]},
+        timeout=600
+    )
+    assert resp.status_code in [200, 202]
+    job_id = resp.json()["job_id"]
+    
+    # 3. Verify job completed
+    resp = requests.get(f"{base_url}/email/jobs/{job_id}", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ["completed", "completed_with_errors"]
+    
+    print(f"✓ Email service test passed for tenant {tenant_id}")
+```
+

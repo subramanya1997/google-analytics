@@ -15,6 +15,7 @@ from uuid import uuid4
 from loguru import logger
 
 from shared.database import create_repository
+from services.report_service import ReportService
 
 
 class EmailService:
@@ -33,6 +34,7 @@ class EmailService:
         """
         self.tenant_id = tenant_id
         self.repo = create_repository(tenant_id)
+        self.report_service = ReportService(tenant_id)
 
     async def create_and_process_email_job(
         self,
@@ -139,8 +141,8 @@ class EmailService:
                         total_emails += 1
                         
                         try:
-                            # Generate simple branch report
-                            branch_report_html = await self._generate_simple_branch_report(
+                            # Generate full branch report with analytics
+                            branch_report_html = await self.report_service.generate_branch_report(
                                 tenant_id, branch_code, report_date
                             )
                             
@@ -219,66 +221,6 @@ class EmailService:
                 }
             )
             raise
-
-    async def _generate_simple_branch_report(
-        self, tenant_id: str, branch_code: str, report_date
-    ) -> str:
-        """
-        Generate a simple HTML report for a branch.
-        
-        For full report generation, integrate with the analytics service's
-        report_service and template_service.
-        """
-        date_str = report_date.strftime('%B %d, %Y')
-        
-        # Get location info
-        location_info = await self.repo.get_location_by_code(tenant_id, branch_code)
-        location_name = location_info.get("warehouse_name", branch_code) if location_info else branch_code
-        city = location_info.get("city", "") if location_info else ""
-        state = location_info.get("state", "") if location_info else ""
-        
-        location_display = f"{location_name}"
-        if city or state:
-            location_display += f" - {city}, {state}"
-        
-        # Generate simple report HTML
-        html = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Report - {location_display}</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f8f9fa; }}
-        .container {{ max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .header {{ border-bottom: 2px solid #dee2e6; padding-bottom: 15px; margin-bottom: 25px; }}
-        .header h1 {{ margin: 0; color: #333; }}
-        .header p {{ margin: 5px 0 0 0; color: #666; }}
-        .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #666; text-align: center; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{location_display}</h1>
-            <p>Daily Sales Report - {date_str}</p>
-        </div>
-        
-        <div class="content">
-            <p>This is your daily sales report for <strong>{branch_code}</strong>.</p>
-            <p>Please log in to the Sales Intelligence dashboard for detailed analytics and actionable tasks.</p>
-        </div>
-        
-        <div class="footer">
-            <p>Report generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            <p>This is an automated report from the Sales Intelligence System</p>
-        </div>
-    </div>
-</body>
-</html>
-"""
-        return html
 
     async def _send_branch_email(
         self,

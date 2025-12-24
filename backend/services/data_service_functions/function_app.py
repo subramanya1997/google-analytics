@@ -333,8 +333,12 @@ async def send_reports(req: func.HttpRequest) -> func.HttpResponse:
     """
     Send branch reports via email.
     
-    Creates an email job and processes it, sending reports to configured
+    Creates an email job and processes it synchronously, sending reports to configured
     sales representatives for their branches.
+    
+    Note: Azure Functions Consumption plan doesn't reliably execute background tasks,
+    so email processing is done synchronously. For large jobs, clients should expect
+    longer response times (up to 10 minutes).
     """
     try:
         tenant_id = get_tenant_id(req)
@@ -350,7 +354,6 @@ async def send_reports(req: func.HttpRequest) -> func.HttpResponse:
         from shared.database import create_repository
         from shared.models import SendReportsRequest
         from services.email_service import EmailService
-        import asyncio
         
         # Validate request
         request = SendReportsRequest(**body)
@@ -369,28 +372,35 @@ async def send_reports(req: func.HttpRequest) -> func.HttpResponse:
             tenant_id, request.report_date, request.branch_codes
         )
         
-        logging.info(f"Created email job {job_id} for tenant {tenant_id}")
+        logging.info(f"Created email job {job_id} for tenant {tenant_id}, starting processing...")
         
-        # Start processing in background
-        asyncio.create_task(email_service.process_email_job(
+        # Process the job directly (Azure Functions don't support background tasks)
+        # The job will run synchronously and the response will be returned after completion
+        result = await email_service.process_email_job(
             tenant_id, job_id, request.report_date, request.branch_codes
-        ))
+        )
+        
+        # Get final status
+        final_status = result.get("status", "unknown")
         
         return create_json_response({
             "job_id": job_id,
-            "status": "processing",
             "tenant_id": tenant_id,
+            "status": final_status,
             "report_date": request.report_date.isoformat(),
             "target_branches": request.branch_codes or [],
-            "message": "Email job created and processing started. Poll /email/jobs/{job_id} for status."
-        }, 202)
+            "total_emails": result.get("total_emails", 0),
+            "emails_sent": result.get("emails_sent", 0),
+            "emails_failed": result.get("emails_failed", 0),
+            "message": f"Email job {final_status}. Check /email/jobs/{job_id} for details."
+        }, 200 if final_status == "completed" else 202)
         
     except ImportError as e:
         logging.error(f"Required module not available: {e}")
         return create_error_response(503, f"Service dependency unavailable: {str(e)}")
     except Exception as e:
-        logging.error(f"Error creating email job: {e}")
-        return create_error_response(500, f"Failed to create email job: {str(e)}")
+        logging.error(f"Error creating/processing email job: {e}")
+        return create_error_response(500, f"Failed to process email job: {str(e)}")
 
 
 @app.route(route="email/jobs/{job_id}", methods=["GET"])

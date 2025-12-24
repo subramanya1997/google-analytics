@@ -83,7 +83,6 @@ async def start_ingestion_job(req: func.HttpRequest) -> func.HttpResponse:
         from shared.database import create_repository
         from shared.models import CreateIngestionJobRequest
         from services.ingestion_service import IngestionService
-        import asyncio
         
         # Validate request
         request = CreateIngestionJobRequest(**body)
@@ -116,20 +115,27 @@ async def start_ingestion_job(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Created job {job_id} for tenant {tenant_id}, starting processing...")
         
-        # Start background processing immediately
+        # Process the job directly (Azure Functions don't support background tasks)
+        # The job will run synchronously and the response will be returned after completion
+        # For large jobs, clients should expect longer response times (up to 10 minutes)
         ingestion_service = IngestionService(tenant_id)
-        asyncio.create_task(ingestion_service.run_job_safe(job_id, tenant_id, request))
+        await ingestion_service.run_job_safe(job_id, tenant_id, request)
+        
+        # Get final job status
+        final_job = await repo.get_job_by_id(job_id)
+        final_status = final_job.get("status", "unknown") if final_job else "unknown"
         
         return create_json_response({
             "job_id": job_id,
             "tenant_id": tenant_id,
-            "status": "processing",
+            "status": final_status,
             "data_types": request.data_types,
             "start_date": request.start_date.isoformat(),
             "end_date": request.end_date.isoformat(),
             "created_at": datetime.utcnow().isoformat(),
-            "message": "Job created and processing started. Poll /jobs/{job_id} for status."
-        }, 202)
+            "records_processed": final_job.get("records_processed", {}) if final_job else {},
+            "message": f"Job {final_status}. Check /jobs/{job_id} for details."
+        }, 200 if final_status == "completed" else 202)
         
     except ImportError as e:
         logging.error(f"Required module not available: {e}")
@@ -516,7 +522,6 @@ async def scheduled_ingestion(timer: func.TimerRequest) -> None:
         from shared.database import create_repository
         from shared.models import CreateIngestionJobRequest
         from services.ingestion_service import IngestionService
-        import asyncio
         
         # Get tenant IDs from environment variable
         # Format: comma-separated UUIDs, e.g., "uuid1,uuid2,uuid3"
@@ -548,14 +553,15 @@ async def scheduled_ingestion(timer: func.TimerRequest) -> None:
                 jobs_created += 1
                 logging.info(f"Created scheduled job {job_id} for tenant {tenant_id}")
                 
-                # Start processing immediately
+                # Process the job directly (Azure Functions don't support background tasks)
                 request = CreateIngestionJobRequest(
                     data_types=["events", "users", "locations"],
                     start_date=two_days_ago,
                     end_date=today
                 )
                 ingestion_service = IngestionService(tenant_id)
-                asyncio.create_task(ingestion_service.run_job_safe(job_id, tenant_id, request))
+                await ingestion_service.run_job_safe(job_id, tenant_id, request)
+                logging.info(f"Completed scheduled job {job_id} for tenant {tenant_id}")
                 
             except Exception as e:
                 logging.error(f"Failed to create/start job for tenant {tenant_id}: {e}")

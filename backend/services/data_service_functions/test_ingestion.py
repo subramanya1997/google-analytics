@@ -44,7 +44,7 @@ class IngestionTester:
         try:
             response = requests.get(
                 f"{self.base_url}/api/v1/health",
-                timeout=10
+                timeout=30  # Increased for Azure Functions cold start
             )
             response.raise_for_status()
             data = response.json()
@@ -132,7 +132,7 @@ class IngestionTester:
             response = requests.get(
                 f"{self.base_url}/api/v1/jobs/{job_id}",
                 headers=self.headers,
-                timeout=10
+                timeout=60  # Increased for Azure Functions cold start
             )
             response.raise_for_status()
             return response.json()
@@ -143,6 +143,14 @@ class IngestionTester:
             else:
                 print(f"✗ Failed to get job status: {e}")
             return None
+            
+        except requests.exceptions.Timeout as e:
+            # Return special marker for timeout (can be retried)
+            return {"_error": "timeout", "_message": str(e)}
+            
+        except requests.exceptions.ConnectionError as e:
+            # Return special marker for connection error (can be retried)
+            return {"_error": "connection", "_message": str(e)}
             
         except Exception as e:
             print(f"✗ Unexpected error: {e}")
@@ -169,6 +177,8 @@ class IngestionTester:
         
         start_time = time.time()
         last_status = None
+        consecutive_errors = 0
+        max_consecutive_errors = 5
         
         while True:
             elapsed = time.time() - start_time
@@ -179,8 +189,24 @@ class IngestionTester:
             
             status = self.get_job_status(job_id)
             
+            # Handle transient errors (timeouts, connection issues)
+            if status and status.get("_error"):
+                consecutive_errors += 1
+                error_type = status.get("_error")
+                print(f"   [{elapsed:.0f}s] ⚠️  {error_type} error (retry {consecutive_errors}/{max_consecutive_errors})")
+                
+                if consecutive_errors >= max_consecutive_errors:
+                    print(f"\n✗ Too many consecutive errors, giving up")
+                    return None
+                    
+                time.sleep(poll_interval)
+                continue
+            
             if not status:
                 return None
+            
+            # Reset error counter on successful request
+            consecutive_errors = 0
             
             current_status = status.get('status', 'unknown')
             progress = status.get('progress', {})
@@ -222,7 +248,7 @@ class IngestionTester:
             response = requests.get(
                 f"{self.base_url}/api/v1/data-availability",
                 headers=self.headers,
-                timeout=10
+                timeout=60  # Increased for Azure Functions cold start
             )
             response.raise_for_status()
             return response.json()

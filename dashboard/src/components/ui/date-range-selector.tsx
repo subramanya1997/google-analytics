@@ -3,7 +3,7 @@
 import * as React from "react"
 import { CalendarIcon, X } from "lucide-react"
 import { DateRange } from "react-day-picker"
-import { format, subDays, startOfDay } from "date-fns"
+import { format, subDays, startOfDay, subMonths } from "date-fns"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -163,29 +163,29 @@ export function DateRangeSelector({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handlePresetClick(30)}
+                onClick={() => handlePresetClick(15)}
                 className="text-xs"
               >
-                Last 30 days
+                Last 15 days
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handlePresetClick(90)}
+                onClick={() => handlePresetClick(30)}
                 className="text-xs"
               >
-                Last 90 days
+                Last 30 days
               </Button>
             </div>
             
             <Calendar
               initialFocus
               mode="range"
-              defaultMonth={date?.from || subDays(new Date(), 7)}
+              defaultMonth={subMonths(date?.to || new Date(), 1)}
               selected={date}
               onSelect={handleDateChange}
               numberOfMonths={numberOfMonths}
-              disabled={(date) => date > new Date() || date < subDays(new Date(), 90)}
+              disabled={(date) => date > new Date() || date < subDays(new Date(), 45)}
               className="rounded-md"
             />
             

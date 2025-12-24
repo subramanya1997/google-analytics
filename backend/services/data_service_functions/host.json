@@ -17,6 +17,13 @@
   "extensions": {
     "http": {
       "routePrefix": "api/v1"
+    },
+    "queues": {
+      "maxPollingInterval": "00:00:10",
+      "visibilityTimeout": "00:05:00",
+      "batchSize": 1,
+      "maxDequeueCount": 3,
+      "newBatchThreshold": 0
     }
   },
   "extensionBundle": {

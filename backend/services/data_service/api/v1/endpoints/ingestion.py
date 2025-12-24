@@ -1,8 +1,11 @@
 import asyncio
+import json
+import os
 from datetime import datetime, date
 from uuid import uuid4
 from typing import Optional, List, Dict, Any
 
+from azure.storage.queue.aio import QueueClient
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 
@@ -12,9 +15,13 @@ from services.data_service.api.v1.models import (
     IngestionJobResponse,
 )
 from services.data_service.services import IngestionService
+from common.config import get_settings
 from common.database import get_tenant_service_status
 
 router = APIRouter()
+
+# Get settings for Azure Functions URL
+_settings = get_settings("data-service")
 
 
 @router.post("/ingest", response_model=IngestionJobResponse)
@@ -123,10 +130,25 @@ async def create_ingestion_job(
         # Create job record
         await ingestion_service.create_job(job_id, tenant_id, request)
 
-        # Start background processing with safe wrapper
-        background_tasks.add_task(ingestion_service.run_job_safe, job_id, tenant_id, request)
+        logger.info(f"Created ingestion job {job_id} for tenant {tenant_id}, sending to queue...")
 
-        logger.info(f"Created ingestion job {job_id} for tenant {tenant_id}")
+        # Send message to Azure Queue for background processing
+        connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+        if not connection_string:
+            raise ValueError("AZURE_STORAGE_CONNECTION_STRING environment variable not set")
+        
+        queue_client = QueueClient.from_connection_string(connection_string, "ingestion-jobs")
+        
+        message = {
+            "job_id": job_id,
+            "tenant_id": tenant_id,
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "data_types": request.data_types
+        }
+        
+        await queue_client.send_message(json.dumps(message))
+        logger.info(f"Successfully queued ingestion job {job_id} for processing")
 
         return IngestionJobResponse(
             job_id=job_id,

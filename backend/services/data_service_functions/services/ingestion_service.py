@@ -91,6 +91,7 @@ class IngestionService:
                 "users_processed": 0,
                 "locations_processed": 0,
             }
+            warnings = []  # Track partial failures
 
             # Process events from BigQuery
             if "events" in request.data_types:
@@ -115,8 +116,10 @@ class IngestionService:
                 try:
                     logger.info(f"Processing users for job {job_id}")
                     await self.repo.update_job_status(job_id, "processing", progress={"current": "users"})
-                    users_count = await self._process_users(tenant_id)
+                    users_count, users_errors = await self._process_users(tenant_id)
                     results["users_processed"] = users_count
+                    if users_errors > 0:
+                        warnings.append(f"Users: {users_errors} batch errors during upsert")
 
                 except Exception as e:
                     logger.error(f"Failed to download/process users: {e}", exc_info=True)
@@ -135,8 +138,10 @@ class IngestionService:
                 try:
                     logger.info(f"Processing locations for job {job_id}")
                     await self.repo.update_job_status(job_id, "processing", progress={"current": "locations"})
-                    locations_count = await self._process_locations(tenant_id)
+                    locations_count, locations_errors = await self._process_locations(tenant_id)
                     results["locations_processed"] = locations_count
+                    if locations_errors > 0:
+                        warnings.append(f"Locations: {locations_errors} batch errors during upsert")
 
                 except Exception as e:
                     logger.error(f"Failed to download/process locations: {e}", exc_info=True)
@@ -150,15 +155,26 @@ class IngestionService:
                     else:
                         raise Exception(f"Failed to download locations data from SFTP - {type(e).__name__}: {str(e)}") from e
 
-            # Update job status to completed
+            # Determine final status based on warnings
+            if warnings:
+                final_status = "completed_with_warnings"
+                results["warnings"] = warnings
+                error_message = "; ".join(warnings)
+                logger.warning(f"Job {job_id} completed with warnings: {warnings}")
+            else:
+                final_status = "completed"
+                error_message = None
+
+            # Update job status
             await self.repo.update_job_status(
                 job_id,
-                "completed",
+                final_status,
                 completed_at=datetime.now(),
                 records_processed=results,
+                error_message=error_message,
             )
 
-            logger.info(f"Completed processing job {job_id}: {results}")
+            logger.info(f"Completed processing job {job_id} with status {final_status}: {results}")
             return results
 
         except Exception as e:
@@ -216,15 +232,15 @@ class IngestionService:
             logger.error(f"Error processing BigQuery events: {e}")
             raise
 
-    async def _process_users(self, tenant_id: str) -> int:
-        """Process users from SFTP."""
+    async def _process_users(self, tenant_id: str) -> tuple:
+        """Process users from SFTP. Returns (count, errors) tuple."""
         try:
             logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
             sftp_client = await get_tenant_sftp_client(tenant_id)
 
             if not sftp_client:
                 logger.warning(f"SFTP configuration not found for tenant {tenant_id}, skipping user processing")
-                return 0
+                return 0, 0
 
             # Get users data (synchronous method)
             logger.info("Connecting to SFTP to download users data")
@@ -249,26 +265,26 @@ class IngestionService:
                             cleaned_record[key] = value
                     cleaned_users.append(cleaned_record)
 
-                count = await self.repo.upsert_users(tenant_id, cleaned_users)
-                logger.info(f"Processed {count} users from SFTP")
-                return count
+                count, errors = await self.repo.upsert_users(tenant_id, cleaned_users)
+                logger.info(f"Processed {count} users from SFTP ({errors} batch errors)")
+                return count, errors
             else:
                 logger.info("No users data found")
-                return 0
+                return 0, 0
 
         except Exception as e:
             logger.error(f"Error processing users: {e}")
             raise
 
-    async def _process_locations(self, tenant_id: str) -> int:
-        """Process locations from SFTP."""
+    async def _process_locations(self, tenant_id: str) -> tuple:
+        """Process locations from SFTP. Returns (count, errors) tuple."""
         try:
             logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
             sftp_client = await get_tenant_sftp_client(tenant_id)
             
             if not sftp_client:
                 logger.warning(f"SFTP configuration not found for tenant {tenant_id}, skipping location processing")
-                return 0
+                return 0, 0
 
             logger.info(f"Connecting to SFTP to download locations data for tenant {tenant_id}")
             locations_data = sftp_client._get_locations_data_sync()
@@ -292,12 +308,12 @@ class IngestionService:
                             cleaned_record[key] = value
                     cleaned_locations.append(cleaned_record)
 
-                count = await self.repo.upsert_locations(tenant_id, cleaned_locations)
-                logger.info(f"Processed {count} locations from SFTP")
-                return count
+                count, errors = await self.repo.upsert_locations(tenant_id, cleaned_locations)
+                logger.info(f"Processed {count} locations from SFTP ({errors} batch errors)")
+                return count, errors
             else:
                 logger.info("No locations data received from SFTP")
-                return 0
+                return 0, 0
 
         except Exception as e:
             logger.error(f"Error processing locations: {e}")

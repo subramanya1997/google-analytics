@@ -444,96 +444,152 @@ class FunctionsRepository:
             return total
 
     async def upsert_users(self, tenant_id: str, users_data: List[Dict[str, Any]]) -> int:
-        """Upsert users data."""
+        """Upsert users data in batches for performance."""
         if not users_data:
             return 0
         
         tenant_uuid_str = ensure_uuid_string(tenant_id)
+        batch_size = 500
+        total = 0
+        errors = 0
         
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            total = 0
-            batch_size = 500
+        # Prepare all rows with tenant_id
+        rows = []
+        for user in users_data:
+            user["tenant_id"] = tenant_uuid_str
+            rows.append(user)
+        
+        # Process each batch in a SEPARATE session to isolate failures
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i + batch_size]
+            batch_num = i // batch_size + 1
             
-            for i in range(0, len(users_data), batch_size):
-                batch = users_data[i:i + batch_size]
+            # Build multi-row VALUES clause for batch insert
+            values_clauses = []
+            params = {}
+            
+            for idx, user in enumerate(batch):
+                prefix = f"u{idx}_"
+                values_clauses.append(f"""(
+                    :{prefix}tenant_id, :{prefix}user_id, :{prefix}user_name, 
+                    :{prefix}first_name, :{prefix}middle_name, :{prefix}last_name,
+                    :{prefix}job_title, :{prefix}user_erp_id, :{prefix}email, 
+                    :{prefix}office_phone, :{prefix}cell_phone, :{prefix}fax,
+                    :{prefix}address1, :{prefix}address2, :{prefix}address3, 
+                    :{prefix}city, :{prefix}state, :{prefix}country, :{prefix}zip,
+                    :{prefix}warehouse_code, :{prefix}registered_date, :{prefix}last_login_date,
+                    :{prefix}cimm_buying_company_id, :{prefix}buying_company_name, :{prefix}buying_company_erp_id,
+                    :{prefix}role_name, :{prefix}site_name, NOW()
+                )""")
                 
-                for user in batch:
-                    user["tenant_id"] = tenant_uuid_str
-                    
-                    # Upsert using ON CONFLICT
-                    stmt = text("""
-                        INSERT INTO users (tenant_id, user_id, user_name, first_name, middle_name, last_name,
-                            job_title, user_erp_id, email, office_phone, cell_phone, fax,
-                            address1, address2, address3, city, state, country, zip,
-                            warehouse_code, registered_date, last_login_date,
-                            cimm_buying_company_id, buying_company_name, buying_company_erp_id,
-                            role_name, site_name, updated_at)
-                        VALUES (:tenant_id, :user_id, :user_name, :first_name, :middle_name, :last_name,
-                            :job_title, :user_erp_id, :email, :office_phone, :cell_phone, :fax,
-                            :address1, :address2, :address3, :city, :state, :country, :zip,
-                            :warehouse_code, :registered_date, :last_login_date,
-                            :cimm_buying_company_id, :buying_company_name, :buying_company_erp_id,
-                            :role_name, :site_name, NOW())
-                        ON CONFLICT (tenant_id, user_id) DO UPDATE SET
-                            user_name = EXCLUDED.user_name,
-                            first_name = EXCLUDED.first_name,
-                            middle_name = EXCLUDED.middle_name,
-                            last_name = EXCLUDED.last_name,
-                            job_title = EXCLUDED.job_title,
-                            email = EXCLUDED.email,
-                            updated_at = NOW()
-                    """)
-                    
-                    try:
-                        await session.execute(stmt, user)
-                        total += 1
-                    except Exception as e:
-                        logger.warning(f"Error upserting user: {e}")
+                # Add all user fields with prefix
+                for key, value in user.items():
+                    params[f"{prefix}{key}"] = value
             
-            await session.commit()
-            logger.info(f"Upserted {total} users")
-            return total
+            stmt = text(f"""
+                INSERT INTO users (tenant_id, user_id, user_name, first_name, middle_name, last_name,
+                    job_title, user_erp_id, email, office_phone, cell_phone, fax,
+                    address1, address2, address3, city, state, country, zip,
+                    warehouse_code, registered_date, last_login_date,
+                    cimm_buying_company_id, buying_company_name, buying_company_erp_id,
+                    role_name, site_name, updated_at)
+                VALUES {', '.join(values_clauses)}
+                ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+                    user_name = EXCLUDED.user_name,
+                    first_name = EXCLUDED.first_name,
+                    middle_name = EXCLUDED.middle_name,
+                    last_name = EXCLUDED.last_name,
+                    job_title = EXCLUDED.job_title,
+                    email = EXCLUDED.email,
+                    updated_at = NOW()
+            """)
+            
+            try:
+                # Use separate session per batch to isolate failures
+                async with get_db_session(tenant_id=self.tenant_id) as session:
+                    result = await session.execute(stmt, params)
+                    await session.commit()
+                    batch_count = result.rowcount or len(batch)
+                    total += batch_count
+                    logger.debug(f"Upserted user batch {batch_num}: {batch_count} rows")
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Error upserting user batch {batch_num}: {e}")
+                # Continue with next batch instead of failing completely
+        
+        logger.info(f"Upserted {total} users ({errors} batch errors)")
+        return total, errors  # Return tuple (count, errors)
 
     async def upsert_locations(self, tenant_id: str, locations_data: List[Dict[str, Any]]) -> int:
-        """Upsert locations data."""
+        """Upsert locations data in batches for performance."""
         if not locations_data:
             return 0
         
         tenant_uuid_str = ensure_uuid_string(tenant_id)
+        batch_size = 500
+        total = 0
+        errors = 0
         
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            total = 0
-            batch_size = 500
+        # Prepare all rows with tenant_id
+        rows = []
+        for loc in locations_data:
+            loc["tenant_id"] = tenant_uuid_str
+            if loc.get("warehouse_id"):
+                loc["warehouse_id"] = str(loc["warehouse_id"])
+            rows.append(loc)
+        
+        # Process each batch in a SEPARATE session to isolate failures
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i:i + batch_size]
+            batch_num = i // batch_size + 1
             
-            for i in range(0, len(locations_data), batch_size):
-                batch = locations_data[i:i + batch_size]
+            # Build multi-row VALUES clause for batch insert
+            values_clauses = []
+            params = {}
+            
+            for idx, loc in enumerate(batch):
+                prefix = f"l{idx}_"
+                values_clauses.append(f"""(
+                    :{prefix}tenant_id, :{prefix}warehouse_id, :{prefix}warehouse_code, :{prefix}warehouse_name,
+                    :{prefix}city, :{prefix}state, :{prefix}country, 
+                    :{prefix}address1, :{prefix}address2, :{prefix}zip, NOW()
+                )""")
                 
-                for loc in batch:
-                    loc["tenant_id"] = tenant_uuid_str
-                    if loc.get("warehouse_id"):
-                        loc["warehouse_id"] = str(loc["warehouse_id"])
-                    
-                    stmt = text("""
-                        INSERT INTO locations (tenant_id, warehouse_id, warehouse_code, warehouse_name,
-                            city, state, country, address1, address2, zip, updated_at)
-                        VALUES (:tenant_id, :warehouse_id, :warehouse_code, :warehouse_name,
-                            :city, :state, :country, :address1, :address2, :zip, NOW())
-                        ON CONFLICT (tenant_id, warehouse_id) DO UPDATE SET
-                            warehouse_name = EXCLUDED.warehouse_name,
-                            city = EXCLUDED.city,
-                            state = EXCLUDED.state,
-                            updated_at = NOW()
-                    """)
-                    
-                    try:
-                        await session.execute(stmt, loc)
-                        total += 1
-                    except Exception as e:
-                        logger.warning(f"Error upserting location: {e}")
+                # Add all location fields with prefix
+                for key, value in loc.items():
+                    params[f"{prefix}{key}"] = value
             
-            await session.commit()
-            logger.info(f"Upserted {total} locations")
-            return total
+            stmt = text(f"""
+                INSERT INTO locations (tenant_id, warehouse_id, warehouse_code, warehouse_name,
+                    city, state, country, address1, address2, zip, updated_at)
+                VALUES {', '.join(values_clauses)}
+                ON CONFLICT (tenant_id, warehouse_id) DO UPDATE SET
+                    warehouse_code = EXCLUDED.warehouse_code,
+                    warehouse_name = EXCLUDED.warehouse_name,
+                    city = EXCLUDED.city,
+                    state = EXCLUDED.state,
+                    country = EXCLUDED.country,
+                    address1 = EXCLUDED.address1,
+                    address2 = EXCLUDED.address2,
+                    zip = EXCLUDED.zip,
+                    updated_at = NOW()
+            """)
+            
+            try:
+                # Use separate session per batch to isolate failures
+                async with get_db_session(tenant_id=self.tenant_id) as session:
+                    result = await session.execute(stmt, params)
+                    await session.commit()
+                    batch_count = result.rowcount or len(batch)
+                    total += batch_count
+                    logger.debug(f"Upserted location batch {batch_num}: {batch_count} rows")
+            except Exception as e:
+                errors += 1
+                logger.warning(f"Error upserting location batch {batch_num}: {e}")
+                # Continue with next batch instead of failing completely
+        
+        logger.info(f"Upserted {total} locations ({errors} batch errors)")
+        return total, errors  # Return tuple (count, errors)
 
     async def get_tenant_service_status(self, tenant_id: str) -> Dict[str, Dict[str, Any]]:
         """Get service status for a tenant."""

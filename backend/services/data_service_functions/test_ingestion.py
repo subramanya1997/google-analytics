@@ -90,7 +90,7 @@ class IngestionTester:
                 f"{self.base_url}/api/v1/ingest",
                 headers=self.headers,
                 json=payload,
-                timeout=30
+                timeout=600  # 10 minutes - job now runs synchronously
             )
             response.raise_for_status()
             result = response.json()

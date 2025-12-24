@@ -28,7 +28,7 @@ Before deploying, ensure you have:
    - **Region**: Select your preferred region (e.g., `East US 2`)
 5. Click **"Review + create"** → **"Create"**
 
-### Step 2: Create a Storage Account (Required for Azure Functions)
+### Step 2: Create a Storage Account (Required for Azure Functions and Queues)
 
 1. Click **"Create a resource"** → Search for **"Storage account"**
 2. Click **"Create"**
@@ -40,6 +40,11 @@ Before deploying, ensure you have:
    - **Redundancy**: Locally-redundant storage (LRS)
 4. Click **"Review + create"** → **"Create"**
 5. After creation, go to the storage account → **"Access keys"** → Copy the **Connection string**
+6. **Create the required queues:**
+   - Go to Storage Account → **"Queues"** (under Data storage)
+   - Click **"+ Queue"** and create:
+     - **`ingestion-jobs`** - For data ingestion jobs
+     - **`email-jobs`** - For email report jobs
 
 ### Step 3: Create the Function App
 
@@ -75,15 +80,19 @@ Before deploying, ensure you have:
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_USER` | Your database username | Database user with access to tenant DBs |
 | `POSTGRES_PASSWORD` | Your database password | Database password |
-| `SCHEDULED_TENANT_IDS` | `uuid1,uuid2` | Comma-separated tenant IDs for scheduled ingestion |
-| `DATA_INGESTION_CRON` | `0 2 * * *` | Cron schedule for daily ingestion |
-| `AzureWebJobsStorage` | Connection string | From Step 2 |
+| `AzureWebJobsStorage` | Connection string | **CRITICAL**: From Step 2 - enables queue triggers |
 
+> **IMPORTANT: Queue Configuration**
+> 
+> - `AzureWebJobsStorage` **MUST** point to the Storage Account containing the queues
+> - This enables the Function App to listen to `ingestion-jobs` and `email-jobs` queues
+> - Without this, queue triggers will not work
+>
 > **Note: Tenant-Specific Databases**
 > 
 > This service uses tenant-specific databases for SOC2 compliance. Each tenant has their own database:
 > - Database name format: `google-analytics-{tenant_id}`
-> - Tenant ID is passed via `X-Tenant-Id` header in HTTP requests
+> - Tenant ID is included in queue messages
 > - The service automatically connects to the correct tenant database
 
 3. Click **"Save"** at the top
@@ -119,22 +128,17 @@ This will automatically create a GitHub Actions workflow file in your repository
 ### Step 8: Verify Deployment
 
 1. Go to Function App → **"Functions"**
-2. You should see all your functions listed:
-   - **Data Ingestion:**
-     - `health_check`
-     - `start_ingestion_job`
-     - `get_data_availability`
-     - `list_jobs`
-     - `get_job_status`
-     - `get_schedule`
-     - `update_schedule`
-     - `scheduled_ingestion` (timer)
-   - **Email:**
-     - `send_reports`
-     - `get_email_job_status`
-     - `get_email_mappings`
-     - `create_email_mapping`
-3. Click on any HTTP function → **"Get Function URL"** to test
+2. You should see these functions listed:
+   - **HTTP Trigger:**
+     - `health_check` - GET /api/v1/health
+   - **Queue Triggers (Background Workers):**
+     - `process_ingestion_job` - Triggered by `ingestion-jobs` queue
+     - `process_email_job` - Triggered by `email-jobs` queue
+3. Click on `health_check` → **"Get Function URL"** to test
+4. **Verify Queue Triggers**:
+   - Go to Storage Account → **"Queues"**
+   - Confirm `ingestion-jobs` and `email-jobs` queues exist
+   - Queue triggers will automatically start processing messages
 
 ---
 
@@ -268,6 +272,12 @@ az functionapp create \
 
 # Configure app settings
 # Note: Each tenant has their own database (google-analytics-{tenant_id})
+# Get storage connection string first
+STORAGE_CONN=$(az storage account show-connection-string \
+  --name stgaborchestration \
+  --resource-group rg-google-analytics-prod \
+  --query connectionString -o tsv)
+
 az functionapp config appsettings set \
   --name func-data-ingestion-prod \
   --resource-group rg-google-analytics-prod \
@@ -276,8 +286,11 @@ az functionapp config appsettings set \
     POSTGRES_PORT=5432 \
     POSTGRES_USER=your-user \
     POSTGRES_PASSWORD=your-password \
-    SCHEDULED_TENANT_IDS="tenant-uuid-1,tenant-uuid-2" \
-    DATA_INGESTION_CRON="0 2 * * *"
+    AzureWebJobsStorage="$STORAGE_CONN"
+
+# Create queues
+az storage queue create --name ingestion-jobs --connection-string "$STORAGE_CONN"
+az storage queue create --name email-jobs --connection-string "$STORAGE_CONN"
 
 # Deploy from local
 cd backend/services/data_service_functions
@@ -302,48 +315,51 @@ az functionapp log stream \
   --resource-group rg-google-analytics-prod
 ```
 
-### 2. Test HTTP Endpoints
+### 2. Test Queue-Based Processing
 
 ```bash
-# Get function URL
+# Test health check endpoint
 FUNCTION_URL="https://func-data-ingestion-prod.azurewebsites.net"
-
-# Health check
 curl -X GET "$FUNCTION_URL/api/v1/health"
+# Should return: {"status": "healthy", "service": "data-ingestion-email-worker", ...}
 
-# Test data availability endpoint
-curl -X GET "$FUNCTION_URL/api/v1/data-availability" \
-  -H "X-Tenant-Id: your-tenant-uuid"
+# Test ingestion via queue (from your local machine)
+cd backend
+uv run python services/data_service_functions/tests/test_ingestion.py \
+  --tenant-id "your-tenant-uuid" \
+  --days 7
 
-# Test job list endpoint
-curl -X GET "$FUNCTION_URL/api/v1/jobs" \
-  -H "X-Tenant-Id: your-tenant-uuid"
+# This will:
+# 1. Create job record in database (status: queued)
+# 2. Send message to 'ingestion-jobs' queue
+# 3. Azure Function picks up and processes automatically
 
-# Start an ingestion job (processes automatically)
-curl -X POST "$FUNCTION_URL/api/v1/ingest" \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{"data_types": ["events", "users", "locations"]}'
-# Returns job_id with status "processing"
+# Monitor in Azure Portal:
+# - Storage Account → Queues → ingestion-jobs (watch message count drop to 0)
+# - Function App → Monitor → Invocations (see process_ingestion_job executions)
 
-# Check job status
-curl -X GET "$FUNCTION_URL/api/v1/jobs/{job_id}" \
-  -H "X-Tenant-Id: your-tenant-uuid"
+# Check job status in database:
+SELECT job_id, status, records_processed, error_message
+FROM processing_jobs
+WHERE tenant_id = 'your-tenant-uuid'
+ORDER BY created_at DESC
+LIMIT 10;
 
-# Send email reports
-curl -X POST "$FUNCTION_URL/api/v1/email/send-reports" \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{"report_date": "2024-01-15"}'
+# Test email reports via queue
+uv run python services/data_service_functions/tests/test_email_sending.py \
+  --tenant-id "your-tenant-uuid" \
+  --report-date "2025-01-15" \
+  --branch-codes "D01,D02"
 
-# Check email job status
-curl -X GET "$FUNCTION_URL/api/v1/email/jobs/{job_id}" \
-  -H "X-Tenant-Id: your-tenant-uuid"
-
-# List email mappings
-curl -X GET "$FUNCTION_URL/api/v1/email/mappings" \
-  -H "X-Tenant-Id: your-tenant-uuid"
+# Monitor email job:
+SELECT job_id, status, emails_sent, emails_failed
+FROM email_jobs
+WHERE tenant_id = 'your-tenant-uuid'
+ORDER BY created_at DESC
+LIMIT 10;
 ```
+
+**Note**: Jobs are triggered via FastAPI services (data_service, analytics_service), which create database records and queue messages. Azure Functions process them in the background.
 
 ### 3. Monitor in Application Insights
 
@@ -363,10 +379,12 @@ curl -X GET "$FUNCTION_URL/api/v1/email/mappings" \
 | Issue | Solution |
 |-------|----------|
 | Functions not showing | Check deployment logs in Deployment Center |
-| Database connection failed | Verify connection string and firewall rules |
-| Timeout errors | Ensure Premium/Dedicated plan is used for jobs > 10 min |
-| Timer not firing | Check NCRONTAB format (6 fields for Azure) |
-| Email sending fails | Verify SMTP config in tenants table and network access |
+| Queue triggers not firing | Verify `AzureWebJobsStorage` is set correctly and points to storage with queues |
+| Message decoding errors | Ensure `host.json` has `"queues.messageEncoding": "none"` |
+| Jobs stuck in "queued" | Check poison queues (`ingestion-jobs-poison`, `email-jobs-poison`) for failed messages |
+| Database connection failed | Verify connection string, firewall rules, and SSL is enabled |
+| Timeout errors | Jobs have 10 min timeout on Consumption Plan |
+| Email sending fails | Verify SMTP config in `tenant_config.smtp_credentials` JSONB field |
 | BigQuery errors | Verify service account credentials in tenant config |
 
 ### View Logs

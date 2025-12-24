@@ -2,28 +2,56 @@
 
 > **Runtime**: Azure Functions Python v2  
 > **Plan**: Standard Consumption (Serverless)  
-> **Trigger Types**: HTTP, Timer
+> **Trigger Types**: HTTP (health check), Queue Triggers (background jobs)
 
 ## Overview
 
-Serverless data ingestion and email service that:
-- Processes events from BigQuery and users/locations from SFTP
+Serverless background worker service that:
+- Processes data ingestion jobs from Azure Storage Queues
+- Extracts events from BigQuery and users/locations from SFTP
 - Sends branch reports via SMTP email
 - Uses async functions for all database operations
+- Automatically scales based on queue depth
+
+## Architecture
+
+```
+FastAPI Services (data_service, analytics_service)
+    ↓ Create job record in DB
+    ↓ Send message to Azure Storage Queue
+    ↓
+Azure Storage Queues (ingestion-jobs, email-jobs)
+    ↓ Queue Trigger (automatic)
+    ↓
+Azure Functions (Queue-based Background Workers)
+    ↓ Process job
+    ↓ Update job status in DB
+```
 
 ## API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/v1/health` | GET | Health check - returns service status |
-| `/api/v1/ingest` | POST | Data ingestion from BigQuery & SFTP (synchronous) |
-| `/api/v1/email/send-reports` | POST | Send branch analytics reports via email (synchronous) |
+
+**Note**: Ingestion and email jobs are triggered via Azure Storage Queues, not HTTP endpoints. 
+FastAPI services handle job creation and queue the work for background processing.
+
+## Queue Triggers (Background Workers)
+
+| Queue Name | Function | Description |
+|------------|----------|-------------|
+| `ingestion-jobs` | `process_ingestion_job` | Processes data ingestion from BigQuery & SFTP |
+| `email-jobs` | `process_email_job` | Sends branch analytics reports via email |
 
 ## Project Structure
 
 ```
 data_service_functions/
-├── function_app.py           # 3 HTTP functions (health, ingest, email)
+├── function_app.py           # 1 HTTP + 2 Queue Triggers
+│   ├── health_check()              # HTTP: GET /api/v1/health
+│   ├── process_ingestion_job()     # Queue: ingestion-jobs
+│   └── process_email_job()         # Queue: email-jobs
 ├── clients/
 │   ├── bigquery_client.py    # BigQuery client for event extraction
 │   ├── sftp_client.py        # SFTP client for users/locations
@@ -39,9 +67,9 @@ data_service_functions/
 ├── templates/
 │   └── branch_report.html    # Email report template
 ├── tests/
-│   ├── test_ingestion.py     # Test data ingestion
-│   └── test_email_sending.py # Test email reports
-├── host.json                 # Azure Functions configuration
+│   ├── test_ingestion.py     # Test ingestion via queue
+│   └── test_email_sending.py # Test email via queue
+├── host.json                 # Azure Functions config (queue settings)
 ├── requirements.txt          # Python dependencies
 ├── README.md                 # This file
 └── DEPLOYMENT.md             # Deployment instructions
@@ -105,8 +133,10 @@ az functionapp config appsettings set \
     POSTGRES_PORT=5432 \
     POSTGRES_USER=your-user \
     POSTGRES_PASSWORD=your-password \
-    POSTGRES_DATABASE=analytics
+    AzureWebJobsStorage="<storage-connection-string>"
 ```
+
+**Important**: `AzureWebJobsStorage` must point to the same Storage Account that contains the `ingestion-jobs` and `email-jobs` queues.
 
 ## Testing
 
@@ -117,74 +147,67 @@ curl https://gadataingestion.azurewebsites.net/api/v1/health
 # Returns: {"status": "healthy", "version": "1.0.0", "service": "data-ingestion-email", ...}
 ```
 
-### Data Ingestion
+### Data Ingestion (Queue-Based)
 
 ```bash
-# Start ingestion job (runs synchronously - returns when complete)
-curl -X POST https://gadataingestion.azurewebsites.net/api/v1/ingest \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{
-    "data_types": ["events", "users", "locations"],
-    "start_date": "2025-01-01",
-    "end_date": "2025-01-15"
-  }'
-# Returns: {
-#   "job_id": "job_xyz123",
-#   "status": "completed",
-#   "records_processed": {"events": 1000, "users": 50, "locations": 10},
-#   ...
-# }
-
-# Test with Python script
-python tests/test_ingestion.py \
+# Test ingestion by sending message to queue
+cd backend
+uv run python services/data_service_functions/tests/test_ingestion.py \
   --tenant-id "your-tenant-uuid" \
-  --days 7 \
-  --base-url "https://gadataingestion.azurewebsites.net"
+  --days 7
+
+# This will:
+# 1. Create job record in database (status: queued)
+# 2. Send message to 'ingestion-jobs' queue
+# 3. Azure Function picks up message and processes in background
+# 4. Job status updates: queued → processing → completed
+
+# Monitor job status in database:
+# SELECT * FROM processing_jobs WHERE job_id = 'job_xyz123';
 ```
 
-### Email Reports
+### Email Reports (Queue-Based)
 
 ```bash
-# Send branch reports (runs synchronously - returns when complete)
-curl -X POST https://gadataingestion.azurewebsites.net/api/v1/email/send-reports \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{
-    "report_date": "2025-01-15",
-    "branch_codes": ["D01", "D02"]
-  }'
-# Returns: {
-#   "job_id": "email_abc456",
-#   "status": "completed",
-#   "emails_sent": 2,
-#   "emails_failed": 0,
-#   ...
-# }
-
-# Test with Python script
-python tests/test_email_sending.py \
+# Test email reports by sending message to queue
+cd backend
+uv run python services/data_service_functions/tests/test_email_sending.py \
   --tenant-id "your-tenant-uuid" \
   --report-date "2025-01-15" \
-  --branch-codes "D01,D02" \
-  --base-url "https://gadataingestion.azurewebsites.net/api/v1"
+  --branch-codes "D01,D02"
+
+# This will:
+# 1. Create email job record in database (status: queued)
+# 2. Send message to 'email-jobs' queue
+# 3. Azure Function picks up message and sends emails in background
+# 4. Job status updates: queued → processing → completed
+
+# Monitor job status in database:
+# SELECT * FROM email_jobs WHERE job_id = 'email_abc456';
 ```
 
 ### Notes
 
-- Both ingestion and email endpoints run **synchronously**
-- Response times: 30 seconds to 10 minutes depending on data volume
-- Email mappings managed directly in database (`branch_email_mappings` table)
-- SMTP configuration in database (`tenant_config.smtp_credentials` JSONB field)
+- Jobs run **asynchronously** in the background (non-blocking)
+- FastAPI services return immediately with `status: "queued"`
+- Azure Functions auto-scale based on queue depth (up to 200 instances)
+- Check job status in database (`processing_jobs` and `email_jobs` tables)
+- Email mappings in `branch_email_mappings` table
+- SMTP config in `tenant_config.smtp_credentials` JSONB field
 
 ## Configuration
 
-### Azure Functions Settings
+### Azure Functions Settings (`host.json`)
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `functionTimeout` | 10 min | Max execution time (both endpoints are synchronous) |
-| `routePrefix` | api/v1 | API route prefix for all endpoints |
+| `functionTimeout` | 10 min | Max execution time per job |
+| `routePrefix` | api/v1 | API route prefix for HTTP endpoints |
+| `queues.maxPollingInterval` | 10s | Check for new messages every 10 seconds |
+| `queues.visibilityTimeout` | 5 min | Time to process before retry |
+| `queues.batchSize` | 1 | Process 1 message per instance |
+| `queues.maxDequeueCount` | 3 | Retry failed jobs 3 times before poison |
+| `queues.messageEncoding` | none | Plain text JSON messages (not base64) |
 
 ### Database Configuration
 
@@ -222,42 +245,67 @@ SET smtp_credentials = '{
 
 ## Job Flow
 
-### Ingestion Job (Synchronous)
+### Ingestion Job (Queue-Based Background Processing)
 ```
-POST /ingest
+1. FastAPI Service (data_service)
+   POST /api/v1/ingest
     └── Creates job record (status: queued)
+    └── Sends message to Azure Storage Queue: ingestion-jobs
+    └── Returns immediately: {"job_id": "...", "status": "queued"}
+
+2. Azure Function (Queue Trigger)
+   process_ingestion_job() triggered automatically
+    └── Receives message from queue
     └── Updates status to "processing"
     └── Extracts events from BigQuery
     └── Downloads users from SFTP
     └── Downloads locations from SFTP
-    └── Updates status to "completed"/"failed"/"completed_with_warnings"
-    └── Returns final status with records processed
+    └── Updates status to "completed"/"failed"
+    └── On failure: Message auto-retries (max 3 times)
+    └── After 3 failures: Message moves to poison queue
 
-Response includes:
+Job record in DB includes:
 - job_id: Unique identifier
-- status: completed | failed | completed_with_warnings
+- status: queued → processing → completed | failed
 - records_processed: {"events": N, "users": N, "locations": N}
 - error_message: (if applicable)
 ```
 
-### Email Job (Synchronous)
+### Email Job (Queue-Based Background Processing)
 ```
-POST /email/send-reports
-    └── Creates email job record
+1. FastAPI Service (analytics_service)
+   POST /api/v1/email/send-reports
+    └── Creates email job record (status: queued)
+    └── Sends message to Azure Storage Queue: email-jobs
+    └── Returns immediately: {"job_id": "...", "status": "queued"}
+
+2. Azure Function (Queue Trigger)
+   process_email_job() triggered automatically
+    └── Receives message from queue
+    └── Updates status to "processing"
     └── Gets SMTP config from database
     └── Gets branch-email mappings from database
     └── For each branch:
-        └── Fetches analytics data (purchases, carts, searches, visits)
-        └── Generates HTML report with Jinja2 template
+        └── Fetches analytics data
+        └── Generates HTML report with Jinja2
         └── Sends email via SMTP
-        └── Logs result to email_send_history
-    └── Updates job status to "completed"/"failed"/"completed_with_errors"
-    └── Returns final status with email counts
+        └── Logs to email_send_history
+    └── Updates status to "completed"/"failed"
+    └── On failure: Message auto-retries (max 3 times)
+    └── After 3 failures: Message moves to poison queue
 
-Response includes:
+Job record in DB includes:
 - job_id: Unique identifier
-- status: completed | failed | completed_with_errors
-- total_emails: Number of emails attempted
+- status: queued → processing → completed | failed
+- total_emails: Number attempted
 - emails_sent: Number successfully sent
 - emails_failed: Number that failed
 ```
+
+## Scaling & Performance
+
+- **Auto-scaling**: Azure Functions scales 0 to 200 instances based on queue depth
+- **Parallelism**: Multiple jobs process simultaneously on different instances
+- **Cost**: Pay only for execution time (Consumption Plan)
+- **Resilience**: Failed jobs auto-retry up to 3 times
+- **Poison Queue**: Permanently failed messages move to `{queue-name}-poison` for investigation

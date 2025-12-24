@@ -1,9 +1,13 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 import { DateRange } from "react-day-picker"
 import { format } from "date-fns"
+import { BarChart3 } from "lucide-react"
+
+export type TimeGranularity = "hourly" | "4hours" | "12hours" | "daily"
 
 interface OverviewChartProps {
   data: Array<{
@@ -13,10 +17,16 @@ interface OverviewChartProps {
     searches: number
   }>
   dateRange?: DateRange
-  timeGranularity?: string
+  timeGranularity?: TimeGranularity
+  onTimeGranularityChange?: (value: TimeGranularity) => void
 }
 
-export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: OverviewChartProps) {
+export function OverviewChart({ 
+  data, 
+  dateRange, 
+  timeGranularity = "daily",
+  onTimeGranularityChange 
+}: OverviewChartProps) {
   const formatDateRange = () => {
     if (!dateRange?.from || !dateRange?.to) return "Select date range"
     
@@ -39,7 +49,7 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
       default: return "Daily"
     }
   }
-  
+
   const formatXAxisLabel = (tickItem: string) => {
     try {
       const date = new Date(tickItem)
@@ -47,16 +57,13 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
       // Check if we're on a smaller screen (simplified responsive check)
       const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768
       
-      switch (timeGranularity) {
+      const granularity = timeGranularity as string
+      switch (granularity) {
         case "hourly":
           return isSmallScreen ? format(date, "HH:mm") : format(date, "MMM d, HH:mm")
         case "4hours":
         case "12hours":
           return isSmallScreen ? format(date, "MMM d\nHH:mm") : format(date, "MMM d, HH:mm")
-        case "weekly":
-          return format(date, "MMM d")
-        case "monthly":
-          return format(date, "MMM yyyy")
         case "daily":
         default:
           return isSmallScreen ? format(date, "M/d") : format(date, "MMM d")
@@ -69,9 +76,29 @@ export function OverviewChart({ data, dateRange, timeGranularity = "daily" }: Ov
   
   return (
     <Card>
-      <CardHeader className="pb-4">
-        <CardTitle className="text-base sm:text-lg">Activity Overview - {formatDateRange()}</CardTitle>
-        <CardDescription className="text-xs sm:text-sm">{getGranularityText()} activity breakdown for purchases, cart additions, and searches</CardDescription>
+      <CardHeader>
+        <CardTitle className="text-base sm:text-lg font-semibold flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5" />
+          Activity Overview - {formatDateRange()}
+        </CardTitle>
+        <CardDescription className="text-xs sm:text-sm">
+          {getGranularityText()} activity breakdown for purchases, cart additions, and searches
+        </CardDescription>
+        {onTimeGranularityChange && (
+          <CardAction>
+            <Tabs 
+              value={timeGranularity} 
+              onValueChange={(value) => onTimeGranularityChange(value as TimeGranularity)}
+            >
+              <TabsList className="h-8">
+                <TabsTrigger value="hourly" className="text-xs px-3">Hourly</TabsTrigger>
+                <TabsTrigger value="4hours" className="text-xs px-3">4 Hours</TabsTrigger>
+                <TabsTrigger value="12hours" className="text-xs px-3">12 Hours</TabsTrigger>
+                <TabsTrigger value="daily" className="text-xs px-3">Daily</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent>
         <div className="h-[250px] sm:h-[350px]">

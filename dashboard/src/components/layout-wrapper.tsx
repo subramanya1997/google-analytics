@@ -14,15 +14,21 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import { LocationSelector } from "@/components/ui/location-selector"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { DateRangeSelector } from "@/components/ui/date-range-selector"
 import { getPageInfo } from "@/lib/page-config"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Plus, Send, Clock, RefreshCw } from "lucide-react"
+import { Plus, Send, Clock, RefreshCw, MapPin } from "lucide-react"
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { selectedLocation, setSelectedLocation, dateRange, setDateRange } = useDashboard()
+  const { selectedLocation, setSelectedLocation, dateRange, setDateRange, locations, loadingLocations } = useDashboard()
   const isMobile = useIsMobile()
 
   const { subtitle } = getPageInfo(pathname)
@@ -112,12 +118,30 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
             )}
             {!isDataManagementPage && !isEmailManagementPage && (
               <>
-                <LocationSelector
-                  selectedLocation={selectedLocation}
-                  onLocationChange={setSelectedLocation}
-                  className={isMobile ? "w-10" : "w-auto"}
-                  iconOnly={isMobile}
-                />
+                <Select
+                  value={selectedLocation || "all"}
+                  onValueChange={(value) => setSelectedLocation(value === "all" ? null : value)}
+                  disabled={loadingLocations}
+                >
+                  <SelectTrigger className={isMobile ? 'w-10 h-10 p-0 [&>svg:last-child]:hidden flex items-center justify-center' : 'w-full sm:w-[250px]'}>
+                    {isMobile ? (
+                      <MapPin className="h-4 w-4 shrink-0 text-foreground" />
+                    ) : (
+                      <>
+                        <MapPin className="h-4 w-4 shrink-0 text-foreground" />
+                        <SelectValue placeholder="Select location" />
+                      </>
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {locations.map((location) => (
+                      <SelectItem key={location.locationId} value={location.locationId}>
+                        {location.locationName} - {location.city}, {location.state}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <DateRangeSelector
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}

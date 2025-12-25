@@ -39,14 +39,37 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    # Testing
     "pytest>=7.4.3",
     "pytest-asyncio>=0.21.1",
     "pytest-mock>=3.12.0",
-    "black>=23.11.0",
-    "isort>=5.12.0",
-    "flake8>=6.1.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",  # Parallel test execution
+    "coverage[toml]>=7.3.0",
+    
+    # Code Quality - Modern tools (replacing black/isort/flake8)
+    "ruff>=0.1.6",  # Fast linter + formatter (replaces flake8, isort, black)
+    
+    # Type Checking
     "mypy>=1.7.1",
+    "types-requests>=2.31.0",
+    "types-python-dateutil>=2.8.19",
+    
+    # Security
+    "bandit[toml]>=1.7.5",
+    "safety>=2.3.5",  # Dependency vulnerability scanning
+    
+    # Documentation
+    "pydocstyle>=6.3.0",
+    
+    # Pre-commit hooks
     "pre-commit>=3.6.0",
+    
+    # Dead code detection
+    "vulture>=2.14",
+    
+    # Code complexity
+    "radon>=6.0.1",
 ]
 
 [build-system]
@@ -56,36 +79,289 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["common", "services"]
 
-[tool.black]
+# ============================================
+# RUFF Configuration (Linting + Formatting)
+# ============================================
+[tool.ruff]
+# Python version
+target-version = "py310"
 line-length = 88
-target-version = ['py39']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
+indent-width = 4
+# Exclude common directories
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    "__pycache__",
+    "*.pyc",
+]
 
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
+[tool.ruff.lint]
+# Enable essential rule sets for good code quality
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (undefined names, unused imports)
+    "I",    # isort (import sorting)
+    "B",    # flake8-bugbear (common bugs)
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade (modern Python)
+    "SIM",  # flake8-simplify
+    "RUF",  # Ruff-specific rules
+    "PERF", # Perflint (performance)
+    "PTH",  # flake8-use-pathlib
+    "S",    # flake8-bandit (security)
+    "BLE",  # flake8-blind-except
+    "A",    # flake8-builtins (shadowing builtins)
+    "T20",  # flake8-print (no print statements)
+    "RET",  # flake8-return
+    "PL",   # Pylint subset
+    "TRY",  # tryceratops (exception handling)
+]
 
+ignore = [
+    # Style/Formatting (handled by formatter or acceptable patterns)
+    "E501",    # Line too long
+    "E402",    # Import not at top (delayed imports intentional)
+    "E722",    # Bare except (used for catch-all error handling)
+    
+    # FastAPI/Pydantic patterns
+    "B008",    # Function calls in defaults (FastAPI Depends)
+    "RUF012",  # Mutable class default (Pydantic models)
+    
+    # Complexity (acceptable for business logic)
+    "PLR0913", # Too many arguments
+    "PLR2004", # Magic value comparison
+    "PLR0912", # Too many branches
+    "PLR0911", # Too many return statements
+    "PLR0915", # Too many statements
+    "PLC0415", # Import outside top-level
+    "PLW1508", # Invalid envvar default
+    
+    # Exception handling (intentional patterns)
+    "TRY003",  # Long exception messages
+    "TRY300",  # Consider else block
+    "TRY301",  # Raise within try
+    "TRY002",  # Raise vanilla Exception
+    "TRY401",  # Verbose log message
+    "BLE001",  # Blind except
+    "B904",    # Raise without from (not always needed)
+    
+    # Security false positives
+    "S101",    # Assert usage (tests)
+    "S105",    # Hardcoded password string
+    "S110",    # Try-except-pass
+    "S324",    # MD5 (used for non-crypto hashing)
+    "S507",    # SSH host key
+    "S608",    # SQL injection (parameterized queries)
+    
+    # Performance suggestions (not critical)
+    "PERF102", # Dict iterator
+    "PERF203", # Try-except in loop
+    "PERF401", # Manual list comprehension
+    "PERF403", # Manual dict comprehension
+    
+    # Other
+    "A002",    # Builtin shadowing (sometimes needed)
+    "SIM115",  # Context handler (tempfile patterns)
+]
+
+# Allow autofix for all enabled rules
+fixable = ["ALL"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
+# Automatically detect the appropriate line ending
+line-ending = "auto"
+# Enable auto-formatting of code examples in docstrings
+docstring-code-format = true
+
+[tool.ruff.lint.mccabe]
+# Maximum complexity
+max-complexity = 10
+
+[tool.ruff.lint.pydocstyle]
+# Use Google-style docstrings
+convention = "google"
+
+[tool.ruff.lint.isort]
+# Use black-compatible import sorting
+known-first-party = ["common", "services"]
+force-sort-within-sections = true
+split-on-trailing-comma = true
+
+[tool.ruff.lint.per-file-ignores]
+# Allow print statements in scripts
+"scripts/*.py" = ["T20"]
+# Allow print statements in tests
+"**/test_*.py" = ["T20", "S"]
+"**/*_test.py" = ["T20", "S"]
+"**/tests/**/*.py" = ["T20", "S"]
+
+# ============================================
+# MYPY Configuration (Type Checking)
+# ============================================
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+strict_optional = true
+show_error_codes = true
+show_error_context = true
+pretty = true
+
+# Enable incremental mode for faster type checking
+incremental = true
+cache_fine_grained = true
+
+# Ignore missing imports for third-party libraries
+ignore_missing_imports = true
+
+# Platform-specific settings
+platform = "linux"
+
+# Namespace packages configuration
+namespace_packages = true
+explicit_package_bases = true
+
+# Per-module options
+[[tool.mypy.overrides]]
+module = [
+    "*.migrations.*",
+    "tests.*",
+    "services.*",
+]
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "services.analytics_service.*",
+    "services.data_service.*",
+    "services.auth_service.*",
+    "services.data_service_functions.*",
+]
+# Use explicit module paths to avoid duplicate module errors
+explicit_package_bases = true
+
+# ============================================
+# Coverage Configuration
+# ============================================
+[tool.coverage.run]
+source = ["common", "services"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+    "@abstractproperty",
+    "if False:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+# ============================================
+# Bandit Configuration (Security)
+# ============================================
+[tool.bandit]
+exclude_dirs = ["tests", "test_*.py", "*/tests/*", "*/test_*.py", ".venv", "venv"]
+skips = ["B101", "B601"]  # Skip assert_used and shell_injection_subprocess
+
+# ============================================
+# Pytest Configuration
+# ============================================
+[tool.pytest.ini_options]
+minversion = "7.4"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=common",
+    "--cov=services",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "-ra",
+    "-q",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+asyncio_mode = "auto"
 
 [dependency-groups]
 dev = [
+    "bandit>=1.9.2",
+    "coverage>=7.13.0",
+    "mypy>=1.17.1",
+    "pydocstyle>=6.3.0",
+    "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.8.0",
+    "radon>=6.0.1",
+    "ruff>=0.14.10",
+    "safety>=3.7.0",
+    "types-python-dateutil>=2.9.0.20251115",
+    "types-requests>=2.32.4.20250913",
     "vulture>=2.14",
 ]

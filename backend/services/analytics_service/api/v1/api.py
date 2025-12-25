@@ -1,6 +1,45 @@
+"""
+API Router Configuration for Analytics Service v1
+
+This module aggregates all API endpoint routers into a single FastAPI router
+that is mounted to the main application. It organizes endpoints by functional
+area and applies appropriate tags for OpenAPI documentation.
+
+Router Organization:
+    - Locations: Branch/location queries
+    - Statistics: Dashboard metrics and aggregated data
+    - Tasks: Task management endpoints (purchases, cart abandonment, etc.)
+    - History: Session and user event history
+    - Email: Email configuration and report distribution
+    - Schedule: Email scheduling and cron management
+
+API Versioning:
+    This is the v1 API router. Future breaking changes should be introduced
+    in a v2 router while maintaining backward compatibility in v1.
+
+Example:
+    The router is included in the main FastAPI app:
+    ```python
+    from services.analytics_service.api.v1.api import api_router
+    
+    app.include_router(api_router, prefix="/api/v1")
+    ```
+
+See Also:
+    - services.analytics_service.main: Main application that includes this router
+    - services.analytics_service.api.v1.endpoints: Individual endpoint modules
+"""
+
 from fastapi import APIRouter
 
-from services.analytics_service.api.v1.endpoints import email, history, locations, stats, tasks, schedule
+from services.analytics_service.api.v1.endpoints import (
+    email,
+    history,
+    locations,
+    schedule,
+    stats,
+    tasks,
+)
 
 api_router = APIRouter()
 

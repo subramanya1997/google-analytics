@@ -2,31 +2,29 @@
 Factory for creating tenant-aware clients using configurations from the database.
 """
 
-from typing import Optional
-
 from loguru import logger
 
-from .sftp_client import SFTPClient
 from .bigquery_client import BigQueryClient
+from .sftp_client import SFTPClient
 
 
-async def get_tenant_bigquery_config(tenant_id: str) -> Optional[dict]:
+async def get_tenant_bigquery_config(tenant_id: str) -> dict | None:
     """Get BigQuery configuration for a tenant from the database."""
     from shared.database import create_repository
-    
+
     repo = create_repository(tenant_id)
     return await repo.get_tenant_bigquery_config(tenant_id)
 
 
-async def get_tenant_sftp_config(tenant_id: str) -> Optional[dict]:
+async def get_tenant_sftp_config(tenant_id: str) -> dict | None:
     """Get SFTP configuration for a tenant from the database."""
     from shared.database import create_repository
-    
+
     repo = create_repository(tenant_id)
     return await repo.get_tenant_sftp_config(tenant_id)
 
 
-async def get_tenant_bigquery_client(tenant_id: str) -> Optional[BigQueryClient]:
+async def get_tenant_bigquery_client(tenant_id: str) -> BigQueryClient | None:
     """
     Create a BigQuery client for a specific tenant using database configuration.
 
@@ -46,13 +44,11 @@ async def get_tenant_bigquery_client(tenant_id: str) -> Optional[BigQueryClient]
         return BigQueryClient(bigquery_config)
 
     except Exception as e:
-        logger.error(
-            f"Failed to create BigQuery client for tenant {tenant_id}: {e}"
-        )
+        logger.error(f"Failed to create BigQuery client for tenant {tenant_id}: {e}")
         return None
 
 
-async def get_tenant_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
+async def get_tenant_sftp_client(tenant_id: str) -> SFTPClient | None:
     """
     Create an SFTP client for a specific tenant using database configuration.
 
@@ -72,8 +68,5 @@ async def get_tenant_sftp_client(tenant_id: str) -> Optional[SFTPClient]:
         return SFTPClient(sftp_config)
 
     except Exception as e:
-        logger.error(
-            f"Failed to create SFTP client for tenant {tenant_id}: {e}"
-        )
+        logger.error(f"Failed to create SFTP client for tenant {tenant_id}: {e}")
         return None
-

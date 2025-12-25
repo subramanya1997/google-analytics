@@ -6,21 +6,21 @@ ThreadPoolExecutor patterns since Azure Functions handles parallelism
 through Durable Functions activities.
 """
 
-from typing import Any, Dict, List
+from typing import Any
 
-import pandas as pd
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from loguru import logger
+import pandas as pd
 
 
 class BigQueryClient:
     """BigQuery client for event-specific GA4 data extraction."""
 
-    def __init__(self, bigquery_config: Dict[str, Any]):
+    def __init__(self, bigquery_config: dict[str, Any]) -> None:
         """
         Initialize BigQuery client with configuration.
-        
+
         Args:
             bigquery_config: Dictionary containing project_id, dataset_id, and service_account
         """
@@ -41,10 +41,10 @@ class BigQueryClient:
 
     def get_date_range_events(
         self, start_date: str, end_date: str
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Get all event types for a date range.
-        
+
         Note: In Azure Functions, each event type is processed by a separate
         activity function for parallelism, so this method is primarily for
         testing or single-use scenarios.
@@ -81,8 +81,7 @@ class BigQueryClient:
         """Execute BigQuery query and return DataFrame."""
         try:
             query_job = self.client.query(query)
-            df = query_job.to_dataframe()
-            return df
+            return query_job.to_dataframe()
         except Exception as e:
             logger.error(f"BigQuery execution error: {e}")
             logger.error(f"Query: {query}")
@@ -90,13 +89,13 @@ class BigQueryClient:
 
     def _extract_purchase_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract purchase events with revenue and transaction details."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -135,13 +134,13 @@ class BigQueryClient:
 
     def _extract_add_to_cart_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract add to cart events with item details."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -182,13 +181,13 @@ class BigQueryClient:
 
     def _extract_page_view_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract page view events."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -223,13 +222,13 @@ class BigQueryClient:
 
     def _extract_view_search_results_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract successful search events."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -264,13 +263,13 @@ class BigQueryClient:
 
     def _extract_no_search_results_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract failed search events."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -305,13 +304,13 @@ class BigQueryClient:
 
     def _extract_view_item_events(
         self, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Extract product view events."""
         start_suffix = start_date.replace("-", "")
         end_suffix = end_date.replace("-", "")
 
         query = f"""
-        SELECT 
+        SELECT
             event_date,
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
@@ -348,4 +347,3 @@ class BigQueryClient:
 
         df = self._execute_query(query)
         return df.to_dict("records")
-

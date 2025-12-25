@@ -12,4 +12,3 @@ __all__ = [
     "get_tenant_bigquery_client",
     "get_tenant_sftp_client",
 ]
-

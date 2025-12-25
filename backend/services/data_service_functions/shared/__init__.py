@@ -2,13 +2,12 @@
 Shared utilities for Azure Functions data service.
 """
 
-from .database import get_db_session, create_repository
+from .database import create_repository, get_db_session
 from .models import CreateIngestionJobRequest, IngestionJobResponse
 
 __all__ = [
-    "get_db_session",
-    "create_repository",
     "CreateIngestionJobRequest",
     "IngestionJobResponse",
+    "create_repository",
+    "get_db_session",
 ]
-

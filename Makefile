@@ -1,4 +1,4 @@
-.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean start_services start_service_analytics start_service_data start_service_auth stop_services clean logs
+.PHONY: help install_backend install_dashboard build_dashboard run_dashboard start_dashboard db_setup db_clean start_services start_service_analytics start_service_data start_service_auth stop_services clean logs lint format type-check security-check test test-cov quality-check pre-commit-install
 
 # Variables
 BACKEND_DIR = backend
@@ -31,6 +31,16 @@ help:
 	@echo "  run_dashboard          - Start development server"
 	@echo "  build_dashboard        - Build for production"
 	@echo "  start_dashboard        - Start production server"
+	@echo ""
+	@echo "Code Quality:"
+	@echo "  lint                   - Run linters (ruff)"
+	@echo "  format                 - Format code (ruff format)"
+	@echo "  type-check             - Run type checker (mypy)"
+	@echo "  security-check         - Run security scanner (bandit)"
+	@echo "  test                   - Run tests"
+	@echo "  test-cov               - Run tests with coverage"
+	@echo "  quality-check          - Run all quality checks"
+	@echo "  pre-commit-install     - Install pre-commit hooks"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean                  - Clean logs and temporary files"
@@ -145,12 +155,52 @@ logs:
 	@echo "Use 'tail -f backend/logs/<service>-error.log' to follow specific logs"
 
 # ================================
+# CODE QUALITY
+# ================================
+
+lint:
+	@echo "Running linters..."
+	cd $(BACKEND_DIR) && uv run ruff check .
+
+format:
+	@echo "Formatting code..."
+	cd $(BACKEND_DIR) && uv run ruff format .
+
+type-check:
+	@echo "Running type checker..."
+	cd $(BACKEND_DIR) && uv run mypy common services
+
+security-check:
+	@echo "Running security scanner..."
+	cd $(BACKEND_DIR) && uv run bandit -r . -f json -o bandit-report.json || true
+	@echo "Security scan complete. Check bandit-report.json for details."
+
+test:
+	@echo "Running tests..."
+	cd $(BACKEND_DIR) && uv run pytest -v
+
+test-cov:
+	@echo "Running tests with coverage..."
+	cd $(BACKEND_DIR) && uv run pytest --cov=common --cov=services --cov-report=term-missing --cov-report=html
+
+quality-check: lint type-check security-check test
+	@echo ""
+	@echo "✅ All quality checks passed!"
+
+pre-commit-install:
+	@echo "Installing pre-commit hooks..."
+	cd $(BACKEND_DIR) && uv run pre-commit install
+	@echo "Pre-commit hooks installed successfully!"
+	@echo "Hooks will run automatically on git commit."
+
+# ================================
 # SETUP HELPERS
 # ================================
 
-setup: install_backend install_dashboard db_setup
+setup: install_backend install_dashboard db_setup pre-commit-install
 	@echo ""
 	@echo "Setup completed! Next steps:"
 	@echo "1. Configure your environment variables"
 	@echo "2. Run 'make dev' to start the development environment"
-	@echo "3. Visit http://localhost:3000 to access the dashboard" 
+	@echo "3. Visit http://localhost:3000 to access the dashboard"
+	@echo "4. Run 'make quality-check' to verify code quality" 

@@ -5,19 +5,21 @@ This is an adapted version of the original SFTP client that uses
 synchronous methods suitable for Azure Functions activity execution.
 """
 
-import os
+import builtins
+import contextlib
+from pathlib import Path
 import tempfile
-from typing import Any, Dict
+from typing import Any
 
+from loguru import logger
 import pandas as pd
 import paramiko
-from loguru import logger
 
 
 class SFTPClient:
     """SFTP client with proper session management for serverless environments."""
 
-    def __init__(self, sftp_config: Dict[str, Any]):
+    def __init__(self, sftp_config: dict[str, Any]) -> None:
         """
         Initialize SFTP client with configuration.
 
@@ -69,7 +71,7 @@ class SFTPClient:
             logger.error(f"Failed to create SFTP connection: {e}")
             raise
 
-    def _build_remote_path(self, filename: str = None) -> str:
+    def _build_remote_path(self, filename: str | None = None) -> str:
         """Build full remote path."""
         path_parts = []
 
@@ -107,34 +109,30 @@ class SFTPClient:
 
             sftp_client.get(remote_path, temp_path)
 
-            if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
-                raise Exception("Downloaded file is empty or doesn't exist")
+            temp_path_obj = Path(temp_path)
+            if not temp_path_obj.exists() or temp_path_obj.stat().st_size == 0:
+                msg = "Downloaded file is empty or doesn't exist"
+                raise Exception(msg)
 
             logger.info(
-                f"Successfully downloaded {remote_filename} ({os.path.getsize(temp_path)} bytes)"
+                f"Successfully downloaded {remote_filename} ({temp_path_obj.stat().st_size} bytes)"
             )
             return temp_path
 
         except Exception as e:
             logger.error(f"Error downloading file {remote_filename}: {e}")
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
+            if temp_path and Path(temp_path).exists():
+                with contextlib.suppress(builtins.BaseException):
+                    Path(temp_path).unlink()
             raise
 
         finally:
             if sftp_client:
-                try:
+                with contextlib.suppress(builtins.BaseException):
                     sftp_client.close()
-                except:
-                    pass
             if ssh_client:
-                try:
+                with contextlib.suppress(builtins.BaseException):
                     ssh_client.close()
-                except:
-                    pass
 
     def _get_users_data_sync(self) -> pd.DataFrame:
         """Get users data synchronously with proper session management."""
@@ -169,7 +167,8 @@ class SFTPClient:
                     logger.debug(f"Strategy 3 failed: {e}")
 
             if df is None or df.empty:
-                raise ValueError("Could not read user data from Excel file")
+                msg = "Could not read user data from Excel file"
+                raise ValueError(msg)
 
             # Process data
             if "FIRST_NAME" in df.columns:
@@ -259,23 +258,29 @@ class SFTPClient:
 
             # Convert ID and code fields to strings
             string_fields = [
-                "user_id", "user_erp_id", "warehouse_code", 
-                "cimm_buying_company_id", "buying_company_erp_id",
-                "zip", "office_phone", "cell_phone", "fax"
+                "user_id",
+                "user_erp_id",
+                "warehouse_code",
+                "cimm_buying_company_id",
+                "buying_company_erp_id",
+                "zip",
+                "office_phone",
+                "cell_phone",
+                "fax",
             ]
-            
+
             for field in string_fields:
                 if field in df.columns:
                     df[field] = df[field].astype(str)
                     df.loc[df[field] == "nan", field] = None
-            
+
             # Convert datetime fields
             datetime_fields = ["registered_date", "last_login_date"]
             for field in datetime_fields:
                 if field in df.columns:
-                    df[field] = pd.to_datetime(df[field], errors='coerce')
+                    df[field] = pd.to_datetime(df[field], errors="coerce")
                     df[field] = df[field].where(pd.notna(df[field]), None)
-            
+
             # Ensure user_id is present and valid
             if "user_id" in df.columns:
                 df = df.dropna(subset=["user_id"])
@@ -291,11 +296,9 @@ class SFTPClient:
             raise
 
         finally:
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
+            if temp_path and Path(temp_path).exists():
+                with contextlib.suppress(builtins.BaseException):
+                    Path(temp_path).unlink()
 
     def _get_locations_data_sync(self) -> pd.DataFrame:
         """Get locations data synchronously with proper session management."""
@@ -322,7 +325,8 @@ class SFTPClient:
                     logger.debug(f"Strategy 2 failed: {e}")
 
             if df is None or df.empty:
-                raise ValueError("Could not read locations data from Excel file")
+                msg = "Could not read locations data from Excel file"
+                raise ValueError(msg)
 
             # Rename columns to match database schema
             rename_map = {
@@ -352,7 +356,7 @@ class SFTPClient:
             # Keep only columns that match the database schema
             db_columns = [
                 "warehouse_id",
-                "warehouse_code", 
+                "warehouse_code",
                 "warehouse_name",
                 "city",
                 "state",
@@ -369,12 +373,12 @@ class SFTPClient:
 
             # Convert ID and code fields to strings
             string_fields = ["warehouse_id", "warehouse_code", "zip"]
-            
+
             for field in string_fields:
                 if field in df.columns:
                     df[field] = df[field].astype(str)
                     df.loc[df[field] == "nan", field] = None
-            
+
             # Ensure warehouse_id is present and valid
             if "warehouse_id" in df.columns:
                 df = df.dropna(subset=["warehouse_id"])
@@ -390,11 +394,9 @@ class SFTPClient:
             raise
 
         finally:
-            if temp_path and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
+            if temp_path and Path(temp_path).exists():
+                with contextlib.suppress(builtins.BaseException):
+                    Path(temp_path).unlink()
 
     def _list_files_sync(self) -> list:
         """List files synchronously with proper session management."""
@@ -419,15 +421,11 @@ class SFTPClient:
 
         finally:
             if sftp_client:
-                try:
+                with contextlib.suppress(builtins.BaseException):
                     sftp_client.close()
-                except:
-                    pass
             if ssh_client:
-                try:
+                with contextlib.suppress(builtins.BaseException):
                     ssh_client.close()
-                except:
-                    pass
 
     def test_connection(self) -> bool:
         """Test SFTP connection."""
@@ -438,4 +436,3 @@ class SFTPClient:
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
             return False
-

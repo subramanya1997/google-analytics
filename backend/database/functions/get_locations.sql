@@ -1,4 +1,5 @@
--- Definition for function public.get_locations (optimized for performance)
+-- Definition for function public.get_locations
+-- Uses covering index idx_locations_tenant_name_covering for index-only scan
 CREATE OR REPLACE FUNCTION public.get_locations(p_tenant_id uuid)
  RETURNS TABLE(location_id text, location_name text, city text, state text)
  LANGUAGE sql

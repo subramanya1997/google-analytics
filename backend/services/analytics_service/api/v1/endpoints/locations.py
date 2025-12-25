@@ -7,6 +7,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
+from common.exceptions import handle_database_error
 from services.analytics_service.api.dependencies import get_tenant_id
 from services.analytics_service.api.v1.models import LocationResponse
 from services.analytics_service.database.dependencies import get_analytics_db_client
@@ -35,8 +36,7 @@ async def get_locations(
 
         return locations
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching locations: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch locations: {str(e)}"
-        )
+        raise handle_database_error("fetching locations", e)

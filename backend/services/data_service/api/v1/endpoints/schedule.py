@@ -1,12 +1,12 @@
 """
 Schedule management endpoints for data ingestion jobs.
 """
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Header, Body
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Header
 from loguru import logger
 
+from common.exceptions import create_api_error
 from services.data_service.api.dependencies import get_tenant_id
+from services.data_service.api.v1.models import ScheduleRequest
 from common.scheduler_client import create_scheduler_client
 from common.config import get_settings
 
@@ -15,12 +15,6 @@ router = APIRouter()
 
 # Get settings for scheduler configuration
 _settings = get_settings("data-ingestion-service")
-
-
-class ScheduleRequest(BaseModel):
-    """Request model for creating/updating schedule."""
-    cron_expression: Optional[str] = None
-    status: Optional[str] = None
 
 
 @router.post("/schedule")
@@ -145,9 +139,12 @@ async def upsert_ingestion_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error upserting ingestion schedule for tenant {tenant_id}: {e}")
-        logger.exception("Full traceback:")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise create_api_error(
+            operation="upserting ingestion schedule",
+            status_code=500,
+            internal_error=e,
+            user_message="Failed to update schedule. Please try again later."
+        )
 
 
 @router.get("/schedule")
@@ -216,7 +213,10 @@ async def get_ingestion_schedule(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting ingestion schedule for tenant {tenant_id}: {e}")
-        logger.exception("Full traceback:")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise create_api_error(
+            operation="getting ingestion schedule",
+            status_code=500,
+            internal_error=e,
+            user_message="Failed to retrieve schedule. Please try again later."
+        )
 

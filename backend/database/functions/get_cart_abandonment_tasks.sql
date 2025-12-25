@@ -6,8 +6,10 @@ AS $function$
 DECLARE
     result JSONB;
 BEGIN
-    WITH abandoned_sessions AS (
-        SELECT DISTINCT ac.param_ga_session_id
+    WITH     abandoned_sessions AS (
+        SELECT DISTINCT 
+            ac.param_ga_session_id,
+            COUNT(*) OVER() as total_count
         FROM add_to_cart ac
         WHERE ac.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR ac.user_prop_default_branch_id = p_location_id)
@@ -20,7 +22,7 @@ BEGIN
           )
     ),
     paginated_sessions AS (
-        SELECT param_ga_session_id
+        SELECT param_ga_session_id, total_count
         FROM abandoned_sessions
         ORDER BY param_ga_session_id
         LIMIT p_limit
@@ -67,10 +69,10 @@ BEGIN
             FROM session_details sd
             LEFT JOIN users u ON u.user_id = sd.user_prop_webuserid AND u.tenant_id = p_tenant_id
         ),
-        'total', (SELECT COUNT(*) FROM abandoned_sessions),
+        'total', (SELECT MAX(total_count) FROM paginated_sessions),
         'page', p_page,
         'limit', p_limit,
-        'has_more', (p_page * p_limit) < (SELECT COUNT(*) FROM abandoned_sessions)
+        'has_more', (p_page * p_limit) < (SELECT MAX(total_count) FROM paginated_sessions)
     ) INTO result;
 
     RETURN result;

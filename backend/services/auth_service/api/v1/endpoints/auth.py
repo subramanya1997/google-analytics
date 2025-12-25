@@ -2,71 +2,21 @@
 Authentication endpoints.
 """
 
-from typing import List, Optional
-
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
 from loguru import logger
 
+from services.auth_service.api.v1.models import (
+    AuthRequest,
+    AuthResponse,
+    LogoutRequest,
+    LogoutResponse,
+    LoginUrlResponse,
+    ValidateTokenRequest,
+    ValidateTokenResponse,
+)
 from services.auth_service.services.auth_service import AuthenticationService
 
 router = APIRouter()
-
-
-class AuthRequest(BaseModel):
-    """Request model for authentication."""
-
-    code: str
-
-
-class AuthResponse(BaseModel):
-    """Response model for authentication."""
-
-    success: bool
-    message: str
-    tenant_id: Optional[str] = None
-    first_name: Optional[str] = None
-    username: Optional[str] = None
-    business_name: Optional[str] = None
-    access_token: Optional[str] = None
-    missing_configs: Optional[List[str]] = None
-    invalid_configs: Optional[List[str]] = None
-
-
-class LogoutRequest(BaseModel):
-    """Request model for logout."""
-    
-    access_token: str
-
-
-class LogoutResponse(BaseModel):
-    """Response model for logout."""
-    
-    success: bool
-    message: str
-
-
-class LoginUrlResponse(BaseModel):
-    """Response model for login URL."""
-    
-    login_url: str
-
-
-class ValidateTokenRequest(BaseModel):
-    """Request model for token validation."""
-    
-    access_token: str
-
-
-class ValidateTokenResponse(BaseModel):
-    """Response model for token validation."""
-    
-    valid: bool
-    message: str
-    tenant_id: Optional[str] = None
-    first_name: Optional[str] = None
-    username: Optional[str] = None
-    business_name: Optional[str] = None
 
 
 @router.post("/authenticate", response_model=AuthResponse)

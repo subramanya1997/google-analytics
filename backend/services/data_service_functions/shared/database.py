@@ -252,23 +252,6 @@ class FunctionsRepository:
             await session.commit()
             return result.rowcount > 0
 
-    async def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get job by ID."""
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            stmt = text("SELECT * FROM processing_jobs WHERE job_id = :job_id")
-            result = await session.execute(stmt, {"job_id": job_id})
-            row = result.mappings().first()
-            if row:
-                job = dict(row)
-                # Convert UUID to string
-                if job.get("tenant_id"):
-                    job["tenant_id"] = str(job["tenant_id"])
-                if job.get("id"):
-                    job["id"] = str(job["id"])
-                return job
-            return None
-
-
     async def replace_event_data(
         self,
         tenant_id: str,

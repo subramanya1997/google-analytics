@@ -224,7 +224,6 @@ GET  /analytics/email/mappings         # Branch email mappings
 - `get_cart_abandonment_tasks()`
 - `get_search_analysis_tasks()`
 - `get_repeat_visit_tasks()`
-- `get_complete_dashboard_data()`
 
 ### Data Service (Port 8002)
 
@@ -323,7 +322,9 @@ The system uses PostgreSQL functions for optimized queries:
 - `get_cart_abandonment_tasks()` - Get abandoned cart recovery tasks
 - `get_search_analysis_tasks()` - Analyze search patterns
 - `get_repeat_visit_tasks()` - Identify repeat visitor opportunities
-- `get_complete_dashboard_data()` - Comprehensive dashboard metrics
+- `get_dashboard_overview_stats()` - Dashboard overview metrics
+- `get_chart_data()` - Time-series chart data
+- `get_location_stats_bulk()` - Location-based statistics
 - `get_locations_with_activity_table()` - Active locations
 
 ## 🔧 Configuration

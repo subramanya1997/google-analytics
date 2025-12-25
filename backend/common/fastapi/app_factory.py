@@ -84,6 +84,10 @@ def create_fastapi_app(
         response = await call_next(request)
         process_time = time.time() - start_time
         response.headers["X-Process-Time"] = str(process_time)
+        # Log request with timing
+        logger.info(
+            f"{request.method} {request.url.path} - {response.status_code} - {process_time:.3f}s"
+        )
         return response
     
     # Include API router if provided
@@ -116,12 +120,11 @@ def create_fastapi_app(
     # Global exception handler
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Global exception handler caught: {exc}")
+        logger.error(f"Unhandled exception in {request.method} {request.url.path}: {exc}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={
-                "error": "Internal server error",
-                "message": str(exc) if settings.DEBUG else "An error occurred"
+                "error": "An error occurred while processing your request. Please try again later."
             }
         )
     

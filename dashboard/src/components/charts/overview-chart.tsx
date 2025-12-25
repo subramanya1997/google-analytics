@@ -145,7 +145,7 @@ export function OverviewChart({
                 strokeWidth={2}
                 dot={{ fill: '#f59e0b', strokeWidth: 2, r: 3 }}
                 activeDot={{ r: 5 }}
-                name="Cart Additions"
+                name="Abandoned Carts"
               />
               <Line 
                 type="monotone" 

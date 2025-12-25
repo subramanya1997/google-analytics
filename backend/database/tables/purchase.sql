@@ -71,11 +71,6 @@ CREATE INDEX IF NOT EXISTS idx_purchase_items_gin
 ON purchase USING GIN (items_json) 
 WHERE items_json IS NOT NULL;
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_purchase_recent 
-ON purchase (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
-
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_purchase_location_stats_covering 
 ON purchase (tenant_id, event_date, user_prop_default_branch_id) 

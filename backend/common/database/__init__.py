@@ -22,11 +22,6 @@ from .session import (
     create_database
 )
 from .tenant_config import (
-    TenantConfigManager, 
-    get_tenant_config_manager,
-    get_tenant_bigquery_config,
-    get_tenant_postgres_config,
-    get_tenant_sftp_config,
     get_tenant_service_status
 )
 from .tenant_provisioning import (
@@ -58,11 +53,6 @@ __all__ = [
     "create_database",
     
     # Tenant configuration
-    "TenantConfigManager",
-    "get_tenant_config_manager",
-    "get_tenant_bigquery_config",
-    "get_tenant_postgres_config", 
-    "get_tenant_sftp_config",
     "get_tenant_service_status",
     
     # Tenant provisioning

@@ -20,23 +20,23 @@ CREATE TABLE IF NOT EXISTS public.email_send_history (
 -- ======================================
 
 -- Core performance index for tenant history queries
-CREATE INDEX IF NOT EXISTS idx_email_history_tenant_date 
+CREATE INDEX IF NOT EXISTS idx_email_send_history_tenant_date 
 ON email_send_history (tenant_id, sent_at DESC);
 
 -- Index for job-based queries
-CREATE INDEX IF NOT EXISTS idx_email_history_job 
+CREATE INDEX IF NOT EXISTS idx_email_send_history_job 
 ON email_send_history (job_id) WHERE job_id IS NOT NULL;
 
 -- Index for branch-based queries
-CREATE INDEX IF NOT EXISTS idx_email_history_branch 
+CREATE INDEX IF NOT EXISTS idx_email_send_history_branch 
 ON email_send_history (tenant_id, branch_code, sent_at DESC);
 
 -- Index for email recipient queries
-CREATE INDEX IF NOT EXISTS idx_email_history_email 
+CREATE INDEX IF NOT EXISTS idx_email_send_history_email 
 ON email_send_history (tenant_id, sales_rep_email, sent_at DESC);
 
 -- Index for status monitoring
-CREATE INDEX IF NOT EXISTS idx_email_history_status 
+CREATE INDEX IF NOT EXISTS idx_email_send_history_status 
 ON email_send_history (tenant_id, status, sent_at DESC) 
 WHERE status != 'sent';
 

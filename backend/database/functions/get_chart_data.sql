@@ -134,7 +134,20 @@ BEGIN
           AND (NOT use_hourly_data OR (event_timestamp IS NOT NULL AND event_timestamp ~ '^[0-9]+$'))
         GROUP BY date_group
     ),
-    cart_additions_by_period AS (
+    -- Abandoned carts: sessions with cart additions but NO purchase (consistent with stats)
+    abandoned_cart_sessions AS (
+        SELECT DISTINCT ac.param_ga_session_id, ac.event_date, ac.event_timestamp
+        FROM add_to_cart ac
+        WHERE ac.tenant_id = p_tenant_id
+          AND ac.event_date BETWEEN TO_DATE(p_start_date, 'YYYY-MM-DD') AND TO_DATE(p_end_date, 'YYYY-MM-DD')
+          AND (p_location_id IS NULL OR ac.user_prop_default_branch_id = p_location_id)
+          AND NOT EXISTS (
+              SELECT 1 FROM purchase p
+              WHERE p.param_ga_session_id = ac.param_ga_session_id
+                AND p.tenant_id = p_tenant_id
+          )
+    ),
+    abandoned_carts_by_period AS (
         SELECT
             CASE 
                 -- For daily/weekly/monthly, use event_date (date field)
@@ -158,13 +171,9 @@ BEGIN
                     TO_CHAR(DATE_TRUNC('hour', TO_TIMESTAMP(event_timestamp::bigint / 1000000.0)), date_format)
                 ELSE TO_CHAR(DATE_TRUNC('day', event_date::timestamp), date_format)
             END as date_group,
-            COUNT(*) as cart_additions
-        FROM add_to_cart
-        WHERE tenant_id = p_tenant_id
-          AND event_date BETWEEN TO_DATE(p_start_date, 'YYYY-MM-DD') AND TO_DATE(p_end_date, 'YYYY-MM-DD')
-          AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
-          -- Only include records with valid timestamp for hourly data
-          AND (NOT use_hourly_data OR (event_timestamp IS NOT NULL AND event_timestamp ~ '^[0-9]+$'))
+            COUNT(DISTINCT param_ga_session_id) as abandoned_carts
+        FROM abandoned_cart_sessions
+        WHERE (NOT use_hourly_data OR (event_timestamp IS NOT NULL AND event_timestamp ~ '^[0-9]+$'))
         GROUP BY date_group
     ),
     searches_by_period AS (
@@ -246,14 +255,14 @@ BEGIN
         'revenue', COALESCE(p.revenue, 0),
         'purchases', COALESCE(p.purchases, 0),
         'visitors', COALESCE(v.visitors, 0),
-        'carts', COALESCE(ca.cart_additions, 0),
+        'carts', COALESCE(ac.abandoned_carts, 0),
         'searches', COALESCE(s.searches, 0)
     ) ORDER BY gd.start_of_period)
     INTO result
     FROM unique_grouped_dates gd
     LEFT JOIN purchases_by_period p ON gd.date_group = p.date_group
     LEFT JOIN visitors_by_period v ON gd.date_group = v.date_group
-    LEFT JOIN cart_additions_by_period ca ON gd.date_group = ca.date_group
+    LEFT JOIN abandoned_carts_by_period ac ON gd.date_group = ac.date_group
     LEFT JOIN searches_by_period s ON gd.date_group = s.date_group;
 
     RETURN COALESCE(result, '[]'::jsonb);

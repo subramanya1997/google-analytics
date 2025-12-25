@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
+from common.exceptions import handle_database_error
 from services.analytics_service.api.dependencies import get_tenant_id
 from common.config import get_settings
 from services.analytics_service.database.dependencies import get_analytics_db_client
@@ -52,11 +53,10 @@ async def get_purchase_tasks(
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching purchase tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch purchase tasks: {str(e)}"
-        )
+        raise handle_database_error("fetching purchase tasks", e)
 
 
 @router.get("/cart-abandonment", response_model=Dict[str, Any])
@@ -93,11 +93,10 @@ async def get_cart_abandonment_tasks(
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching cart abandonment tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch cart abandonment tasks: {str(e)}"
-        )
+        raise handle_database_error("fetching cart abandonment tasks", e)
 
 
 @router.get("/search-analysis", response_model=Dict[str, Any])
@@ -138,11 +137,10 @@ async def get_search_analysis_tasks(
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching search analysis tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch search analysis tasks: {str(e)}"
-        )
+        raise handle_database_error("fetching search analysis tasks", e)
 
 
 @router.get("/performance", response_model=Dict[str, Any])
@@ -175,11 +173,10 @@ async def get_performance_tasks(
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching performance tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch performance tasks: {str(e)}"
-        )
+        raise handle_database_error("fetching performance tasks", e)
 
 
 @router.get("/repeat-visits", response_model=Dict[str, Any])
@@ -218,8 +215,7 @@ async def get_repeat_visit_tasks(
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching repeat visit tasks: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch repeat visit tasks: {str(e)}"
-        )
+        raise handle_database_error("fetching repeat visit tasks", e)

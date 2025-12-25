@@ -49,9 +49,14 @@ BEGIN
         UNION ALL
         SELECT * FROM unconverted_searches
     ),
+    all_searches_with_count AS (
+        SELECT *,
+            COUNT(*) OVER() as total_count
+        FROM all_searches
+    ),
     paginated_searches AS (
         SELECT *
-        FROM all_searches
+        FROM all_searches_with_count
         ORDER BY last_activity DESC
         LIMIT p_limit
         OFFSET (p_page - 1) * p_limit
@@ -75,10 +80,10 @@ BEGIN
             FROM paginated_searches ps
             LEFT JOIN users u ON u.user_id = ps.user_prop_webuserid AND u.tenant_id = p_tenant_id
         ),
-        'total', (SELECT COUNT(*) FROM all_searches),
+        'total', (SELECT MAX(total_count) FROM paginated_searches),
         'page', p_page,
         'limit', p_limit,
-        'has_more', (p_page * p_limit) < (SELECT COUNT(*) FROM all_searches)
+        'has_more', (p_page * p_limit) < (SELECT MAX(total_count) FROM paginated_searches)
     ) INTO result;
 
     RETURN result;

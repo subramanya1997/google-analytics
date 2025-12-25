@@ -61,11 +61,6 @@ CREATE INDEX IF NOT EXISTS idx_add_to_cart_items_gin
 ON add_to_cart USING GIN (items_json) 
 WHERE items_json IS NOT NULL;
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_add_to_cart_recent 
-ON add_to_cart (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
-
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_add_to_cart_location_stats_covering 
 ON add_to_cart (tenant_id, event_date, user_prop_default_branch_id) 

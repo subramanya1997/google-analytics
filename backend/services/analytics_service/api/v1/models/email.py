@@ -5,7 +5,7 @@ Email-related Pydantic models
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr
 
 
 class BranchEmailMappingRequest(BaseModel):

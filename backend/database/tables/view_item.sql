@@ -60,7 +60,12 @@ CREATE INDEX IF NOT EXISTS idx_view_item_items_gin
 ON view_item USING GIN (items_json) 
 WHERE items_json IS NOT NULL;
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_view_item_recent 
-ON view_item (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
+-- Session lookup index for get_session_history and get_user_history
+CREATE INDEX IF NOT EXISTS idx_view_item_session_lookup 
+ON view_item (param_ga_session_id, tenant_id) 
+WHERE param_ga_session_id IS NOT NULL;
+
+-- Covering index for location stats aggregations (eliminates heap lookups)
+CREATE INDEX IF NOT EXISTS idx_view_item_location_stats_covering 
+ON view_item (tenant_id, event_date, user_prop_default_branch_id) 
+INCLUDE (param_ga_session_id, first_item_item_id, first_item_item_name, first_item_item_category, first_item_price, param_page_location);

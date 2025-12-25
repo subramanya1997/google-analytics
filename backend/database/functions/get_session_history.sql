@@ -70,6 +70,21 @@ BEGIN
             ) AS details
         FROM no_search_results
         WHERE tenant_id = p_tenant_id AND param_ga_session_id = p_session_id
+        
+        UNION ALL
+        
+        -- View Item (Product Views)
+        SELECT
+            event_timestamp,
+            'view_item' AS event_type,
+            jsonb_build_object(
+                'item_id', first_item_item_id,
+                'item_name', first_item_item_name,
+                'price', first_item_price,
+                'category', first_item_item_category
+            ) AS details
+        FROM view_item
+        WHERE tenant_id = p_tenant_id AND param_ga_session_id = p_session_id
     )
     SELECT jsonb_agg(
         ae ORDER BY ae.event_timestamp ASC

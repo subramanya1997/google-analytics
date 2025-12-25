@@ -56,11 +56,11 @@ CREATE INDEX IF NOT EXISTS idx_view_search_results_time_series
 ON view_search_results (tenant_id, event_date DESC, event_timestamp DESC);
 
 -- Specialized index for search conversion analysis
-CREATE INDEX IF NOT EXISTS idx_search_session_lookup 
+CREATE INDEX IF NOT EXISTS idx_view_search_results_session_lookup 
 ON view_search_results (param_ga_session_id, tenant_id) 
 WHERE param_ga_session_id IS NOT NULL;
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_view_search_results_recent 
-ON view_search_results (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
+-- Covering index for location stats aggregations (eliminates heap lookups)
+CREATE INDEX IF NOT EXISTS idx_view_search_results_location_stats_covering 
+ON view_search_results (tenant_id, event_date, user_prop_default_branch_id) 
+INCLUDE (param_ga_session_id, param_search_term);

@@ -132,7 +132,6 @@ async def get_purchase_tasks(self, tenant_id: str, page: int, limit: int, ...):
 | `get_search_analysis_tasks()` | Search insights |
 | `get_repeat_visit_tasks()` | Repeat visitor data |
 | `get_performance_tasks()` | Branch performance |
-| `get_complete_dashboard_data()` | Full dashboard (optimized) |
 | `get_session_history()` | Session timeline |
 | `get_user_history()` | User timeline |
 

@@ -55,22 +55,17 @@ BEGIN
           AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
     ),
     repeat_visit_stats AS (
-        SELECT
-            COUNT(DISTINCT user_prop_webuserid) as repeat_visitors
-        FROM page_view
-        WHERE tenant_id = p_tenant_id 
-          AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
-          AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
-          AND user_prop_webuserid IS NOT NULL
-          AND user_prop_webuserid IN (
+        SELECT COUNT(*) as repeat_visitors
+        FROM (
             SELECT user_prop_webuserid
             FROM page_view
-            WHERE tenant_id = p_tenant_id
+            WHERE tenant_id = p_tenant_id 
               AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+              AND (p_location_id IS NULL OR user_prop_default_branch_id = p_location_id)
               AND user_prop_webuserid IS NOT NULL
             GROUP BY user_prop_webuserid
             HAVING COUNT(DISTINCT param_ga_session_id) > 1
-          )
+        ) multi_session_users
     )
     SELECT jsonb_build_object(
         'totalRevenue', '$' || COALESCE(ps.total_revenue, 0)::text,

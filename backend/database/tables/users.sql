@@ -50,3 +50,8 @@ ALTER TABLE users ALTER COLUMN tenant_id SET STATISTICS 1000;
 -- Core performance index for user lookups (PostgreSQL will use the unique constraint as an index too)
 CREATE INDEX IF NOT EXISTS idx_users_tenant_user_id 
 ON users (tenant_id, user_id);
+
+-- Email lookup index for search functionality in get_repeat_visit_tasks
+CREATE INDEX IF NOT EXISTS idx_users_tenant_email 
+ON users (tenant_id, email) 
+WHERE email IS NOT NULL;

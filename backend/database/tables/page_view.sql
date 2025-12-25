@@ -56,11 +56,6 @@ CREATE INDEX IF NOT EXISTS idx_page_view_user_session
 ON page_view (tenant_id, user_prop_webuserid, param_ga_session_id) 
 WHERE user_prop_webuserid IS NOT NULL AND param_ga_session_id IS NOT NULL;
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_page_view_recent 
-ON page_view (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
-
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_page_view_location_stats_covering 
 ON page_view (tenant_id, event_date, user_prop_default_branch_id) 

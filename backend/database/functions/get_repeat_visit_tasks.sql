@@ -41,9 +41,16 @@ BEGIN
         FROM active_sessions a_s
         INNER JOIN repeat_visitors rv ON a_s.user_prop_webuserid = rv.user_prop_webuserid
     ),
+    paginated_sessions AS (
+        SELECT *
+        FROM repeat_visitor_sessions
+        ORDER BY last_activity DESC
+        LIMIT p_limit
+        OFFSET (p_page - 1) * p_limit
+    ),
     session_product_views AS (
         SELECT
-            rvs.param_ga_session_id,
+            ps.param_ga_session_id,
             COUNT(DISTINCT vi.first_item_item_id) as products_viewed,
             jsonb_agg(DISTINCT 
                 CASE WHEN vi.first_item_item_id IS NOT NULL THEN
@@ -55,17 +62,10 @@ BEGIN
                     )
                 ELSE NULL END
             ) FILTER (WHERE vi.first_item_item_id IS NOT NULL) as products_details
-        FROM repeat_visitor_sessions rvs
-        LEFT JOIN view_item vi ON vi.param_ga_session_id = rvs.param_ga_session_id
+        FROM paginated_sessions ps
+        LEFT JOIN view_item vi ON vi.param_ga_session_id = ps.param_ga_session_id
           AND vi.tenant_id = p_tenant_id
-        GROUP BY rvs.param_ga_session_id
-    ),
-    paginated_sessions AS (
-        SELECT *
-        FROM repeat_visitor_sessions
-        ORDER BY last_activity DESC
-        LIMIT p_limit
-        OFFSET (p_page - 1) * p_limit
+        GROUP BY ps.param_ga_session_id
     )
     SELECT jsonb_build_object(
         'data', (

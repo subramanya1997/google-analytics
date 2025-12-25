@@ -3,7 +3,7 @@ Common database session management with async support and connection pooling.
 """
 from __future__ import annotations
 import os
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from functools import lru_cache
 from contextlib import asynccontextmanager, contextmanager
 

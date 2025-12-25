@@ -33,8 +33,8 @@ dependencies = [
     "paramiko>=3.4.0",
     "openpyxl>=3.1.2",
     "jinja2>=3.1.6",
-    # Azure Storage Queue for background job processing
-    "azure-storage-queue>=12.9.0",
+    "aiohttp>=3.13.2",
+    "azure-storage-queue>=12.14.1",
 ]
 
 [project.optional-dependencies]
@@ -84,3 +84,8 @@ python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
+
+[dependency-groups]
+dev = [
+    "vulture>=2.14",
+]

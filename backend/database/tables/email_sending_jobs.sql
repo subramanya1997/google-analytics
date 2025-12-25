@@ -33,18 +33,18 @@ ALTER TABLE email_sending_jobs ALTER COLUMN created_at SET STATISTICS 1000;
 -- ======================================
 
 -- Core performance index for tenant and job status queries
-CREATE INDEX IF NOT EXISTS idx_email_jobs_tenant_status 
+CREATE INDEX IF NOT EXISTS idx_email_sending_jobs_tenant_status 
 ON email_sending_jobs (tenant_id, status);
 
 -- Index for job history queries (most recent first)
-CREATE INDEX IF NOT EXISTS idx_email_jobs_tenant_created 
+CREATE INDEX IF NOT EXISTS idx_email_sending_jobs_tenant_created 
 ON email_sending_jobs (tenant_id, created_at DESC);
 
 -- Index for date-based queries
-CREATE INDEX IF NOT EXISTS idx_email_jobs_report_date 
+CREATE INDEX IF NOT EXISTS idx_email_sending_jobs_report_date 
 ON email_sending_jobs (tenant_id, report_date DESC);
 
 -- Index for active job monitoring
-CREATE INDEX IF NOT EXISTS idx_email_jobs_active 
+CREATE INDEX IF NOT EXISTS idx_email_sending_jobs_active 
 ON email_sending_jobs (status, created_at) 
 WHERE status IN ('queued', 'processing');

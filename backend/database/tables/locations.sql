@@ -50,6 +50,13 @@ ALTER TABLE locations ALTER COLUMN tenant_id SET STATISTICS 1000;
 -- LOCATIONS TABLE CONSTRAINTS AND INDEXES  
 -- ======================================
 
--- Core performance index for location lookups 
-CREATE INDEX IF NOT EXISTS idx_locations_tenant_location 
+-- Core performance index for location lookups by code
+CREATE INDEX IF NOT EXISTS idx_locations_tenant_code 
 ON locations (tenant_id, warehouse_code) WHERE is_active = true;
+
+-- Covering index for location list queries - enables index-only scan
+-- Includes all columns needed: filter (tenant_id, is_active), order (warehouse_name), select (warehouse_code, city, state)
+CREATE INDEX IF NOT EXISTS idx_locations_tenant_name_covering 
+ON locations (tenant_id, warehouse_name) 
+INCLUDE (warehouse_code, city, state)
+WHERE is_active = true;

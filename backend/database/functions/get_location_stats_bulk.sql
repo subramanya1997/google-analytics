@@ -9,13 +9,23 @@ BEGIN
     WITH date_range AS (
         SELECT TO_DATE(p_start_date, 'YYYY-MM-DD') as start_date, TO_DATE(p_end_date, 'YYYY-MM-DD') as end_date
     ),
-    location_page_views AS (
+    page_view_aggregated AS (
         SELECT
             user_prop_default_branch_id AS location_id,
-            COUNT(DISTINCT param_ga_session_id) AS totalVisitors
+            COUNT(DISTINCT param_ga_session_id) AS totalVisitors,
+            user_prop_webuserid,
+            COUNT(DISTINCT param_ga_session_id) AS session_count
         FROM page_view
-        WHERE tenant_id = p_tenant_id AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
-        GROUP BY user_prop_default_branch_id
+        WHERE tenant_id = p_tenant_id 
+          AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
+        GROUP BY user_prop_default_branch_id, user_prop_webuserid
+    ),
+    location_page_views AS (
+        SELECT
+            location_id,
+            SUM(totalVisitors) AS totalVisitors
+        FROM page_view_aggregated
+        GROUP BY location_id
     ),
     location_purchases AS (
         SELECT
@@ -55,14 +65,11 @@ BEGIN
     user_sessions_per_location AS (
         SELECT
             user_prop_webuserid,
-            user_prop_default_branch_id AS location_id,
-            COUNT(DISTINCT param_ga_session_id) as session_count
-        FROM page_view
-        WHERE tenant_id = p_tenant_id
-          AND event_date BETWEEN (SELECT start_date FROM date_range) AND (SELECT end_date FROM date_range)
-          AND user_prop_webuserid IS NOT NULL
-          AND user_prop_default_branch_id IS NOT NULL
-        GROUP BY user_prop_webuserid, user_prop_default_branch_id
+            location_id,
+            session_count
+        FROM page_view_aggregated
+        WHERE user_prop_webuserid IS NOT NULL
+          AND location_id IS NOT NULL
     ),
     location_repeat_visits AS (
         SELECT

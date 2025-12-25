@@ -8,7 +8,7 @@ from functools import lru_cache
 from fastapi import Header, HTTPException
 from loguru import logger
 
-from services.data_service.services import IngestionService
+from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepository
 
 
 def get_tenant_id(
@@ -34,9 +34,9 @@ def get_tenant_id(
 
 
 @lru_cache(maxsize=1)
-def get_ingestion_service() -> IngestionService:
+def get_repository() -> SqlAlchemyRepository:
     """
-    Get cached ingestion service instance.
+    Get cached repository instance.
     Using lru_cache to ensure only one instance is created.
     """
-    return IngestionService()
+    return SqlAlchemyRepository()

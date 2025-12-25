@@ -118,43 +118,41 @@ export async function fetchFromAuthService(endpoint: string, options?: RequestIn
 
 // =============== Analytics Service APIs ===============
 
-export async function fetchDashboardStats(params: {
+// Stats endpoints for parallel loading
+export async function fetchOverviewStats(params: {
+  selectedLocation?: string | null
+  dateRange?: DateRange
+}) {
+  const queryParams = new URLSearchParams()
+  if (params.selectedLocation) queryParams.append('location_id', params.selectedLocation)
+  if (params.dateRange?.from) queryParams.append('start_date', format(params.dateRange.from, 'yyyy-MM-dd'))
+  if (params.dateRange?.to) queryParams.append('end_date', format(params.dateRange.to, 'yyyy-MM-dd'))
+  
+  return fetchFromAnalyticsService(`stats/overview?${queryParams.toString()}`)
+}
+
+export async function fetchChartStats(params: {
   selectedLocation?: string | null
   dateRange?: DateRange
   granularity?: string
-  timezoneOffset?: number
 }) {
   const queryParams = new URLSearchParams()
+  if (params.selectedLocation) queryParams.append('location_id', params.selectedLocation)
+  if (params.dateRange?.from) queryParams.append('start_date', format(params.dateRange.from, 'yyyy-MM-dd'))
+  if (params.dateRange?.to) queryParams.append('end_date', format(params.dateRange.to, 'yyyy-MM-dd'))
+  if (params.granularity) queryParams.append('granularity', params.granularity)
   
-  if (params.selectedLocation) {
-    queryParams.append('location_id', params.selectedLocation)
-  }
-  if (params.dateRange?.from) {
-    queryParams.append('start_date', format(params.dateRange.from, 'yyyy-MM-dd'))
-  }
-  if (params.dateRange?.to) {
-    queryParams.append('end_date', format(params.dateRange.to, 'yyyy-MM-dd'))
-  }
-  if (params.granularity) {
-    queryParams.append('granularity', params.granularity)
-  }
-  if (params.timezoneOffset !== undefined) {
-    queryParams.append('timezone_offset', params.timezoneOffset.toString())
-  }
+  return fetchFromAnalyticsService(`stats/chart?${queryParams.toString()}`)
+}
+
+export async function fetchLocationStats(params: {
+  dateRange?: DateRange
+}) {
+  const queryParams = new URLSearchParams()
+  if (params.dateRange?.from) queryParams.append('start_date', format(params.dateRange.from, 'yyyy-MM-dd'))
+  if (params.dateRange?.to) queryParams.append('end_date', format(params.dateRange.to, 'yyyy-MM-dd'))
   
-  // Try proxy first, then fallback to direct URL
-  const proxyUrl = `/api/analytics/stats?${queryParams.toString()}`
-  const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
-  const directUrl = directBase ? `${directBase}/stats?${queryParams.toString()}` : ''
-  
-  try {
-    return await fetch(proxyUrl, { headers: analyticsHeaders() })
-  } catch (error) {
-    if (directUrl) {
-      return await fetch(directUrl, { headers: analyticsHeaders() })
-    }
-    throw error
-  }
+  return fetchFromAnalyticsService(`stats/locations?${queryParams.toString()}`)
 }
 
 export async function fetchLocations(signal?: AbortSignal) {
@@ -443,10 +441,6 @@ export async function fetchEmailJobs(params: {
   
   const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
   return fetchFromAnalyticsService(`email/jobs${query}`)
-}
-
-export async function fetchEmailJobStatus(jobId: string) {
-  return fetchFromAnalyticsService(`email/jobs/${jobId}`)
 }
 
 export async function fetchEmailHistory(params: {

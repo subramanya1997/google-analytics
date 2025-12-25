@@ -21,7 +21,8 @@ BEGIN
         GROUP BY param_ga_session_id, user_prop_webuserid
     ),
     bounced_sessions AS (
-        SELECT *
+        SELECT *,
+            COUNT(*) OVER() as total_count
         FROM session_page_counts
         WHERE page_view_count = 1
     ),
@@ -64,10 +65,10 @@ BEGIN
                 FROM frequently_bounced_pages fbp
             )
         ),
-        'total', (SELECT COUNT(*) FROM bounced_sessions),
+        'total', (SELECT MAX(total_count) FROM paginated_sessions),
         'page', p_page,
         'limit', p_limit,
-        'has_more', (p_page * p_limit) < (SELECT COUNT(*) FROM bounced_sessions)
+        'has_more', (p_page * p_limit) < (SELECT MAX(total_count) FROM paginated_sessions)
     ) INTO result;
 
     RETURN result;

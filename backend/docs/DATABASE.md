@@ -690,38 +690,6 @@ $$ LANGUAGE plpgsql;
 
 ---
 
-### get_complete_dashboard_data
-
-Single-call dashboard data including metrics, charts, and location stats.
-
-```sql
-CREATE OR REPLACE FUNCTION get_complete_dashboard_data(
-    p_tenant_id UUID,
-    p_start_date DATE,
-    p_end_date DATE,
-    p_granularity TEXT DEFAULT 'daily',
-    p_location_id TEXT DEFAULT NULL
-) RETURNS JSONB AS $$
-...
-$$ LANGUAGE plpgsql;
-```
-
-**Returns**:
-```json
-{
-  "metrics": {
-    "totalRevenue": 1523456.78,
-    "totalPurchases": 4523,
-    "totalVisitors": 125000,
-    "abandonedCarts": 8234
-  },
-  "chartData": [...],
-  "locationStats": [...]
-}
-```
-
----
-
 ### get_session_history
 
 Returns event timeline for a specific session.

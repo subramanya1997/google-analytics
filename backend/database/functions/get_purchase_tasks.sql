@@ -6,7 +6,7 @@ AS $function$
 DECLARE
     result JSONB;
 BEGIN
-    WITH filtered_purchases AS (
+    WITH     filtered_purchases AS (
         SELECT 
             p.param_transaction_id,
             p.event_timestamp,
@@ -15,7 +15,8 @@ BEGIN
             p.user_prop_webuserid,
             p.items_json,
             p.param_page_location,
-            p.event_date
+            p.event_date,
+            COUNT(*) OVER() as total_count
         FROM purchase p
         WHERE p.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR p.user_prop_default_branch_id = p_location_id)
@@ -23,9 +24,6 @@ BEGIN
           AND (p_end_date IS NULL OR p.event_date <= TO_DATE(p_end_date, 'YYYY-MM-DD'))
           AND (p_query IS NULL OR p.items_json::text ILIKE '%' || p_query || '%')
         ORDER BY p.event_timestamp DESC
-    ),
-    total_count AS (
-        SELECT COUNT(*) as total FROM filtered_purchases
     ),
     paginated_purchases AS (
         SELECT *
@@ -43,6 +41,7 @@ BEGIN
             pp.items_json,
             pp.param_page_location,
             pp.event_date,
+            pp.total_count,
             u.user_id,
             u.buying_company_name as customer_name,
             u.email,
@@ -72,10 +71,10 @@ BEGIN
             )
             FROM purchase_details pd
         ),
-        'total', (SELECT total FROM total_count),
+        'total', (SELECT MAX(total_count) FROM purchase_details),
         'page', p_page,
         'limit', p_limit,
-        'has_more', (p_page * p_limit) < (SELECT total FROM total_count)
+        'has_more', (p_page * p_limit) < (SELECT MAX(total_count) FROM purchase_details)
     ) INTO result;
 
     RETURN result;

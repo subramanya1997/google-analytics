@@ -11,6 +11,7 @@ from azure.storage.queue.aio import QueueClient
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from loguru import logger
 
+from common.exceptions import handle_database_error, create_api_error
 from services.analytics_service.api.dependencies import get_tenant_id
 from common.config import get_settings
 from common.database import get_tenant_service_status
@@ -22,7 +23,6 @@ from services.analytics_service.api.v1.models import (
 )
 from services.analytics_service.database.dependencies import get_analytics_db_client
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
-from services.analytics_service.services.email_service import EmailService
 
 router = APIRouter()
 
@@ -54,11 +54,10 @@ async def get_email_config(
             "configured": bool(config)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching email config for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch email config: {str(e)}"
-        )
+        raise handle_database_error("fetching email config", e)
 
 
 @router.get("/mappings", response_model=List[BranchEmailMappingResponse])
@@ -80,11 +79,10 @@ async def get_branch_email_mappings(
         
         return mappings
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching email mappings for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch email mappings: {str(e)}"
-        )
+        raise handle_database_error("fetching email mappings", e)
 
 
 @router.post("/mappings", response_model=Dict[str, Any])
@@ -107,11 +105,10 @@ async def create_branch_email_mapping(
             "mapping_id": result.get("mapping_id")
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error creating email mapping for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create email mapping: {str(e)}"
-        )
+        raise handle_database_error("creating email mapping", e)
 
 
 @router.put("/mappings/{mapping_id}", response_model=Dict[str, Any])
@@ -146,10 +143,7 @@ async def update_branch_email_mapping(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating email mapping {mapping_id} for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update email mapping: {str(e)}"
-        )
+        raise handle_database_error("updating email mapping", e)
 
 
 @router.delete("/mappings/{mapping_id}", response_model=Dict[str, Any])
@@ -183,10 +177,7 @@ async def delete_branch_email_mapping(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting email mapping {mapping_id} for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to delete email mapping: {str(e)}"
-        )
+        raise handle_database_error("deleting email mapping", e)
 
 
 @router.post("/send-reports", response_model=EmailJobResponse)
@@ -275,36 +266,14 @@ async def send_reports(
             message="Email sending job created successfully"
         )
         
-    except Exception as e:
-        logger.error(f"Error creating email job for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create email job: {str(e)}"
-        )
-
-
-@router.get("/jobs/{job_id}", response_model=EmailJobResponse)
-async def get_email_job_status(
-    job_id: str,
-    tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
-):
-    """
-    Get status of an email sending job.
-    """
-    try:
-        job = await db_client.get_email_job_status(tenant_id, job_id)
-        
-        if not job:
-            raise HTTPException(status_code=404, detail="Email job not found")
-            
-        return job
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching email job {job_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch email job: {str(e)}"
+        raise create_api_error(
+            operation="creating email job",
+            status_code=500,
+            internal_error=e,
+            user_message="Failed to create email job. Please try again later."
         )
 
 
@@ -339,11 +308,10 @@ async def get_email_send_history(
         
         return history
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching email history for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch email history: {str(e)}"
-        )
+        raise handle_database_error("fetching email history", e)
 
 
 @router.get("/jobs", response_model=Dict[str, Any]) 
@@ -371,8 +339,7 @@ async def get_email_jobs(
         
         return jobs
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching email jobs for tenant {tenant_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch email jobs: {str(e)}"
-        )
+        raise handle_database_error("fetching email jobs", e)

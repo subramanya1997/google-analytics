@@ -71,7 +71,7 @@ export interface LocationStats {
 export interface ChartDataPoint {
   time: string
   purchases: number
-  carts: number
+  carts: number  // Abandoned carts (sessions with cart additions but no purchase)
   searches: number
 }
 

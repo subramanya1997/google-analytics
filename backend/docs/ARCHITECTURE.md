@@ -116,8 +116,10 @@ Complex analytics queries are implemented as PostgreSQL functions, not applicati
 - Easier to tune with EXPLAIN ANALYZE
 
 ```sql
--- Example: Single function call returns complete dashboard data
-SELECT get_complete_dashboard_data(:tenant_id, :start_date, :end_date, :granularity, :location_id);
+-- Example: Individual function calls for dashboard data
+SELECT get_dashboard_overview_stats(:tenant_id, :start_date, :end_date, :location_id);
+SELECT get_chart_data(:tenant_id, :start_date, :end_date, :granularity, :location_id);
+SELECT get_location_stats_bulk(:tenant_id, :start_date, :end_date);
 ```
 
 ### 3. Async-First Design
@@ -345,8 +347,8 @@ Services communicate via:
   │  │                    PL/pgSQL Functions                    │     │
   │  │  • get_purchase_tasks()                                  │     │
   │  │  • get_cart_abandonment_tasks()                          │     │
-  │  │  • get_complete_dashboard_data()                         │     │
-  │  │  • ... (15 total)                                        │     │
+  │  │  • get_dashboard_overview_stats()                        │     │
+  │  │  • ... (14 total)                                        │     │
   │  └─────────────────────────────────────────────────────────┘     │
   │                                                                   │
   └──────────────────────────────────────────────────────────────────┘

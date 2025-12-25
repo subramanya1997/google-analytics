@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
+from common.exceptions import handle_database_error
 from services.analytics_service.api.dependencies import get_tenant_id
 from services.analytics_service.database.dependencies import get_analytics_db_client
 from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
@@ -25,11 +26,10 @@ async def get_user_history_compat(
     try:
         history = await db_client.get_user_history(tenant_id, user_id)
         return history
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching user history for {user_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch user history: {str(e)}"
-        )
+        raise handle_database_error("fetching user history", e)
 
 
 @router.get("/history/session", response_model=List[Dict[str, Any]])
@@ -42,8 +42,7 @@ async def get_session_history_compat(
     try:
         history = await db_client.get_session_history(tenant_id, session_id)
         return history
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error fetching session history for {session_id}: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to fetch session history: {str(e)}"
-        )
+        raise handle_database_error("fetching session history", e)

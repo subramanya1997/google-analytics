@@ -55,7 +55,7 @@ ON no_search_results (tenant_id, param_no_search_results_term);
 CREATE INDEX IF NOT EXISTS idx_no_search_results_time_series 
 ON no_search_results (tenant_id, event_date DESC, event_timestamp DESC);
 
--- Partial index for recent data
-CREATE INDEX IF NOT EXISTS idx_no_search_results_recent 
-ON no_search_results (tenant_id, event_date DESC) 
-WHERE event_date >= '2024-01-01';
+-- Covering index for location stats aggregations (eliminates heap lookups)
+CREATE INDEX IF NOT EXISTS idx_no_search_results_location_stats_covering 
+ON no_search_results (tenant_id, event_date, user_prop_default_branch_id) 
+INCLUDE (param_ga_session_id, param_no_search_results_term);

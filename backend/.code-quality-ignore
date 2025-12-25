@@ -1,0 +1,56 @@
+# Files and patterns to ignore for code quality checks
+# This file is used by various tools to exclude files from checks
+
+# Test files (some rules relaxed)
+tests/
+test_*.py
+*_test.py
+
+# Migrations (type checking relaxed)
+migrations/
+
+# Generated files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Security reports
+bandit-report.json
+safety-report.json
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store

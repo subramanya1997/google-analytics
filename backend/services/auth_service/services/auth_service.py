@@ -1,10 +1,71 @@
 """
-Authentication service business logic.
+Authentication Service - Core Business Logic
+
+This module implements the core authentication and tenant management business logic
+for the authentication service. It handles OAuth 2.0 flows, tenant configuration
+validation, and database provisioning.
+
+The service follows a layered architecture:
+    - API Layer: FastAPI endpoints (services.auth_service.api.v1.endpoints)
+    - Service Layer: This module (business logic)
+    - Database Layer: Common database utilities (common.database)
+
+Key Responsibilities:
+    1. OAuth 2.0 Authorization Code Exchange
+       - Exchange authorization code for access token
+       - Retrieve tenant configurations from external IdP
+       - Validate and store tenant configurations
+
+    2. Configuration Validation
+       - PostgreSQL: Required, validated synchronously (blocks login if invalid)
+       - BigQuery: Optional, validated asynchronously
+       - SFTP: Optional, validated asynchronously
+       - SMTP: Optional, validated asynchronously
+
+    3. Tenant Management
+       - Automatic database provisioning for new tenants
+       - Configuration updates for existing tenants
+       - Tenant configuration persistence
+
+    4. Token Management
+       - Token validation against external IdP
+       - User information retrieval from tokens
+       - Token invalidation (logout)
+
+Architecture Patterns:
+    - Stateless: No session storage, all tokens validated against IdP
+    - Multi-tenant: Each tenant has isolated database
+    - Graceful Degradation: Optional services don't block authentication
+    - Async-first: All I/O operations are asynchronous
+
+Example:
+    ```python
+    service = AuthenticationService()
+    
+    # Authenticate user
+    result = await service.authenticate_with_code("oauth_code")
+    if result["success"]:
+        access_token = result["access_token"]
+        tenant_id = result["tenant_id"]
+    
+    # Validate token
+    validation = await service.validate_token(access_token)
+    if validation["valid"]:
+        user_info = {
+            "tenant_id": validation["tenant_id"],
+            "username": validation["username"]
+        }
+    ```
+
+See Also:
+    - services.auth_service.api.v1.endpoints.auth: API endpoints using this service
+    - common.database: Database utilities for tenant management
+    - common.config: Configuration management
 """
 
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 from loguru import logger
@@ -15,28 +76,137 @@ from common.database import get_async_db_session, provision_tenant_database
 
 
 class AuthenticationService:
-    """Service for handling authentication and configuration validation."""
+    """
+    Core authentication service for OAuth 2.0 flows and tenant management.
 
-    def __init__(self):
-        """Initialize the authentication service."""
+    This service handles the complete authentication lifecycle:
+    - OAuth authorization code exchange
+    - Tenant configuration retrieval and validation
+    - Database provisioning for new tenants
+    - Token validation and user information retrieval
+    - Session termination (logout)
+
+    The service is stateless and validates all tokens against an external
+    Identity Provider. It manages tenant-specific configurations including
+    PostgreSQL, BigQuery, SFTP, and SMTP settings.
+
+    Attributes:
+        settings: Service configuration settings loaded from environment
+            variables. Includes BASE_URL for external IdP, service name,
+            version, and other runtime configuration.
+
+    Example:
+        ```python
+        # Initialize service
+        auth_service = AuthenticationService()
+        
+        # Authenticate user with OAuth code
+        result = await auth_service.authenticate_with_code("code_123")
+        
+        # Validate access token
+        validation = await auth_service.validate_token("token_xyz")
+        
+        # Get login URL
+        login_url = auth_service.get_login_url()
+        
+        # Logout user
+        logout_result = await auth_service.logout_with_token("token_xyz")
+        ```
+
+    Note:
+        - All methods are async to support non-blocking I/O
+        - PostgreSQL validation is required and blocks authentication
+        - Optional service validations are logged but don't block login
+        - New tenants automatically get provisioned databases
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the authentication service.
+
+        Loads service-specific configuration settings from environment variables
+        using the common configuration system. The settings include:
+        - BASE_URL: External Identity Provider base URL
+        - SERVICE_NAME: Service identifier ("auth-service")
+        - SERVICE_VERSION: Service version string
+        - Other service-specific configuration
+
+        Raises:
+            ConfigurationError: If required configuration is missing or invalid.
+                This typically indicates environment variables are not set correctly.
+        """
         self.settings = get_settings("auth-service")
 
-    async def authenticate_with_code(self, code: str) -> Dict[str, Any]:
+    async def authenticate_with_code(self, code: str) -> dict[str, Any]:
         """
-        Authenticate user with code and validate configurations.
+        Authenticate user with OAuth authorization code and validate tenant configurations.
+
+        This method implements the OAuth 2.0 authorization code exchange flow:
+        1. Exchange authorization code for access token via external IdP
+        2. Retrieve tenant application settings and configurations
+        3. Parse and extract PostgreSQL, BigQuery, SFTP, and SMTP configurations
+        4. Validate PostgreSQL configuration (required, synchronous)
+        5. Log warnings for missing optional configurations
+        6. Provision tenant database if new tenant
+        7. Store/update tenant configurations in database
+        8. Return authentication result with access token
+
+        The method performs synchronous validation for PostgreSQL (required) but
+        handles optional service configurations gracefully without blocking authentication.
 
         Args:
-            code: Authentication code from the client
+            code (str): OAuth 2.0 authorization code received from IdP redirect.
+                This is a temporary, single-use code typically 20-200 characters.
+                Must be valid and not expired.
 
         Returns:
-            Dict containing authentication result
+            dict[str, Any]: Authentication result dictionary with keys:
+                - success (bool): Whether authentication succeeded
+                - message (str): Human-readable status message
+                - tenant_id (str | None): Tenant UUID if successful
+                - first_name (str | None): User's first name
+                - username (str | None): User's email/username
+                - business_name (str | None): Tenant's business name
+                - access_token (str | None): OAuth access token (if successful)
+                - missing_configs (list[str] | None): Missing required configs
+                - invalid_configs (list[str] | None): Invalid configs
+
+        Raises:
+            httpx.RequestError: If HTTP request to external IdP fails (network error,
+                timeout, connection refused). Caught and returned as error response.
+            json.JSONDecodeError: If response from IdP is not valid JSON. Caught and
+                logged, returns error response.
+            Exception: Any unexpected error during authentication. Caught and logged,
+                returns generic error response.
+
+        Example:
+            ```python
+            service = AuthenticationService()
+            result = await service.authenticate_with_code("4/0AeanS0b...")
+            
+            if result["success"]:
+                print(f"Authenticated tenant: {result['tenant_id']}")
+                print(f"Access token: {result['access_token']}")
+            else:
+                print(f"Authentication failed: {result['message']}")
+                if result.get("missing_configs"):
+                    print(f"Missing: {result['missing_configs']}")
+            ```
+
+        Note:
+            - PostgreSQL configuration is REQUIRED - authentication fails if missing/invalid
+            - BigQuery, SFTP, SMTP are OPTIONAL - warnings logged but don't block login
+            - New tenants automatically get provisioned databases
+            - Existing tenant configurations are always updated with latest values
+            - All HTTP requests have 30-second timeout
+            - Configuration parsing handles JSON strings and nested structures
         """
         try:
             # Step 1: Get app property using the code
             base_url = self.settings.BASE_URL
             full_url = f"{base_url}/manage/auth/getappproperity"
 
-            logger.info(f"Starting authentication process")
+            logger.info("Starting authentication process")
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # First API call to get app property
@@ -75,7 +245,7 @@ class AuthenticationService:
 
                 # Step 2: Get settings using app instance ID and access token
                 settings_url = f"{base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
-                logger.info(f"Fetching tenant configurations")
+                logger.info("Fetching tenant configurations")
 
                 settings_response = await client.get(
                     settings_url, headers={"Authorization": f"Bearer {access_token}"}
@@ -156,13 +326,15 @@ class AuthenticationService:
                     }
 
                 # Step 3: Validate configurations
-                logger.info(f"Starting configuration validation")
-                validation_result = await self._validate_configurations_async(formatted_settings)
+                logger.info("Starting configuration validation")
+                validation_result = await self._validate_configurations_async(
+                    formatted_settings
+                )
 
                 if validation_result["valid"]:
-                    logger.info(f"All configurations validated successfully")
+                    logger.info("All configurations validated successfully")
                 else:
-                    logger.error(f"Configuration validation failed")
+                    logger.error("Configuration validation failed")
 
                 if not validation_result["valid"]:
                     return {
@@ -183,7 +355,12 @@ class AuthenticationService:
                 email_config = formatted_settings.get("email_config", {})
 
                 if not await self._upsert_tenant_configurations(
-                    account_id, postgres_config, bigquery_config, sftp_config, email_config, username
+                    account_id,
+                    postgres_config,
+                    bigquery_config,
+                    sftp_config,
+                    email_config,
+                    username,
                 ):
                     return {
                         "success": False,
@@ -210,7 +387,7 @@ class AuthenticationService:
             logger.error(f"Base URL being used: {self.settings.BASE_URL}")
             return {
                 "success": False,
-                "message": f"Authentication service unavailable: {str(e)}",
+                "message": f"Authentication service unavailable: {e!s}",
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,
@@ -227,15 +404,64 @@ class AuthenticationService:
                 "business_name": None,
             }
 
-    async def _validate_configurations_async(self, settings_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def _validate_configurations_async(
+        self, settings_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
-        Validate configurations - only Postgres is required, others are optional.
+        Validate tenant configurations with PostgreSQL as required, others optional.
+
+        This method validates tenant configurations retrieved from the external IdP.
+        It enforces strict validation for PostgreSQL (required) while gracefully
+        handling missing optional configurations (BigQuery, SFTP, SMTP).
+
+        Validation Rules:
+            - PostgreSQL: REQUIRED - Must be present and valid (connection test)
+            - BigQuery: OPTIONAL - Logged as warning if missing
+            - SFTP: OPTIONAL - Logged as warning if missing
+            - SMTP: OPTIONAL - Logged as warning if missing
+
+        The method performs actual connection testing for PostgreSQL to ensure
+        credentials are valid and the database is accessible. Optional services
+        are not validated here (they may be validated asynchronously later).
 
         Args:
-            settings_data: Settings data from the API
+            settings_data (dict[str, Any]): Configuration data from IdP API with keys:
+                - postgres_config (dict): PostgreSQL connection configuration
+                    Required fields: user, password, host, port, database
+                - bigquery_config (dict): BigQuery configuration (optional)
+                - sftp_config (dict): SFTP configuration (optional)
+                - email_config (dict): SMTP configuration (optional)
 
         Returns:
-            Dict containing validation results
+            dict[str, Any]: Validation result dictionary with keys:
+                - valid (bool): Whether all required configurations are valid
+                - missing_configs (list[str]): List of missing required config keys
+                - invalid_configs (list[str]): List of invalid config keys
+
+        Example:
+            ```python
+            settings = {
+                "postgres_config": {
+                    "user": "user",
+                    "password": "pass",
+                    "host": "localhost",
+                    "port": 5432,
+                    "database": "analytics"
+                },
+                "bigquery_config": {},  # Optional
+                "sftp_config": {},  # Optional
+                "email_config": {}  # Optional
+            }
+            
+            result = await service._validate_configurations_async(settings)
+            # Returns: {"valid": True, "missing_configs": [], "invalid_configs": []}
+            ```
+
+        Note:
+            - PostgreSQL validation performs actual connection test (synchronous)
+            - Missing optional configs are logged as warnings, not errors
+            - Returns valid=False only if PostgreSQL is missing or invalid
+            - Connection test handles Google Cloud SQL format (skips actual connection)
         """
         postgres_config = settings_data.get("postgres_config", {})
         bigquery_config = settings_data.get("bigquery_config", {})
@@ -262,74 +488,153 @@ class AuthenticationService:
 
         # Other configs are OPTIONAL - just log warnings if missing
         if not bigquery_config:
-            logger.warning("Optional BigQuery configuration is missing - data ingestion from BigQuery will not be available")
-        
-        if not sftp_config:
-            logger.warning("Optional SFTP configuration is missing - SFTP file operations will not be available")
-        
-        if not email_config:
-            logger.warning("Optional Email/SMTP configuration is missing - email sending will not be available")
+            logger.warning(
+                "Optional BigQuery configuration is missing - data ingestion from BigQuery will not be available"
+            )
 
-        logger.info("Configuration validation successful (Postgres validated, optional configs logged)")
+        if not sftp_config:
+            logger.warning(
+                "Optional SFTP configuration is missing - SFTP file operations will not be available"
+            )
+
+        if not email_config:
+            logger.warning(
+                "Optional Email/SMTP configuration is missing - email sending will not be available"
+            )
+
+        logger.info(
+            "Configuration validation successful (Postgres validated, optional configs logged)"
+        )
         return {
             "valid": True,
             "missing_configs": [],
             "invalid_configs": [],
         }
 
-    async def _test_postgres_connection_async(self, config: Dict[str, Any]) -> bool:
-        """Test PostgreSQL connection asynchronously."""
+    async def _test_postgres_connection_async(self, config: dict[str, Any]) -> bool:
+        """
+        Test PostgreSQL connection asynchronously with validation.
+
+        This method validates PostgreSQL configuration by performing an actual
+        connection test. It handles both standard PostgreSQL connections and
+        Google Cloud SQL format connections (which require special proxy setup).
+
+        For Google Cloud SQL format (project:region:instance), the method validates
+        the format but skips the actual connection test since it requires Cloud SQL
+        Proxy or specific network configuration.
+
+        For standard PostgreSQL connections, it creates a connection engine and
+        executes a simple query (SELECT 1) to verify credentials and connectivity.
+
+        Args:
+            config (dict[str, Any]): PostgreSQL configuration dictionary with keys:
+                - user (str): Database username (required)
+                - password (str): Database password (required)
+                - host (str): Database hostname or Cloud SQL connection string (required)
+                    Format: "hostname" or "project:region:instance" for Cloud SQL
+                - port (str | int): Database port number (required)
+                - database (str): Database name (optional, defaults to "postgres")
+
+        Returns:
+            bool: True if connection test succeeds or Cloud SQL format is valid,
+                False if connection fails or required fields are missing.
+
+        Raises:
+            Exception: Any exception during connection test is caught, logged,
+                and returns False. Common exceptions:
+                - sqlalchemy.exc.OperationalError: Connection refused, invalid credentials
+                - ValueError: Invalid port number
+                - KeyError: Missing required configuration fields
+
+        Example:
+            ```python
+            # Standard PostgreSQL
+            config = {
+                "user": "analytics_user",
+                "password": "secure_password",
+                "host": "db.example.com",
+                "port": 5432,
+                "database": "analytics"
+            }
+            result = await service._test_postgres_connection_async(config)
+            # Returns True if connection succeeds
+            
+            # Google Cloud SQL format
+            config = {
+                "user": "analytics_user",
+                "password": "secure_password",
+                "host": "project:region:instance",
+                "port": 5432
+            }
+            result = await service._test_postgres_connection_async(config)
+            # Returns True if format is valid (skips actual connection)
+            ```
+
+        Note:
+            - Uses thread pool executor to run blocking SQLAlchemy operations
+            - Defaults to "postgres" database if not specified
+            - Cloud SQL format detection: host contains 2+ colons
+            - Connection string format: postgresql://user:password@host:port/database
+            - Engine is disposed after connection test to free resources
+        """
         try:
             # Validate required fields
-            required_fields = ['user', 'password', 'host', 'port']
+            required_fields = ["user", "password", "host", "port"]
             missing_fields = [field for field in required_fields if field not in config]
             if missing_fields:
-                logger.error(f"PostgreSQL config missing required fields: {missing_fields}")
+                logger.error(
+                    f"PostgreSQL config missing required fields: {missing_fields}"
+                )
                 return False
-            
+
             # Parse host and port - handle Google Cloud SQL format
-            host_str = str(config['host'])
-            port_str = str(config['port'])
-            
+            host_str = str(config["host"])
+            port_str = str(config["port"])
+
             logger.info(f"Raw config - Host: {host_str}, Port: {port_str}")
-            
+
             # Check if host contains Cloud SQL format (project:region:instance)
-            if ':' in host_str and host_str.count(':') >= 2:
+            if ":" in host_str and host_str.count(":") >= 2:
                 # Google Cloud SQL format detected - skip actual connection test
                 # These connections require Cloud SQL Proxy or specific network setup
                 # Just validate the format is correct
-                logger.info(f"Detected Google Cloud SQL format - Connection: {host_str}, Port: {port_str}")
-                logger.info(f"Skipping actual connection test for Cloud SQL (requires proxy/network setup)")
-                
+                logger.info(
+                    f"Detected Google Cloud SQL format - Connection: {host_str}, Port: {port_str}"
+                )
+                logger.info(
+                    "Skipping actual connection test for Cloud SQL (requires proxy/network setup)"
+                )
+
                 # Validate port is numeric
                 try:
                     int(port_str)
                 except ValueError:
                     logger.error(f"Invalid port number: {port_str}")
                     return False
-                
+
                 # Format validation passed
                 return True
-            else:
-                # Standard PostgreSQL host - attempt actual connection
-                logger.info(f"Standard PostgreSQL format - Host: {host_str}, Port: {port_str}")
-                
-                def test_connection():
-                    # Use 'postgres' as default database for connection testing
-                    database = config.get('database', 'postgres')
-                    connection_string = f"postgresql://{config['user']}:{config['password']}@{host_str}:{port_str}/{database}"
-                    engine = create_engine(connection_string)
-                    with engine.connect() as conn:
-                        conn.execute(text("SELECT 1"))
-                    engine.dispose()
-                    return True
-                
-                # Run the blocking operation in a thread pool
-                loop = asyncio.get_event_loop()
-                result = await loop.run_in_executor(None, test_connection)
-                
-                logger.info(f"PostgreSQL connection successful")
-                return result
+            # Standard PostgreSQL host - attempt actual connection
+            logger.info(
+                f"Standard PostgreSQL format - Host: {host_str}, Port: {port_str}"
+            )
+
+            def test_connection() -> bool:
+                # Use 'postgres' as default database for connection testing
+                database = config.get("database", "postgres")
+                connection_string = f"postgresql://{config['user']}:{config['password']}@{host_str}:{port_str}/{database}"
+                engine = create_engine(connection_string)
+                with engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                engine.dispose()
+                return True
+
+            # Run the blocking operation in a thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, test_connection)
+
+            logger.info("PostgreSQL connection successful")
+            return result
         except Exception as e:
             logger.error(f"PostgreSQL connection test failed: {e}")
             return False
@@ -337,48 +642,108 @@ class AuthenticationService:
     async def _upsert_tenant_configurations(
         self,
         tenant_id: str,
-        postgres_config: Dict[str, Any],
-        bigquery_config: Dict[str, Any],
-        sftp_config: Dict[str, Any],
-        email_config: Dict[str, Any],
+        postgres_config: dict[str, Any],
+        bigquery_config: dict[str, Any],
+        sftp_config: dict[str, Any],
+        email_config: dict[str, Any],
         username: str,
     ) -> bool:
         """
-        Create or update tenant with the latest configurations from authentication API.
+        Create or update tenant configurations in the database.
 
-        This method always updates the tenant configurations with the latest values
-        retrieved from the authentication API, ensuring that any configuration changes
-        are immediately reflected in the database.
+        This method handles both new tenant provisioning and existing tenant
+        configuration updates. For new tenants, it provisions a complete database
+        with all required tables and functions before storing configurations.
+
+        Configuration Update Strategy:
+            - New tenants: Creates tenant database, then inserts configuration
+            - Existing tenants: Always updates with latest values from IdP
+            - All configurations are stored as JSON strings in the database
+            - Configurations are encrypted at rest by the database layer
+
+        Database Provisioning:
+            For new tenants, this method calls provision_tenant_database() which:
+            1. Creates a new PostgreSQL database for the tenant
+            2. Creates all required tables (users, events, tenant_config, etc.)
+            3. Creates all database functions (get_chart_data, etc.)
+            4. Sets up proper permissions and indexes
 
         Args:
-            tenant_id: The tenant ID
-            postgres_config: PostgreSQL configuration from authentication API
-            bigquery_config: BigQuery configuration from authentication API
-            sftp_config: SFTP configuration from authentication API
-            email_config: Email/SMTP configuration from authentication API
-            username: Username for tenant identification
+            tenant_id (str): Unique tenant identifier (UUID format). Used as:
+                - Database name for tenant isolation
+                - Primary key in tenant_config table
+            postgres_config (dict[str, Any]): PostgreSQL configuration dictionary.
+                Stored as JSON string in tenant_config.postgres_config column.
+            bigquery_config (dict[str, Any]): BigQuery configuration dictionary.
+                Extracted fields: project_id, dataset_id, service_account.
+                Stored in separate columns: bigquery_project_id, bigquery_dataset_id,
+                bigquery_credentials (JSON string).
+            sftp_config (dict[str, Any]): SFTP configuration dictionary.
+                Stored as JSON string in tenant_config.sftp_config column.
+            email_config (dict[str, Any]): SMTP/Email configuration dictionary.
+                Stored as JSON string in tenant_config.email_config column.
+            username (str): User's email/username for tenant identification.
+                Stored in tenant_config.name column.
 
         Returns:
-            True if successful, False otherwise
+            bool: True if tenant configuration was successfully created/updated,
+                False if provisioning failed or database operation failed.
+
+        Raises:
+            Exception: Any exception during database operations is caught, logged,
+                and returns False. Common exceptions:
+                - sqlalchemy.exc.OperationalError: Database connection failed
+                - sqlalchemy.exc.IntegrityError: Constraint violation
+                - json.JSONEncodeError: Configuration serialization failed
+
+        Example:
+            ```python
+            result = await service._upsert_tenant_configurations(
+                tenant_id="550e8400-e29b-41d4-a716-446655440000",
+                postgres_config={"host": "db.example.com", "port": 5432, ...},
+                bigquery_config={"project_id": "my-project", "dataset_id": "analytics"},
+                sftp_config={"host": "sftp.example.com", "port": 22, ...},
+                email_config={"server": "smtp.example.com", "port": 587, ...},
+                username="john@company.com"
+            )
+            
+            if result:
+                print("Tenant configuration stored successfully")
+            ```
+
+        Note:
+            - Always updates existing tenant configurations (never skips updates)
+            - New tenants get automatic database provisioning
+            - All configurations stored as JSON strings for flexibility
+            - BigQuery credentials stored separately for easier access
+            - Sets is_active=True and updates timestamps (created_at, updated_at)
+            - Uses tenant-specific database session for proper isolation
         """
         try:
             # First, check if this is a new tenant by checking if their database exists
             from common.database import tenant_database_exists
+
             is_new_tenant = not tenant_database_exists(tenant_id)
-            
+
             if is_new_tenant:
                 # Provision the tenant database (creates DB and all tables/functions)
-                logger.info(f"Provisioning new tenant database for tenant {tenant_id}...")
+                logger.info(
+                    f"Provisioning new tenant database for tenant {tenant_id}..."
+                )
                 provisioned = await provision_tenant_database(tenant_id)
-                
+
                 if not provisioned:
                     logger.error(f"Failed to provision database for tenant {tenant_id}")
                     return False
-                
-                logger.info(f"Successfully provisioned tenant database for tenant {tenant_id}")
-            
+
+                logger.info(
+                    f"Successfully provisioned tenant database for tenant {tenant_id}"
+                )
+
             # Use tenant-specific database session for inserting/updating tenant config
-            async with get_async_db_session("auth-service", tenant_id=tenant_id) as session:
+            async with get_async_db_session(
+                "auth-service", tenant_id=tenant_id
+            ) as session:
                 # Prepare configuration data
                 config_data = {
                     "tenant_id": tenant_id,
@@ -399,7 +764,7 @@ class AuthenticationService:
                         text(
                             """
                             INSERT INTO tenant_config (
-                                id, name, 
+                                id, name,
                                 bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
                                 postgres_config, sftp_config, email_config,
                                 is_active, created_at, updated_at
@@ -441,21 +806,60 @@ class AuthenticationService:
             logger.error(f"Failed to upsert tenant configurations for {tenant_id}: {e}")
             return False
 
-    async def logout_with_token(self, access_token: str) -> Dict[str, Any]:
+    async def logout_with_token(self, access_token: str) -> dict[str, Any]:
         """
-        Logout user by invalidating the access token.
+        Logout user by invalidating the access token with external Identity Provider.
+
+        This method calls the external IdP's logout endpoint to invalidate the
+        access token. It implements graceful error handling to allow frontend
+        cleanup even if external logout fails (e.g., token already invalid, endpoint
+        not found).
+
+        Error Handling Strategy:
+            - 200 OK: Logout successful
+            - 404 Not Found: Endpoint not available (returns error but allows local cleanup)
+            - 401 Unauthorized: Token already invalid (returns error but allows local cleanup)
+            - Other errors: Returns error message
+            - Network errors: Returns service unavailable message
 
         Args:
-            access_token: The access token to invalidate
+            access_token (str): OAuth access token (Bearer token) to invalidate.
+                This token will be sent to the external IdP for revocation.
+                Format: "Bearer token_string" or just "token_string"
 
         Returns:
-            Dict containing logout result
+            dict[str, Any]: Logout result dictionary with keys:
+                - success (bool): Whether logout operation completed successfully
+                - message (str): Human-readable status message
+
+        Raises:
+            httpx.RequestError: If HTTP request fails (network error, timeout).
+                Caught and returned as error response with success=False.
+            Exception: Any unexpected error during logout. Caught and logged,
+                returns generic error response.
+
+        Example:
+            ```python
+            result = await service.logout_with_token("bearer_token_here")
+            
+            if result["success"]:
+                print("Logout successful")
+            else:
+                print(f"Logout failed: {result['message']}")
+                # Frontend should still proceed with local cleanup
+            ```
+
+        Note:
+            - Uses 30-second timeout for HTTP requests
+            - Returns success=False for 404/401 but frontend should still cleanup
+            - Only raises exception for service unavailability (503)
+            - Logs all errors for debugging purposes
         """
         try:
             base_url = self.settings.BASE_URL
             logout_url = f"{base_url}/manage/auth/logout"
 
-            logger.info(f"Starting logout process")
+            logger.info("Starting logout process")
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 logout_response = await client.get(
@@ -464,25 +868,26 @@ class AuthenticationService:
                 )
 
                 if logout_response.status_code != 200:
-                    logger.error(f"Logout failed with status {logout_response.status_code}")
-                    
+                    logger.error(
+                        f"Logout failed with status {logout_response.status_code}"
+                    )
+
                     if logout_response.status_code == 404:
                         return {
                             "success": False,
                             "message": "Logout endpoint not found - the external service may not support logout",
                         }
-                    elif logout_response.status_code == 401:
+                    if logout_response.status_code == 401:
                         return {
                             "success": False,
                             "message": "Invalid token - logout failed due to authentication error",
                         }
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"Logout failed with status {logout_response.status_code}",
-                        }
+                    return {
+                        "success": False,
+                        "message": f"Logout failed with status {logout_response.status_code}",
+                    }
 
-                logger.info(f"Logout successful")
+                logger.info("Logout successful")
                 return {
                     "success": True,
                     "message": "Logout successful",
@@ -493,7 +898,7 @@ class AuthenticationService:
             logger.error(f"Base URL being used: {self.settings.BASE_URL}")
             return {
                 "success": False,
-                "message": f"Logout service unavailable: {str(e)}",
+                "message": f"Logout service unavailable: {e!s}",
             }
         except Exception as e:
             logger.error(f"Logout failed: {e}")
@@ -504,26 +909,93 @@ class AuthenticationService:
 
     def get_login_url(self) -> str:
         """
-        Get the login URL for OAuth authentication.
+        Get the OAuth login URL for redirecting users to the Identity Provider.
+
+        This method constructs the complete login URL by combining the BASE_URL
+        from service settings with the admin login path. The URL is used by the
+        frontend to redirect users to the external IdP's authentication page.
+
+        The constructed URL follows the pattern: "{BASE_URL}/admin/"
 
         Returns:
-            The complete login URL for the external OAuth service
+            str: Complete OAuth login URL where users should be redirected.
+                Example: "https://idp.example.com/admin/"
+
+        Example:
+            ```python
+            login_url = service.get_login_url()
+            # Returns: "https://idp.example.com/admin/"
+            
+            # Frontend redirects user
+            window.location.href = login_url
+            ```
+
+        Note:
+            - URL is constructed from BASE_URL environment variable
+            - Path "/admin/" is hardcoded based on IdP API structure
+            - This is a synchronous method (no I/O required)
+            - Users will be redirected back to frontend with authorization code
         """
         base_url = self.settings.BASE_URL
         # Based on the URL you provided, the admin login should be at /admin/
-        login_url = f"{base_url}/admin/"
-        
-        return login_url
+        return f"{base_url}/admin/"
 
-    async def validate_token(self, access_token: str) -> Dict[str, Any]:
+
+    async def validate_token(self, access_token: str) -> dict[str, Any]:
         """
-        Validate an access token and return user information.
+        Validate an access token and return associated user and tenant information.
+
+        This method validates an OAuth access token by calling the external IdP's
+        authentication endpoint. If the token is valid, it extracts and returns
+        user information including tenant ID, username, and business name.
+
+        The validation is performed synchronously against the external IdP to
+        ensure token authenticity. This method is used by other services (analytics,
+        data) to verify tokens before processing requests.
 
         Args:
-            access_token: The access token to validate
+            access_token (str): OAuth access token (Bearer token) to validate.
+                This token is sent to the external IdP for validation.
+                Format: "Bearer token_string" or just "token_string"
 
         Returns:
-            Dict containing validation result and user information
+            dict[str, Any]: Validation result dictionary with keys:
+                - valid (bool): Whether the token is valid and not expired
+                - message (str): Human-readable validation status message
+                - tenant_id (str | None): Tenant UUID if token is valid
+                - first_name (str | None): User's first name if token is valid
+                - username (str | None): User's email/username if token is valid
+                - business_name (str | None): Tenant's business name if token is valid
+
+        Raises:
+            httpx.RequestError: If HTTP request fails (network error, timeout).
+                Caught and returned as error response with valid=False.
+            json.JSONDecodeError: If response is not valid JSON. Caught and logged,
+                returns valid=True with unavailable user data.
+            Exception: Any unexpected error during validation. Caught and logged,
+                returns generic error response.
+
+        Example:
+            ```python
+            # In another service
+            validation = await service.validate_token("bearer_token_here")
+            
+            if validation["valid"]:
+                tenant_id = validation["tenant_id"]
+                username = validation["username"]
+                # Process request with tenant context
+            else:
+                # Return 401 Unauthorized to client
+                raise HTTPException(401, validation["message"])
+            ```
+
+        Note:
+            - Uses getappproperity endpoint for validation (known working endpoint)
+            - Returns valid=False (not exception) for invalid tokens
+            - Handles 401 (invalid/expired) and 404 (endpoint not found) gracefully
+            - User data parsing errors don't invalidate token (returns valid=True)
+            - Uses 30-second timeout for HTTP requests
+            - All errors are logged for debugging purposes
         """
         try:
             base_url = self.settings.BASE_URL
@@ -531,7 +1003,7 @@ class AuthenticationService:
             # This is a known working endpoint that requires authentication
             validate_url = f"{base_url}/manage/auth/getappproperity"
 
-            logger.info(f"Validating access token")
+            logger.info("Validating access token")
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 validate_response = await client.get(
@@ -540,8 +1012,10 @@ class AuthenticationService:
                 )
 
                 if validate_response.status_code != 200:
-                    logger.error(f"Token validation failed with status {validate_response.status_code}")
-                    
+                    logger.error(
+                        f"Token validation failed with status {validate_response.status_code}"
+                    )
+
                     if validate_response.status_code == 401:
                         return {
                             "valid": False,
@@ -551,7 +1025,7 @@ class AuthenticationService:
                             "username": None,
                             "business_name": None,
                         }
-                    elif validate_response.status_code == 404:
+                    if validate_response.status_code == 404:
                         return {
                             "valid": False,
                             "message": "Token validation endpoint not available",
@@ -560,15 +1034,14 @@ class AuthenticationService:
                             "username": None,
                             "business_name": None,
                         }
-                    else:
-                        return {
-                            "valid": False,
-                            "message": f"Token validation failed with status {validate_response.status_code}",
-                            "tenant_id": None,
-                            "first_name": None,
-                            "username": None,
-                            "business_name": None,
-                        }
+                    return {
+                        "valid": False,
+                        "message": f"Token validation failed with status {validate_response.status_code}",
+                        "tenant_id": None,
+                        "first_name": None,
+                        "username": None,
+                        "business_name": None,
+                    }
 
                 # If we get here, the token is valid
                 try:
@@ -577,7 +1050,7 @@ class AuthenticationService:
                     first_name = user_data.get("firstName")
                     username = user_data.get("username")
                     business_name = user_data.get("businessName")
-                    
+
                     logger.info(f"Token validation successful for user: {username}")
                     return {
                         "valid": True,
@@ -588,7 +1061,9 @@ class AuthenticationService:
                         "business_name": business_name,
                     }
                 except Exception as e:
-                    logger.error(f"Failed to parse user data from token validation: {e}")
+                    logger.error(
+                        f"Failed to parse user data from token validation: {e}"
+                    )
                     return {
                         "valid": True,  # Token is valid, but we couldn't parse user data
                         "message": "Token is valid but user data unavailable",
@@ -603,7 +1078,7 @@ class AuthenticationService:
             logger.error(f"Base URL being used: {self.settings.BASE_URL}")
             return {
                 "valid": False,
-                "message": f"Token validation service unavailable: {str(e)}",
+                "message": f"Token validation service unavailable: {e!s}",
                 "tenant_id": None,
                 "first_name": None,
                 "username": None,

@@ -2,18 +2,18 @@
 Response models for analytics service API endpoints.
 """
 
-from .locations import LocationResponse
 from .email import (
     BranchEmailMappingRequest,
     BranchEmailMappingResponse,
-    SendReportsRequest,
     EmailJobResponse,
+    SendReportsRequest,
 )
+from .locations import LocationResponse
 
 __all__ = [
-    "LocationResponse",
     "BranchEmailMappingRequest",
-    "BranchEmailMappingResponse", 
-    "SendReportsRequest",
+    "BranchEmailMappingResponse",
     "EmailJobResponse",
+    "LocationResponse",
+    "SendReportsRequest",
 ]

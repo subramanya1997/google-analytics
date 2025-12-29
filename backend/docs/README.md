@@ -2,7 +2,7 @@
 
 > **Google Analytics Intelligence System**  
 > **Version**: 1.0.0  
-> **Last Updated**: November 2024
+> **Last Updated**: December 2025
 
 ## Documentation Index
 
@@ -19,7 +19,7 @@ Welcome to the backend documentation. This documentation follows MAANG-style sta
 | [DATABASE.md](./DATABASE.md) | Schema, tables, functions, indexes | Backend devs, DBAs |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Setup guide, coding standards, debugging | New developers |
 | [RUNBOOK.md](./RUNBOOK.md) | Operations guide, incident response | On-call engineers |
-| [Azure_Functions_Deployment.md](./Azure_Functions_Deployment.md) | Azure Functions deployment guide | DevOps, Backend devs |
+| [AZURE_FUNCTIONS_DEPLOYMENT.md](./AZURE_FUNCTIONS_DEPLOYMENT.md) | Azure Functions deployment guide | DevOps, Backend devs |
 
 ---
 

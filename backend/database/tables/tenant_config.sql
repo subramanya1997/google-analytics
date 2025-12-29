@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS public.tenant_config (
   bigquery_credentials jsonb,
   sftp_config jsonb,
   email_config jsonb,
-  postgres_config jsonb NOT NULL,
   bigquery_enabled boolean DEFAULT true,
   sftp_enabled boolean DEFAULT true,
   smtp_enabled boolean DEFAULT true,

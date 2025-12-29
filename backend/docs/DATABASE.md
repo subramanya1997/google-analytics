@@ -1,7 +1,7 @@
 # Database Documentation
 
 > **Database**: PostgreSQL 14+  
-> **Last Updated**: November 2024  
+> **Last Updated**: December 2025  
 > **Owner**: Backend Team
 
 ## Table of Contents
@@ -44,20 +44,20 @@ DATABASE_MAX_OVERFLOW=5
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              CORE TABLES                                     │
+│                              CORE TABLES                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌──────────────────┐                                                        │
+│                                                                             │
+│  ┌──────────────────┐                                                       │
 │  │  tenant_config   │◄──────────────────────────────────────────────┐       │
 │  ├──────────────────┤                                               │       │
 │  │ id (PK, UUID)    │                                               │       │
 │  │ name             │                                               │       │
 │  │ bigquery_*       │       ┌──────────────────┐                    │       │
-│  │ postgres_config  │       │     users        │                    │       │
-│  │ sftp_config      │       ├──────────────────┤                    │       │
-│  │ email_config     │       │ user_id (PK)     │                    │       │
-│  │ is_active        │       │ tenant_id (FK)───┼────────────────────┤       │
-│  └──────────────────┘       │ email            │                    │       │
+│  │ sftp_config      │       │     users        │                    │       │
+│  │ email_config     │       ├──────────────────┤                    │       │
+│  │ is_active        │       │ user_id (PK)     │                    │       │
+│  └──────────────────┘       │ tenant_id (FK)───┼────────────────────┤       │
+│                             │ email            │                    │       │
 │                             │ company_name     │                    │       │
 │                             └──────────────────┘                    │       │
 │                                                                     │       │
@@ -75,9 +75,9 @@ DATABASE_MAX_OVERFLOW=5
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                             EVENT TABLES                                     │
+│                             EVENT TABLES                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
+│                                                                             │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
 │  │     purchase     │  │   add_to_cart    │  │    page_view     │          │
 │  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤          │
@@ -93,7 +93,7 @@ DATABASE_MAX_OVERFLOW=5
 │  │ device_*, geo_*  │  │ device_*, geo_*  │  │ geo_*            │          │
 │  │ raw_data (JSONB) │  │ raw_data (JSONB) │  │ raw_data (JSONB) │          │
 │  └──────────────────┘  └──────────────────┘  └──────────────────┘          │
-│                                                                              │
+│                                                                            │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
 │  │    view_item     │  │view_search_result│  │ no_search_results│          │
 │  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤          │
@@ -104,13 +104,13 @@ DATABASE_MAX_OVERFLOW=5
 │  │ items_json       │  │ param_*          │  │ param_*          │          │
 │  │ raw_data (JSONB) │  │ raw_data (JSONB) │  │ raw_data (JSONB) │          │
 │  └──────────────────┘  └──────────────────┘  └──────────────────┘          │
-│                                                                              │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                            EMAIL TABLES                                      │
+│                            EMAIL TABLES                                     │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
+│                                                                             │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
 │  │branch_email_map  │  │email_sending_jobs│  │email_send_history│          │
 │  ├──────────────────┤  ├──────────────────┤  ├──────────────────┤          │
@@ -124,7 +124,7 @@ DATABASE_MAX_OVERFLOW=5
 │  └──────────────────┘  │ emails_sent      │  │ error_message    │          │
 │                        │ emails_failed    │  │ sent_at          │          │
 │                        └──────────────────┘  └──────────────────┘          │
-│                                                                              │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -148,9 +148,6 @@ CREATE TABLE tenant_config (
     bigquery_enabled BOOLEAN DEFAULT TRUE,
     bigquery_validation_error TEXT,
     
-    -- PostgreSQL configuration (REQUIRED)
-    postgres_config JSONB NOT NULL,
-    
     -- SFTP configuration (optional)
     sftp_config JSONB,
     sftp_enabled BOOLEAN DEFAULT TRUE,
@@ -173,7 +170,6 @@ CREATE TABLE tenant_config (
 | `id` | UUID | Primary key, auto-generated |
 | `name` | VARCHAR(255) | Tenant display name |
 | `bigquery_*` | Various | GA4 BigQuery connection config |
-| `postgres_config` | JSONB | Tenant's PostgreSQL connection |
 | `sftp_config` | JSONB | SFTP server for master data |
 | `email_config` | JSONB | SMTP configuration |
 | `*_enabled` | BOOLEAN | Service availability flags |
@@ -784,18 +780,6 @@ CREATE INDEX idx_processing_jobs_tenant_created ON processing_jobs(tenant_id, cr
   "view_item": 67000,
   "users_processed": 5000,
   "locations_processed": 150
-}
-```
-
-#### postgres_config (tenant_config)
-
-```json
-{
-  "host": "db.example.com",
-  "port": 5432,
-  "database": "analytics",
-  "user": "analytics_user",
-  "password": "encrypted_password"
 }
 ```
 

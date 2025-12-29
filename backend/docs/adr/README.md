@@ -31,12 +31,12 @@ What other options did we evaluate?
 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
-| [001](./001-microservices-architecture.md) | Microservices Architecture | Accepted | 2024-10 |
-| [002](./002-postgresql-functions.md) | PostgreSQL Functions for Analytics | Accepted | 2024-10 |
-| [003](./003-async-first-design.md) | Async-First Design Pattern | Accepted | 2024-10 |
-| [004](./004-multi-tenant-isolation.md) | Multi-Tenant Row-Level Isolation | Accepted | 2024-10 |
-| [005](./005-fastapi-factory-pattern.md) | FastAPI Application Factory | Accepted | 2024-10 |
-| [006](./006-bigquery-parallel-extraction.md) | Parallel BigQuery Extraction | Accepted | 2024-10 |
+| [001](./001-microservices-architecture.md) | Microservices Architecture | Accepted | 2025-12 |
+| [002](./002-postgresql-functions.md) | PostgreSQL Functions for Analytics | Accepted | 2025-12 |
+| [003](./003-async-first-design.md) | Async-First Design Pattern | Accepted | 2025-12 |
+| [004](./004-multi-tenant-isolation.md) | Multi-Tenant Row-Level Isolation | Accepted | 2025-12 |
+| [005](./005-fastapi-factory-pattern.md) | FastAPI Application Factory | Accepted | 2025-12 |
+| [006](./006-bigquery-parallel-extraction.md) | Parallel BigQuery Extraction | Accepted | 2025-12 |
 
 ## Creating a New ADR
 

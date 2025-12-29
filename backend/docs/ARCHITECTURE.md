@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-> **Last Updated**: November 2024  
+> **Last Updated**: December 2025  
 > **Status**: Living Document  
 > **Owner**: Backend Team
 

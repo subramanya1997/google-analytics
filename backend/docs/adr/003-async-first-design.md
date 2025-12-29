@@ -2,7 +2,7 @@
 
 ## Status
 
-**Accepted** (October 2024)
+**Accepted** (December 2025)
 
 ## Context
 

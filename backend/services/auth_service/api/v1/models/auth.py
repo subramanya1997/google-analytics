@@ -78,10 +78,10 @@ class AuthResponse(BaseModel):
         access_token (str | None): OAuth access token (Bearer token) for
             subsequent API calls. Only present if success=True.
         missing_configs (list[str] | None): List of configuration keys that
-            are required but missing. Examples: ["postgres_config"]
+            are required but missing. Examples: ["bigquery_config"]
         invalid_configs (list[str] | None): List of configuration keys that
             are present but invalid (e.g., connection failed). Examples:
-            ["postgres_config", "bigquery_config"]
+            ["bigquery_config", "sftp_config"]
 
     Example:
         ```json

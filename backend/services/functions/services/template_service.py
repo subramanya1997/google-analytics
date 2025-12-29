@@ -14,10 +14,37 @@ from loguru import logger
 
 
 class TemplateService:
-    """Service for rendering HTML templates."""
+    """
+    Service for rendering HTML email templates using Jinja2.
+
+    This service provides template rendering capabilities for branch analytics
+    reports. It uses Jinja2 for template processing with custom filters for
+    currency formatting, date formatting, and JSON parsing.
+
+    Templates are loaded from the templates directory and rendered with
+    analytics data to produce complete HTML emails ready for SMTP delivery.
+
+    Attributes:
+        env: Jinja2 Environment instance configured with template loader and filters.
+
+    Example:
+        >>> service = TemplateService()
+        >>> html = service.render_branch_report(report_data)
+    """
 
     def __init__(self) -> None:
-        """Initialize template service with Jinja2 environment."""
+        """
+        Initialize template service with Jinja2 environment.
+
+        Sets up the Jinja2 environment with:
+        - FileSystemLoader for template loading
+        - Auto-escaping enabled for security
+        - Custom filters for currency, dates, and JSON
+
+        Note:
+            Templates directory is located at: services/templates/
+            Directory is created if it doesn't exist.
+        """
         # Get templates directory relative to this file
         # In Azure Functions: services/template_service.py -> templates/
         templates_dir = Path(__file__).parent.parent / "templates"
@@ -36,13 +63,45 @@ class TemplateService:
 
     def render_branch_report(self, report_data: dict[str, Any]) -> str:
         """
-        Render branch report HTML template.
+        Render branch analytics report HTML template with data.
+
+        This method transforms analytics data into a complete HTML email report
+        by rendering the Jinja2 template with formatted data including:
+        - Location information
+        - Purchase summaries and samples
+        - Cart abandonment metrics
+        - Search analysis results
+        - Repeat visit patterns
+        - Revenue calculations
 
         Args:
-            report_data: Report data containing location, tasks, etc.
+            report_data: Dictionary containing:
+                - location: Branch location information
+                - report_date: Date object for the report
+                - summary: Summary statistics dictionary
+                - tasks: Dictionary of task data by type
 
         Returns:
-            Rendered HTML content
+            str: Complete HTML content ready for email delivery.
+
+        Raises:
+            Exception: If template rendering fails, returns fallback HTML instead.
+
+        Note:
+            - Uses branch_report.html template
+            - Transforms data to match template expectations
+            - Includes fallback HTML generation on template errors
+            - Custom filters handle currency and date formatting
+            - Calculates derived metrics (unique customers, averages, etc.)
+
+        Example:
+            >>> report_data = {
+            ...     "location": {"locationId": "BR001", ...},
+            ...     "report_date": date(2024, 1, 14),
+            ...     "summary": {"total_purchases": 50, ...},
+            ...     "tasks": {"purchases": [...], ...}
+            ... }
+            >>> html = service.render_branch_report(report_data)
         """
         try:
             template = self.env.get_template("branch_report.html")
@@ -147,7 +206,24 @@ class TemplateService:
             return self._render_fallback_branch_report(report_data)
 
     def _currency_filter(self, value: Any) -> str:
-        """Format value as currency."""
+        """
+        Jinja2 filter to format numeric values as US currency.
+
+        Converts various input types (int, float, string) to formatted
+        currency string with dollar sign and comma separators.
+
+        Args:
+            value: Numeric value or string to format. Can be int, float, or string.
+
+        Returns:
+            str: Formatted currency string (e.g., "$1,234.56").
+                Returns original value as string if conversion fails.
+
+        Note:
+            - Handles already-formatted strings (returns as-is)
+            - Strips existing currency symbols before formatting
+            - Defaults to "$0.00" for invalid inputs
+        """
         try:
             if isinstance(value, str):
                 # Already formatted
@@ -164,7 +240,24 @@ class TemplateService:
             return str(value)
 
     def _date_format_filter(self, value: Any, format: str = "%Y-%m-%d") -> str:
-        """Format date value."""
+        """
+        Jinja2 filter to format date/datetime values as strings.
+
+        Converts datetime objects or ISO date strings to formatted date strings
+        using the specified format pattern.
+
+        Args:
+            value: Date value to format. Can be datetime object or ISO string.
+            format: strftime format pattern (default: "%Y-%m-%d").
+
+        Returns:
+            str: Formatted date string. Returns original value as string if conversion fails.
+
+        Note:
+            - Handles datetime objects directly
+            - Parses ISO format strings (handles 'Z' timezone indicator)
+            - Returns original value as string on parse errors
+        """
         try:
             if isinstance(value, datetime):
                 return value.strftime(format)
@@ -177,7 +270,23 @@ class TemplateService:
             return str(value)
 
     def _json_parse_filter(self, value: str) -> list[dict[str, Any]]:
-        """Parse JSON string to Python object."""
+        """
+        Jinja2 filter to parse JSON strings to Python objects.
+
+        Converts JSON-encoded strings (typically from database JSONB columns)
+        back to Python lists/dictionaries for template rendering.
+
+        Args:
+            value: JSON string to parse.
+
+        Returns:
+            list[dict[str, Any]]: Parsed JSON data as Python list.
+                                Returns empty list if parsing fails.
+
+        Note:
+            - Used for parsing product lists and other JSON data
+            - Returns empty list on parse errors for graceful handling
+        """
         try:
             if isinstance(value, str):
                 return json.loads(value)
@@ -186,7 +295,24 @@ class TemplateService:
             return []
 
     def _render_fallback_branch_report(self, report_data: dict[str, Any]) -> str:
-        """Render fallback HTML when template fails."""
+        """
+        Generate fallback HTML report when template rendering fails.
+
+        Creates a simplified HTML report with basic styling when the main
+        template cannot be rendered. This ensures email delivery always
+        succeeds even if template processing fails.
+
+        Args:
+            report_data: Report data dictionary containing location and summary information.
+
+        Returns:
+            str: Complete HTML document with fallback report content.
+
+        Note:
+            - Used as error recovery mechanism
+            - Includes basic styling for email client compatibility
+            - Displays summary statistics even if detailed data unavailable
+        """
         location = report_data.get("location", {})
         location_name = location.get("locationName", "Unknown Branch")
         city = location.get("city", "")
@@ -270,7 +396,23 @@ class TemplateService:
     def _transform_purchase_samples(
         self, purchases: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Transform purchase data to match template format."""
+        """
+        Transform purchase task data to template-expected format.
+
+        Converts database purchase records into the structure expected by
+        the Jinja2 template, including product list parsing and field mapping.
+
+        Args:
+            purchases: List of purchase task dictionaries from database.
+
+        Returns:
+            list[dict[str, Any]]: Transformed purchase records with template fields.
+
+        Note:
+            - Parses JSON product lists from database
+            - Maps database fields to template field names
+            - Handles missing fields gracefully with defaults
+        """
         samples = []
         for purchase in purchases:
             sample = {
@@ -308,7 +450,23 @@ class TemplateService:
     def _transform_cart_samples(
         self, carts: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Transform cart abandonment data to match template format."""
+        """
+        Transform cart abandonment data to template-expected format.
+
+        Converts database cart abandonment records into the structure expected
+        by the Jinja2 template, including product list parsing.
+
+        Args:
+            carts: List of cart abandonment task dictionaries from database.
+
+        Returns:
+            list[dict[str, Any]]: Transformed cart records with template fields.
+
+        Note:
+            - Parses JSON product lists from database
+            - Maps database fields to template field names
+            - Handles missing fields gracefully
+        """
         samples = []
         for cart in carts:
             sample = {
@@ -346,7 +504,24 @@ class TemplateService:
     def _transform_search_samples(
         self, searches: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Transform search data to match template format."""
+        """
+        Transform search analysis data to template-expected format.
+
+        Groups search events by search term and aggregates statistics including
+        total searches, unique sessions, and user details.
+
+        Args:
+            searches: List of search analysis task dictionaries from database.
+
+        Returns:
+            list[dict[str, Any]]: Transformed search records grouped by term,
+                                sorted by search count (top 10).
+
+        Note:
+            - Groups multiple search events by search term
+            - Calculates unique sessions and user counts
+            - Returns top 10 search terms by frequency
+        """
         # Group by search term
         term_groups = {}
         for search in searches:
@@ -390,7 +565,23 @@ class TemplateService:
     def _transform_repeat_samples(
         self, visits: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Transform repeat visit data to match template format."""
+        """
+        Transform repeat visit data to template-expected format.
+
+        Converts database repeat visit records into the structure expected by
+        the Jinja2 template, including product detail parsing.
+
+        Args:
+            visits: List of repeat visit task dictionaries from database.
+
+        Returns:
+            list[dict[str, Any]]: Transformed visit records with template fields.
+
+        Note:
+            - Parses JSON product details from database
+            - Transforms products to page-like structure for display
+            - Limits to top 5 products per visit
+        """
         samples = []
         for visit in visits:
             pages_summary = []

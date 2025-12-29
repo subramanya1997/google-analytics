@@ -17,14 +17,14 @@ on:
       - main
       - master
     paths:
-      - 'backend/services/data_service_functions/clients/**'
-      - 'backend/services/data_service_functions/services/**'
-      - 'backend/services/data_service_functions/shared/**'
-      - 'backend/services/data_service_functions/templates/**'
-      - 'backend/services/data_service_functions/*.py'
-      - 'backend/services/data_service_functions/*.json'
-      - 'backend/services/data_service_functions/*.txt'
-      - 'backend/services/data_service_functions/*.ini'
+      - 'backend/services/functions/clients/**'
+      - 'backend/services/functions/services/**'
+      - 'backend/services/functions/shared/**'
+      - 'backend/services/functions/templates/**'
+      - 'backend/services/functions/*.py'
+      - 'backend/services/functions/*.json'
+      - 'backend/services/functions/*.txt'
+      - 'backend/services/functions/*.ini'
       - '.github/workflows/master_gadataingestion.yml'
   workflow_dispatch:
     inputs:
@@ -39,7 +39,7 @@ on:
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'gadataingestion'
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/data_service_functions'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
   PYTHON_VERSION: '3.10'
 
 jobs:

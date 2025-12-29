@@ -42,7 +42,7 @@ Example:
 See Also:
     - services.data_service.api: API endpoint definitions
     - services.data_service.database: Database repository layer
-    - services.data_service_functions: Azure Functions for background processing
+    - services.functions: Azure Functions for background processing
 """
 
 from services.data_service.main import app

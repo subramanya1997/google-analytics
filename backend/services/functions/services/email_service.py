@@ -10,9 +10,9 @@ import contextlib
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from collections import defaultdict
 import smtplib
 from typing import Any
-from uuid import uuid4
 
 from loguru import logger
 from shared.database import create_repository
@@ -22,50 +22,47 @@ from services.report_service import ReportService
 
 class EmailService:
     """
-    Service for handling email operations.
+    Service for handling email report generation and SMTP delivery.
 
-    Each tenant has their own isolated database for SOC2 compliance.
+    This service orchestrates the complete email workflow, including:
+    - Email job creation and status tracking
+    - Branch report generation with analytics data
+    - HTML template rendering
+    - SMTP email delivery to configured recipients
+    - Email send history logging for compliance
+
+    Each tenant has their own isolated database (google-analytics-{tenant_id})
+    and SMTP configuration for SOC2 compliance. The service supports sending
+    reports to individual branches or all branches based on configuration.
+
+    Attributes:
+        tenant_id: The tenant identifier used for database routing.
+        repo: Repository instance for database operations.
+        report_service: Service for generating HTML reports.
+
+    Example:
+        >>> service = EmailService("550e8400-e29b-41d4-a716-446655440000")
+        >>> result = await service.process_email_job(tenant_id, job_id, report_date)
     """
 
     def __init__(self, tenant_id: str) -> None:
         """
         Initialize email service for a specific tenant.
 
+        Creates repository and report service instances configured for the
+        tenant's isolated database and configuration.
+
         Args:
-            tenant_id: The tenant ID - determines which database to connect to.
+            tenant_id: The tenant ID (UUID string) that determines which database
+                      and SMTP configuration to use.
+
+        Raises:
+            ValueError: If tenant_id is invalid or database connection fails.
         """
         self.tenant_id = tenant_id
         self.repo = create_repository(tenant_id)
         self.report_service = ReportService(tenant_id)
 
-    async def create_and_process_email_job(
-        self, tenant_id: str, report_date, branch_codes: list[str] | None = None
-    ) -> str:
-        """
-        Create an email job and process it.
-
-        Args:
-            tenant_id: Tenant ID
-            report_date: Date for report generation
-            branch_codes: Optional list of branch codes (None = all branches)
-
-        Returns:
-            Job ID for tracking
-        """
-        job_id = f"email_{uuid4().hex[:12]}"
-
-        # Create job record in database
-        job_data = {
-            "job_id": job_id,
-            "tenant_id": tenant_id,
-            "status": "queued",
-            "report_date": report_date,
-            "target_branches": branch_codes or [],
-        }
-
-        await self.repo.create_email_job(job_data)
-
-        return job_id
 
     async def process_email_job(
         self,
@@ -75,16 +72,56 @@ class EmailService:
         branch_codes: list[str] | None = None,
     ) -> dict[str, Any]:
         """
-        Process email sending job.
+        Process email sending job by generating and sending branch reports.
+
+        This method orchestrates the complete email workflow:
+        1. Validates email configuration and branch mappings
+        2. Generates HTML reports for each branch using analytics data
+        3. Sends emails via SMTP to configured sales representatives
+        4. Logs email send history for each attempt
+        5. Updates job status with completion metrics
+
+        The method handles partial failures gracefully - if some emails fail,
+        others can still succeed, and the job status reflects this.
 
         Args:
-            tenant_id: Tenant ID
-            job_id: Job ID
-            report_date: Date for report generation
-            branch_codes: Optional list of branch codes
+            tenant_id: Tenant ID for database routing and configuration lookup.
+            job_id: Unique identifier for tracking this email job.
+            report_date: Date for which to generate analytics reports.
+            branch_codes: Optional list of branch codes to process.
+                        If None, processes all configured branches.
 
         Returns:
-            Job result summary
+            dict[str, Any]: Job result summary containing:
+                - job_id: The job identifier
+                - status: Final job status ("completed", "completed_with_errors", "failed")
+                - total_emails: Total number of emails attempted
+                - emails_sent: Number of successfully sent emails
+                - emails_failed: Number of failed email attempts
+
+        Raises:
+            Exception: If email configuration is missing, no branch mappings found,
+                      or critical errors occur during processing.
+
+        Note:
+            - Job status is updated to "processing" at start
+            - Each branch report is generated independently
+            - Individual email failures are logged but don't stop the job
+            - Job status reflects overall success/failure state
+            - Email send history is logged for compliance auditing
+            - SMTP connection is created fresh for each email (stateless)
+
+        Example:
+            >>> result = await service.process_email_job(
+            ...     tenant_id,
+            ...     "email_abc123",
+            ...     date(2024, 1, 14),
+            ...     branch_codes=["BR001"]
+            ... )
+            >>> result["status"]
+            'completed'
+            >>> result["emails_sent"]
+            1
         """
         try:
             logger.info(f"Starting email job {job_id} for tenant {tenant_id}")
@@ -126,7 +163,7 @@ class EmailService:
             emails_failed = 0
 
             # Group mappings by branch
-            from collections import defaultdict
+
 
             mappings_by_branch = defaultdict(list)
             for mapping in filtered_mappings:
@@ -240,16 +277,58 @@ class EmailService:
         tenant_id: str,
     ) -> None:
         """
-        Send individual branch email.
+        Send individual branch report email via SMTP.
+
+        This method creates an HTML email message, connects to the SMTP server
+        using tenant-specific configuration, and sends the branch analytics
+        report to the configured sales representative. The email send attempt
+        is logged to the database for audit purposes.
 
         Args:
-            email_config: SMTP configuration
-            mapping: Email recipient mapping
-            branch_report_html: Generated branch HTML report
-            report_date: Date of the report
-            branch_code: Branch code for the report
-            job_id: Job ID for tracking
-            tenant_id: Tenant ID
+            email_config: SMTP server configuration dictionary containing:
+                - server: SMTP server hostname
+                - port: SMTP server port (default: 587)
+                - username: SMTP authentication username (optional)
+                - password: SMTP authentication password (optional)
+                - from_address: Sender email address
+                - use_ssl: Boolean for SSL connection (default: False)
+                - use_tls: Boolean for STARTTLS (default: True)
+            mapping: Branch email mapping dictionary containing:
+                - sales_rep_email: Recipient email address
+                - sales_rep_name: Recipient name (optional)
+                - branch_code: Branch identifier
+                - is_enabled: Whether this mapping is active
+            branch_report_html: Complete HTML content of the branch report.
+            report_date: Date for which the report was generated.
+            branch_code: Branch/warehouse code for the report.
+            job_id: Email job identifier for tracking and logging.
+            tenant_id: Tenant ID for database logging.
+
+        Returns:
+            None: Email is sent synchronously. Results are logged to database.
+
+        Raises:
+            smtplib.SMTPException: If SMTP server connection or send fails.
+            Exception: Various SMTP-related errors (authentication, network, etc.)
+
+        Note:
+            - SMTP connection is created fresh for each email (stateless)
+            - Supports both SSL (port 465) and STARTTLS (port 587) connections
+            - Email subject format: "Daily Branch Sales Report - {date} - {branch_code}"
+            - Email send history is logged with status "sent" or "failed"
+            - SMTP response is captured and stored for debugging
+            - Connection is properly closed even on errors
+
+        Example:
+            >>> await service._send_branch_email(
+            ...     email_config,
+            ...     {"sales_rep_email": "rep@example.com", ...},
+            ...     "<html>...</html>",
+            ...     date(2024, 1, 14),
+            ...     "BR001",
+            ...     "email_abc123",
+            ...     tenant_id
+            ... )
         """
         # Create email message
         msg = MIMEMultipart("related")

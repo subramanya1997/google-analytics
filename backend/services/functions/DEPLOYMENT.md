@@ -172,12 +172,12 @@ on:
       - feat/azure_functions
       - main
     paths:
-      - 'backend/services/data_service_functions/**'
+      - 'backend/services/functions/**'
   workflow_dispatch:  # Manual trigger
 
 env:
   AZURE_FUNCTIONAPP_NAME: 'func-data-ingestion-prod'  # Your function app name
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/data_service_functions'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
   PYTHON_VERSION: '3.9'
 
 jobs:
@@ -293,7 +293,7 @@ az storage queue create --name ingestion-jobs --connection-string "$STORAGE_CONN
 az storage queue create --name email-jobs --connection-string "$STORAGE_CONN"
 
 # Deploy from local
-cd backend/services/data_service_functions
+cd backend/services/functions
 func azure functionapp publish func-data-ingestion-prod
 ```
 
@@ -325,7 +325,7 @@ curl -X GET "$FUNCTION_URL/api/v1/health"
 
 # Test ingestion via queue (from your local machine)
 cd backend
-uv run python services/data_service_functions/tests/test_ingestion.py \
+uv run python services/functions/tests/test_ingestion.py \
   --tenant-id "your-tenant-uuid" \
   --days 7
 
@@ -346,7 +346,7 @@ ORDER BY created_at DESC
 LIMIT 10;
 
 # Test email reports via queue
-uv run python services/data_service_functions/tests/test_email_sending.py \
+uv run python services/functions/tests/test_email_sending.py \
   --tenant-id "your-tenant-uuid" \
   --report-date "2025-01-15" \
   --branch-codes "D01,D02"

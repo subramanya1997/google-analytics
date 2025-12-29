@@ -17,7 +17,7 @@ import uuid
 
 from dotenv import load_dotenv
 from loguru import logger
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -25,7 +25,24 @@ load_dotenv()
 
 
 def ensure_uuid_string(tenant_id: str) -> str:
-    """Convert tenant_id to a consistent UUID string format."""
+    """
+    Convert tenant_id to a consistent UUID string format.
+
+    Ensures tenant IDs are in valid UUID format for database operations.
+    If the input is not a valid UUID, generates a deterministic UUID using
+    MD5 hashing to maintain consistency.
+
+    Args:
+        tenant_id: Tenant identifier string (may be UUID or other format).
+
+    Returns:
+        str: Valid UUID string representation of the tenant ID.
+
+    Note:
+        - Valid UUIDs are returned as-is
+        - Non-UUID strings are hashed to UUID format deterministically
+        - Used for consistent database naming and tenant isolation
+    """
     try:
         uuid_obj = uuid.UUID(tenant_id)
         return str(uuid_obj)
@@ -93,17 +110,6 @@ def create_sqlalchemy_url(tenant_id: str | None = None, async_driver: bool = Fal
     )
 
 
-def get_sync_engine(tenant_id: str | None = None) -> Any:
-    """Get a fresh sync database engine (no pooling for serverless)."""
-    url = create_sqlalchemy_url(tenant_id=tenant_id, async_driver=False)
-
-    return create_engine(
-        url,
-        pool_pre_ping=True,
-        pool_size=1,
-        max_overflow=0,
-        echo=os.getenv("DATABASE_ECHO", "false").lower() == "true",
-    )
 
 
 def get_async_engine(tenant_id: str | None = None) -> Any:
@@ -162,24 +168,74 @@ async def get_db_session(tenant_id: str | None = None) -> Any:
 
 class FunctionsRepository:
     """
-    Data-access layer for Azure Functions.
-    Designed for stateless per-request connections.
+    Data-access layer for Azure Functions with tenant isolation.
 
-    Each tenant has their own isolated database (google-analytics-{tenant_id})
-    for SOC2 compliance and data isolation.
+    This repository provides database operations for Azure Functions, designed
+    for stateless per-request connections suitable for serverless environments.
+    All operations use tenant-specific database connections to ensure complete
+    data isolation for SOC2 compliance.
+
+    Each tenant has their own isolated database named google-analytics-{tenant_id},
+    ensuring no data leakage between tenants. The repository handles:
+    - Job creation and status tracking
+    - Event data insertion and replacement
+    - User and location data upserts
+    - Email job management
+    - Analytics task queries
+    - Configuration retrieval
+
+    Attributes:
+        tenant_id: Normalized tenant UUID string used for database routing.
+
+    Example:
+        >>> repo = FunctionsRepository("550e8400-e29b-41d4-a716-446655440000")
+        >>> await repo.create_processing_job(job_data)
     """
 
     def __init__(self, tenant_id: str) -> None:
         """
         Initialize repository for a specific tenant.
 
+        Normalizes the tenant ID to UUID format and stores it for use in
+        all database operations. The tenant_id determines which database
+        to connect to for all subsequent operations.
+
         Args:
-            tenant_id: The tenant ID - used to connect to the correct database.
+            tenant_id: The tenant ID (UUID string or convertible format)
+                      used to connect to the correct isolated database.
+
+        Note:
+            - Tenant ID is normalized to UUID format internally
+            - All database operations use this tenant's database
         """
         self.tenant_id = ensure_uuid_string(tenant_id)
 
     async def create_processing_job(self, job_data: dict[str, Any]) -> dict[str, Any]:
-        """Create a new processing job."""
+        """
+        Create a new data ingestion job record in the database.
+
+        Inserts a job record with initial status and configuration, storing
+        data types, date ranges, and progress tracking fields as JSONB.
+
+        Args:
+            job_data: Dictionary containing:
+                - job_id: Unique job identifier
+                - tenant_id: Tenant ID (will be normalized)
+                - status: Initial job status (typically "queued")
+                - data_types: List of data types to process
+                - start_date: Start date for data ingestion
+                - end_date: End date for data ingestion
+                - progress: Optional progress tracking dictionary
+                - records_processed: Optional initial records dictionary
+
+        Returns:
+            dict[str, Any]: Created job record as dictionary.
+
+        Note:
+            - Converts data_types list to JSONB for storage
+            - Sets created_at timestamp automatically
+            - Progress and records_processed default to empty dicts if not provided
+        """
         async with get_db_session(tenant_id=self.tenant_id) as session:
             if "tenant_id" in job_data:
                 job_data["tenant_id"] = ensure_uuid_string(job_data["tenant_id"])
@@ -225,7 +281,30 @@ class FunctionsRepository:
     async def update_job_status(
         self, job_id: str, status: str, **kwargs: Any
     ) -> bool:
-        """Update job status with optional additional fields."""
+        """
+        Update ingestion job status and optional fields.
+
+        Updates the job record with new status and any provided additional
+        fields such as timestamps, error messages, or progress updates.
+
+        Args:
+            job_id: Unique identifier of the job to update.
+            status: New status value (e.g., "processing", "completed", "failed").
+            **kwargs: Optional fields to update:
+                - started_at: Datetime when job started processing
+                - completed_at: Datetime when job completed
+                - error_message: Error message if job failed
+                - progress: Progress tracking dictionary (converted to JSONB)
+                - records_processed: Records processed dictionary (converted to JSONB)
+
+        Returns:
+            bool: True if job was found and updated, False otherwise.
+
+        Note:
+            - Progress and records_processed are converted to JSONB format
+            - Only updates fields that are provided in kwargs
+            - Returns False if job_id not found (doesn't raise exception)
+        """
         async with get_db_session(tenant_id=self.tenant_id) as session:
             # Build dynamic update
             set_clauses = ["status = :status"]
@@ -277,7 +356,30 @@ class FunctionsRepository:
         end_date: date,
         events_data: list[dict[str, Any]],
     ) -> int:
-        """Replace event data for a date range."""
+        """
+        Replace event data for a specific event type and date range.
+
+        Deletes existing events for the date range and inserts new events
+        in batches. This ensures idempotent data ingestion - re-running
+        the same job produces the same result.
+
+        Args:
+            tenant_id: Tenant ID for data isolation (normalized internally).
+            event_type: Event type name (e.g., "purchase", "add_to_cart").
+            start_date: Start date of the range to replace (inclusive).
+            end_date: End date of the range to replace (inclusive).
+            events_data: List of event dictionaries to insert.
+
+        Returns:
+            int: Number of events successfully inserted.
+
+        Note:
+            - Deletes existing events for date range before insertion
+            - Processes events in batches of 500 for performance
+            - Normalizes tenant_id and event_date formats
+            - Handles empty event lists gracefully (returns 0)
+            - Logs deletion and insertion counts for monitoring
+        """
         tenant_uuid_str = ensure_uuid_string(tenant_id)
 
         async with get_db_session(tenant_id=self.tenant_id) as session:
@@ -346,8 +448,31 @@ class FunctionsRepository:
 
     async def upsert_users(
         self, tenant_id: str, users_data: list[dict[str, Any]]
-    ) -> int:
-        """Upsert users data in batches for performance."""
+    ) -> tuple[int, int]:
+        """
+        Upsert user records in batches with conflict resolution.
+
+        Inserts new users or updates existing ones based on tenant_id and user_id.
+        Processes data in batches to handle large datasets efficiently.
+        Batch failures are isolated and don't stop the entire operation.
+
+        Args:
+            tenant_id: Tenant ID for data isolation (normalized internally).
+            users_data: List of user dictionaries with fields matching database schema.
+
+        Returns:
+            tuple[int, int]: Tuple containing:
+                - count: Number of users successfully processed
+                - errors: Number of batch upsert errors encountered
+
+        Note:
+            - Uses ON CONFLICT DO UPDATE for upsert behavior
+            - Processes in batches of 500 records
+            - Each batch uses separate session for failure isolation
+            - Updates user_name, email, is_active, updated_at on conflict
+            - Continues processing remaining batches even if one fails
+            - Logs batch progress and errors for monitoring
+        """
         if not users_data:
             return 0
 
@@ -426,8 +551,32 @@ class FunctionsRepository:
 
     async def upsert_locations(
         self, tenant_id: str, locations_data: list[dict[str, Any]]
-    ) -> int:
-        """Upsert locations data in batches for performance."""
+    ) -> tuple[int, int]:
+        """
+        Upsert location records in batches with conflict resolution.
+
+        Inserts new locations or updates existing ones based on tenant_id and
+        warehouse_id. Processes data in batches to handle large datasets efficiently.
+        Batch failures are isolated and don't stop the entire operation.
+
+        Args:
+            tenant_id: Tenant ID for data isolation (normalized internally).
+            locations_data: List of location dictionaries with fields matching
+                          database schema.
+
+        Returns:
+            tuple[int, int]: Tuple containing:
+                - count: Number of locations successfully processed
+                - errors: Number of batch upsert errors encountered
+
+        Note:
+            - Uses ON CONFLICT DO UPDATE for upsert behavior
+            - Processes in batches of 500 records
+            - Each batch uses separate session for failure isolation
+            - Updates warehouse details and is_active on conflict
+            - Continues processing remaining batches even if one fails
+            - Logs batch progress and errors for monitoring
+        """
         if not locations_data:
             return 0
 
@@ -500,48 +649,6 @@ class FunctionsRepository:
         logger.info(f"Upserted {total} locations ({errors} batch errors)")
         return total, errors  # Return tuple (count, errors)
 
-    async def get_tenant_service_status(
-        self, tenant_id: str
-    ) -> dict[str, dict[str, Any]]:
-        """Get service status for a tenant."""
-        async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Query tenant_config with explicit tenant_id for consistency with data_service
-            stmt = text("""
-                SELECT bigquery_enabled, sftp_enabled, bigquery_validation_error, sftp_validation_error,
-                       bigquery_project_id, sftp_config
-                FROM tenant_config
-                WHERE id = :tenant_id AND is_active = true
-            """)
-            result = await session.execute(stmt, {"tenant_id": tenant_id})
-            row = result.mappings().first()
-
-            if not row:
-                return {
-                    "bigquery": {"enabled": False, "error": "Tenant config not found"},
-                    "sftp": {"enabled": False, "error": "Tenant config not found"},
-                }
-
-            # Check BigQuery status
-            bigquery_enabled = row.get("bigquery_enabled", False) and row.get(
-                "bigquery_project_id"
-            )
-            bigquery_error = row.get("bigquery_validation_error") or (
-                None if bigquery_enabled else "BigQuery not configured"
-            )
-
-            # Check SFTP status
-            sftp_enabled = row.get("sftp_enabled", False) and row.get("sftp_config")
-            sftp_error = row.get("sftp_validation_error") or (
-                None if sftp_enabled else "SFTP not configured"
-            )
-
-            return {
-                "bigquery": {
-                    "enabled": bool(bigquery_enabled),
-                    "error": bigquery_error,
-                },
-                "sftp": {"enabled": bool(sftp_enabled), "error": sftp_error},
-            }
 
     async def get_tenant_bigquery_config(self, tenant_id: str) -> dict[str, Any] | None:
         """Get BigQuery config for a tenant."""
@@ -679,24 +786,6 @@ class FunctionsRepository:
                 return config
             return None
 
-    async def get_smtp_service_status(self, tenant_id: str) -> dict[str, Any]:
-        """Check if SMTP is configured for tenant."""
-        email_config = await self.get_email_config(tenant_id)
-
-        if not email_config:
-            return {"enabled": False, "error": "SMTP not configured"}
-
-        # Check required fields
-        required_fields = ["server", "from_address"]
-        missing = [f for f in required_fields if not email_config.get(f)]
-
-        if missing:
-            return {
-                "enabled": False,
-                "error": f"Missing SMTP config: {', '.join(missing)}",
-            }
-
-        return {"enabled": True, "error": None}
 
     async def get_branch_email_mappings(
         self, tenant_id: str, branch_code: str | None = None
@@ -1008,11 +1097,21 @@ def create_repository(tenant_id: str) -> FunctionsRepository:
     """
     Factory function to create a repository instance for a specific tenant.
 
+    Creates a FunctionsRepository instance configured for the tenant's
+    isolated database. This is the primary way to obtain a repository
+    for database operations in Azure Functions.
+
     Args:
-        tenant_id: The tenant ID - determines which database to connect to.
-                   Each tenant has their own database: google-analytics-{tenant_id}
+        tenant_id: The tenant ID (UUID string or convertible format) that
+                  determines which database to connect to. Each tenant has
+                  their own database: google-analytics-{tenant_id}
 
     Returns:
-        FunctionsRepository instance configured for the tenant's database.
+        FunctionsRepository: Repository instance configured for the tenant's
+                            isolated database, ready for immediate use.
+
+    Example:
+        >>> repo = create_repository("550e8400-e29b-41d4-a716-446655440000")
+        >>> await repo.create_processing_job(job_data)
     """
     return FunctionsRepository(tenant_id)

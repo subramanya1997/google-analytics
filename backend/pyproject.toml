@@ -276,7 +276,7 @@ module = [
     "services.analytics_service.*",
     "services.data_service.*",
     "services.auth_service.*",
-    "services.data_service_functions.*",
+    "services.functions.*",
 ]
 # Use explicit module paths to avoid duplicate module errors
 explicit_package_bases = true

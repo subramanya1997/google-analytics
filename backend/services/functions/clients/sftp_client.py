@@ -17,14 +17,59 @@ import paramiko
 
 
 class SFTPClient:
-    """SFTP client with proper session management for serverless environments."""
+    """
+    SFTP client with proper session management for serverless environments.
+
+    This client provides methods to download Excel files from SFTP servers,
+    specifically designed for Azure Functions' stateless execution model.
+    Connections are created fresh for each operation and properly closed,
+    ensuring no connection leaks in serverless environments.
+
+    The client handles user and location data downloads, parsing Excel files
+    and returning pandas DataFrames ready for database insertion.
+
+    Attributes:
+        config: Complete SFTP configuration dictionary.
+        host: SFTP server hostname.
+        port: SFTP server port (default: 22).
+        username: SFTP authentication username.
+        password: SFTP authentication password.
+        remote_path: Base path on SFTP server for file operations.
+        user_file: Filename for user data Excel file (default: "UserReport.xlsx").
+        locations_file: Filename for locations data Excel file (default: "Locations_List.xlsx").
+
+    Example:
+        >>> config = {
+        ...     "host": "sftp.example.com",
+        ...     "username": "user",
+        ...     "password": "pass",
+        ...     "remote_path": "/data"
+        ... }
+        >>> client = SFTPClient(config)
+        >>> users_df = client._get_users_data_sync()
+    """
 
     def __init__(self, sftp_config: dict[str, Any]) -> None:
         """
-        Initialize SFTP client with configuration.
+        Initialize SFTP client with connection configuration.
+
+        Extracts connection parameters from configuration dictionary and
+        validates that required fields are present. Warns if configuration
+        is incomplete but allows initialization for graceful error handling.
 
         Args:
-            sftp_config: Dictionary containing SFTP connection details
+            sftp_config: Dictionary containing:
+                - host: SFTP server hostname (required)
+                - port: SFTP server port (optional, default: 22)
+                - username: Authentication username (required)
+                - password: Authentication password (required)
+                - remote_path: Base directory path on server (optional)
+                - user_file: User data filename (optional, default: "UserReport.xlsx")
+                - locations_file: Locations data filename (optional, default: "Locations_List.xlsx")
+
+        Note:
+            - Warns if required fields are missing but doesn't raise exceptions
+            - Allows partial configuration for testing scenarios
         """
         self.config = sftp_config
         self.host = sftp_config.get("host")
@@ -40,8 +85,28 @@ class SFTPClient:
                 "SFTP configuration incomplete, SFTP operations will be disabled"
             )
 
-    def _create_connection(self) -> tuple:
-        """Create a fresh SSH/SFTP connection."""
+    def _create_connection(self) -> tuple[paramiko.SSHClient, paramiko.SFTPClient]:
+        """
+        Create a fresh SSH and SFTP connection to the configured server.
+
+        Establishes a new SSH connection using paramiko, then opens an SFTP
+        session. Connection parameters include timeouts and security settings
+        appropriate for serverless environments.
+
+        Returns:
+            tuple[paramiko.SSHClient, paramiko.SFTPClient]: Tuple containing:
+                - SSH client instance (for connection management)
+                - SFTP client instance (for file operations)
+
+        Raises:
+            Exception: If connection fails due to network, authentication, or timeout errors.
+
+        Note:
+            - Uses AutoAddPolicy for host key acceptance (suitable for known servers)
+            - Sets multiple timeouts (30 seconds) for reliability
+            - Disables agent and key lookups for explicit credential use
+            - Connection must be closed by caller using returned SSH client
+        """
         try:
             ssh_client = paramiko.SSHClient()
             ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -72,7 +137,22 @@ class SFTPClient:
             raise
 
     def _build_remote_path(self, filename: str | None = None) -> str:
-        """Build full remote path."""
+        """
+        Build full remote file path from base path and optional filename.
+
+        Combines the configured remote_path with an optional filename,
+        handling empty paths and path separators correctly.
+
+        Args:
+            filename: Optional filename to append to base path.
+
+        Returns:
+            str: Full remote path string (e.g., "/data/UserReport.xlsx" or ".").
+
+        Note:
+            - Returns "." if no path or filename specified
+            - Uses forward slashes for path separation
+        """
         path_parts = []
 
         if self.remote_path:
@@ -84,13 +164,32 @@ class SFTPClient:
 
     def _download_file_sync(self, remote_filename: str) -> str:
         """
-        Download file from SFTP server synchronously.
+        Download a file from SFTP server to local temporary file.
+
+        Creates a fresh SFTP connection, downloads the specified file to a
+        temporary location, validates the download, and returns the path.
+        The temporary file must be cleaned up by the caller.
 
         Args:
-            remote_filename: Name of file to download
+            remote_filename: Name of the file to download from SFTP server.
 
         Returns:
-            Path to downloaded temporary file
+            str: Path to the downloaded temporary file.
+
+        Raises:
+            Exception: If download fails, file is empty, or connection errors occur.
+
+        Note:
+            - Creates temporary file with .xlsx suffix
+            - Validates file exists and is not empty after download
+            - Connection is properly closed even on errors
+            - Temporary file cleanup is caller's responsibility
+            - File size is logged for monitoring
+
+        Example:
+            >>> temp_path = client._download_file_sync("UserReport.xlsx")
+            >>> # Use temp_path...
+            >>> Path(temp_path).unlink()  # Cleanup
         """
         ssh_client = None
         sftp_client = None
@@ -135,7 +234,38 @@ class SFTPClient:
                     ssh_client.close()
 
     def _get_users_data_sync(self) -> pd.DataFrame:
-        """Get users data synchronously with proper session management."""
+        """
+        Download and parse user data Excel file from SFTP server.
+
+        Downloads the user Excel file, attempts multiple parsing strategies
+        for format compatibility, normalizes column names to match database
+        schema, and returns a cleaned pandas DataFrame ready for database insertion.
+
+        Returns:
+            pd.DataFrame: Processed user data with columns matching database schema.
+                        Columns include user_id, user_name, email, phone, address,
+                        warehouse_code, etc.
+
+        Raises:
+            ValueError: If file cannot be read or parsed, or if no valid data found.
+
+        Note:
+            - Tries multiple parsing strategies for Excel format compatibility:
+              1. Sheet named "User Report" with skiprows=1
+              2. First sheet with skiprows=1
+              3. First sheet without skiprows
+            - Normalizes column names from various source formats
+            - Combines FIRST_NAME, MIDDLE_NAME, LAST_NAME into user_name
+            - Converts data types (strings, datetimes) appropriately
+            - Filters out records without user_id
+            - Handles NaN values by converting to None
+            - Temporary file is automatically cleaned up
+
+        Example:
+            >>> df = client._get_users_data_sync()
+            >>> df.columns.tolist()
+            ['user_id', 'user_name', 'email', 'warehouse_code', ...]
+        """
         temp_path = None
 
         try:
@@ -301,7 +431,36 @@ class SFTPClient:
                     Path(temp_path).unlink()
 
     def _get_locations_data_sync(self) -> pd.DataFrame:
-        """Get locations data synchronously with proper session management."""
+        """
+        Download and parse locations data Excel file from SFTP server.
+
+        Downloads the locations Excel file, attempts multiple parsing strategies
+        for format compatibility, normalizes column names to match database
+        schema, and returns a cleaned pandas DataFrame ready for database insertion.
+
+        Returns:
+            pd.DataFrame: Processed location data with columns matching database schema.
+                        Columns include warehouse_id, warehouse_code, warehouse_name,
+                        city, state, country, address1, address2, zip.
+
+        Raises:
+            ValueError: If file cannot be read or parsed, or if no valid data found.
+
+        Note:
+            - Tries multiple parsing strategies:
+              1. Sheet named "Locations"
+              2. First sheet directly
+            - Normalizes column names from various source formats
+            - Converts warehouse_id and codes to strings
+            - Filters out records without warehouse_id
+            - Handles NaN values by converting to None
+            - Temporary file is automatically cleaned up
+
+        Example:
+            >>> df = client._get_locations_data_sync()
+            >>> df.columns.tolist()
+            ['warehouse_id', 'warehouse_code', 'warehouse_name', 'city', ...]
+        """
         temp_path = None
 
         try:
@@ -398,41 +557,3 @@ class SFTPClient:
                 with contextlib.suppress(builtins.BaseException):
                     Path(temp_path).unlink()
 
-    def _list_files_sync(self) -> list:
-        """List files synchronously with proper session management."""
-        ssh_client = None
-        sftp_client = None
-
-        try:
-            ssh_client, sftp_client = self._create_connection()
-
-            remote_path = self._build_remote_path()
-
-            files = sftp_client.listdir(remote_path)
-
-            excel_files = [f for f in files if f.lower().endswith((".xlsx", ".xls"))]
-
-            logger.info(f"Found {len(excel_files)} Excel files in {remote_path}")
-            return sorted(excel_files, reverse=True)
-
-        except Exception as e:
-            logger.error(f"Error listing files: {e}")
-            raise
-
-        finally:
-            if sftp_client:
-                with contextlib.suppress(builtins.BaseException):
-                    sftp_client.close()
-            if ssh_client:
-                with contextlib.suppress(builtins.BaseException):
-                    ssh_client.close()
-
-    def test_connection(self) -> bool:
-        """Test SFTP connection."""
-        try:
-            files = self._list_files_sync()
-            logger.info(f"Connection test successful, found {len(files)} files")
-            return True
-        except Exception as e:
-            logger.error(f"Connection test failed: {e}")
-            return False

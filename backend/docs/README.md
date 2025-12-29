@@ -19,6 +19,7 @@ Welcome to the backend documentation. This documentation follows MAANG-style sta
 | [DATABASE.md](./DATABASE.md) | Schema, tables, functions, indexes | Backend devs, DBAs |
 | [DEVELOPMENT.md](./DEVELOPMENT.md) | Setup guide, coding standards, debugging | New developers |
 | [RUNBOOK.md](./RUNBOOK.md) | Operations guide, incident response | On-call engineers |
+| [Azure_Functions_Deployment.md](./Azure_Functions_Deployment.md) | Azure Functions deployment guide | DevOps, Backend devs |
 
 ---
 
@@ -44,6 +45,7 @@ Each microservice has its own README with specific details:
 | Analytics Service | 8001 | [README](../services/analytics_service/README.md) |
 | Data Service | 8002 | [README](../services/data_service/README.md) |
 | Auth Service | 8003 | [README](../services/auth_service/README.md) |
+| Azure Functions | Serverless | [README](../services/functions/README.md) |
 
 ---
 

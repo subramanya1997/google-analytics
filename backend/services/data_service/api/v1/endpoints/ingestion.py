@@ -31,7 +31,7 @@ Error Handling:
     - Standardized API error responses
 
 See Also:
-    - services.data_service_functions: Background job processing
+    - services.functions: Background job processing
     - services.data_service.database.sqlalchemy_repository: Database operations
 """
 

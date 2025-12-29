@@ -47,7 +47,7 @@ FastAPI services handle job creation and queue the work for background processin
 ## Project Structure
 
 ```
-data_service_functions/
+functions/
 ├── function_app.py           # 1 HTTP + 2 Queue Triggers
 │   ├── health_check()              # HTTP: GET /api/v1/health
 │   ├── process_ingestion_job()     # Queue: ingestion-jobs
@@ -86,7 +86,7 @@ data_service_functions/
 ### Setup
 
 ```bash
-cd backend/services/data_service_functions
+cd backend/services/functions
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 pip install -r requirements.txt
@@ -152,7 +152,7 @@ curl https://gadataingestion.azurewebsites.net/api/v1/health
 ```bash
 # Test ingestion by sending message to queue
 cd backend
-uv run python services/data_service_functions/tests/test_ingestion.py \
+uv run python services/functions/tests/test_ingestion.py \
   --tenant-id "your-tenant-uuid" \
   --days 7
 
@@ -171,7 +171,7 @@ uv run python services/data_service_functions/tests/test_ingestion.py \
 ```bash
 # Test email reports by sending message to queue
 cd backend
-uv run python services/data_service_functions/tests/test_email_sending.py \
+uv run python services/functions/tests/test_email_sending.py \
   --tenant-id "your-tenant-uuid" \
   --report-date "2025-01-15" \
   --branch-codes "D01,D02"

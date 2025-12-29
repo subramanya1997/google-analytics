@@ -8,7 +8,7 @@ Handles BigQuery event extraction and SFTP user/location downloads.
 import asyncio
 from datetime import datetime
 from typing import Any
-
+import numpy as np
 from clients import get_tenant_bigquery_client, get_tenant_sftp_client
 from loguru import logger
 import pandas as pd
@@ -18,17 +18,41 @@ from shared.models import CreateIngestionJobRequest
 
 class IngestionService:
     """
-    Service for handling analytics data ingestion jobs.
+    Service for handling analytics data ingestion jobs from BigQuery and SFTP.
 
-    Each tenant has their own isolated database for SOC2 compliance.
+    This service orchestrates the complete data ingestion workflow, including:
+    - BigQuery event extraction (purchases, cart events, page views, searches, etc.)
+    - SFTP user data downloads and processing
+    - SFTP location data downloads and processing
+    - Database updates with proper tenant isolation
+
+    Each tenant has their own isolated database (google-analytics-{tenant_id})
+    for SOC2 compliance and data isolation. The service handles job status
+    tracking, error handling, and timeout management.
+
+    Attributes:
+        tenant_id: The tenant identifier used for database routing.
+        repo: Repository instance for database operations.
+
+    Example:
+        >>> service = IngestionService("550e8400-e29b-41d4-a716-446655440000")
+        >>> await service.run_job_safe(job_id, tenant_id, request)
     """
 
     def __init__(self, tenant_id: str) -> None:
         """
         Initialize ingestion service for a specific tenant.
 
+        Creates a repository instance configured for the tenant's isolated database.
+        The tenant_id determines which database connection to use, ensuring
+        complete data isolation between tenants.
+
         Args:
-            tenant_id: The tenant ID - determines which database to connect to.
+            tenant_id: The tenant ID (UUID string) that determines which database
+                      to connect to. Format: google-analytics-{tenant_id}.
+
+        Raises:
+            ValueError: If tenant_id is invalid or database connection fails.
         """
         self.tenant_id = tenant_id
         self.repo = create_repository(tenant_id)
@@ -37,8 +61,41 @@ class IngestionService:
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
     ) -> None:
         """
-        Wrapper that ensures job status is always updated, even on unexpected failures.
-        Includes timeout monitoring to prevent jobs from running indefinitely.
+        Execute ingestion job with comprehensive error handling and timeout protection.
+
+        This wrapper function ensures job status is always updated in the database,
+        even when unexpected failures occur. It implements a 30-minute timeout
+        to prevent jobs from running indefinitely and consuming resources.
+
+        The function catches all exceptions, logs them appropriately, and updates
+        the job status to "failed" with a descriptive error message. This ensures
+        the FastAPI service can track job completion status reliably.
+
+        Args:
+            job_id: Unique identifier for the ingestion job.
+            tenant_id: Tenant ID for database routing and isolation.
+            request: Ingestion job request containing date range and data types.
+
+        Returns:
+            None: Function completes asynchronously. Job status is persisted to database.
+
+        Raises:
+            asyncio.TimeoutError: If job execution exceeds 30 minutes.
+            Exception: Any exceptions from run_job are caught and logged.
+
+        Note:
+            - Timeout is set to 1800 seconds (30 minutes)
+            - Job status is always updated, even on timeout or failure
+            - Error messages are sanitized and stored in database
+            - Network/DNS errors are detected and reported with helpful messages
+
+        Example:
+            >>> request = CreateIngestionJobRequest(
+            ...     start_date=date(2024, 1, 1),
+            ...     end_date=date(2024, 1, 7),
+            ...     data_types=["events", "users"]
+            ... )
+            >>> await service.run_job_safe("job_123", tenant_id, request)
         """
         try:
             # Set a 30-minute timeout for medium date ranges
@@ -79,7 +136,54 @@ class IngestionService:
     async def run_job(
         self, job_id: str, tenant_id: str, request: CreateIngestionJobRequest
     ) -> dict[str, Any]:
-        """Run the data ingestion job."""
+        """
+        Execute the complete data ingestion job workflow.
+
+        This method orchestrates the ingestion of multiple data types:
+        1. Events from BigQuery (purchase, add_to_cart, page_view, etc.)
+        2. Users from SFTP (Excel file download and processing)
+        3. Locations from SFTP (Excel file download and processing)
+
+        The method updates job status throughout execution and handles partial
+        failures gracefully. If one data type fails, others can still succeed,
+        with warnings tracked in the results.
+
+        Args:
+            job_id: Unique identifier for tracking this job.
+            tenant_id: Tenant ID for multi-tenant isolation.
+            request: Ingestion request specifying date range and data types to process.
+
+        Returns:
+            dict[str, Any]: Results dictionary containing:
+                - Event type counts (purchase, add_to_cart, page_view, etc.)
+                - users_processed: Number of users successfully processed
+                - locations_processed: Number of locations successfully processed
+                - warnings: List of warning messages for partial failures
+
+        Raises:
+            ValueError: If BigQuery configuration is missing for events processing.
+            Exception: Various exceptions for network, authentication, or file errors.
+                      Error messages are enhanced with context for debugging.
+
+        Note:
+            - Job status is updated to "processing" at start
+            - Progress is tracked per data type (events, users, locations)
+            - Partial failures result in warnings, not complete failure
+            - Job status is updated to "completed" or "failed" at end
+            - All database operations use tenant-specific connections
+
+        Example:
+            >>> request = CreateIngestionJobRequest(
+            ...     start_date=date(2024, 1, 1),
+            ...     end_date=date(2024, 1, 7),
+            ...     data_types=["events", "users"]
+            ... )
+            >>> results = await service.run_job("job_123", tenant_id, request)
+            >>> results["purchase"]
+            150
+            >>> results["users_processed"]
+            500
+        """
         try:
             # Update job status to processing
             await self.repo.update_job_status(
@@ -259,7 +363,50 @@ class IngestionService:
     async def _process_events_async(
         self, tenant_id: str, request: CreateIngestionJobRequest
     ) -> dict[str, int]:
-        """Process all event types from BigQuery."""
+        """
+        Extract and process all event types from BigQuery for the specified date range.
+
+        This method queries BigQuery for GA4 events across multiple event types:
+        - purchase: Completed purchase transactions
+        - add_to_cart: Items added to shopping cart
+        - page_view: Page view events
+        - view_search_results: Successful search queries
+        - no_search_results: Failed search queries
+        - view_item: Product detail page views
+
+        Events are extracted in parallel where possible and then inserted into
+        the tenant's database, replacing any existing data for the date range.
+
+        Args:
+            tenant_id: Tenant ID for BigQuery configuration lookup and database routing.
+            request: Ingestion request containing start_date, end_date, and data_types.
+
+        Returns:
+            dict[str, int]: Dictionary mapping event type names to record counts.
+                          Example: {"purchase": 150, "add_to_cart": 300, ...}
+
+        Raises:
+            ValueError: If BigQuery configuration is not found for the tenant.
+            Exception: Various BigQuery errors (network, authentication, query errors)
+                      with enhanced error messages for debugging.
+
+        Note:
+            - Uses tenant-specific BigQuery credentials from database
+            - Events are extracted for the entire date range in one query per type
+            - Existing events for the date range are deleted before insertion
+            - Each event type is processed independently (failures don't cascade)
+            - Raw event data is preserved in JSON format for future analysis
+
+        Example:
+            >>> request = CreateIngestionJobRequest(
+            ...     start_date=date(2024, 1, 1),
+            ...     end_date=date(2024, 1, 7),
+            ...     data_types=["events"]
+            ... )
+            >>> results = await service._process_events_async(tenant_id, request)
+            >>> results["purchase"]
+            150
+        """
         try:
             logger.info(f"Fetching BigQuery configuration for tenant {tenant_id}")
             bigquery_client = await get_tenant_bigquery_client(tenant_id)
@@ -307,8 +454,46 @@ class IngestionService:
             logger.error(f"Error processing BigQuery events: {e}")
             raise
 
-    async def _process_users(self, tenant_id: str) -> tuple:
-        """Process users from SFTP. Returns (count, errors) tuple."""
+    async def _process_users(self, tenant_id: str) -> tuple[int, int]:
+        """
+        Download and process user data from SFTP server.
+
+        This method downloads the user Excel file from the configured SFTP server,
+        parses it using pandas, normalizes column names to match the database schema,
+        and performs batch upserts into the tenant's users table.
+
+        The method handles various Excel file formats and column name variations,
+        ensuring compatibility with different source systems. Data is cleaned and
+        validated before insertion.
+
+        Args:
+            tenant_id: Tenant ID for SFTP configuration lookup and database routing.
+
+        Returns:
+            tuple[int, int]: A tuple containing:
+                - count: Number of users successfully processed
+                - errors: Number of batch upsert errors encountered
+
+        Raises:
+            ValueError: If SFTP configuration is missing or Excel file cannot be read.
+            Exception: Network errors, authentication failures, or file format issues
+                      with enhanced error messages for debugging.
+
+        Note:
+            - SFTP connection is created fresh for each operation (stateless)
+            - Excel file is downloaded to temporary file and cleaned up after processing
+            - Multiple parsing strategies are attempted for file format compatibility
+            - Data is processed in batches of 500 records for performance
+            - Batch failures are logged but don't stop processing
+            - User ID is required and records without it are filtered out
+            - Date fields are converted to datetime objects
+            - NaN values are converted to None for database compatibility
+
+        Example:
+            >>> count, errors = await service._process_users(tenant_id)
+            >>> print(f"Processed {count} users with {errors} errors")
+            Processed 500 users with 0 errors
+        """
         try:
             logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
             sftp_client = await get_tenant_sftp_client(tenant_id)
@@ -324,7 +509,6 @@ class IngestionService:
             users_data = sftp_client._get_users_data_sync()
 
             if users_data is not None and len(users_data) > 0:
-                import numpy as np
 
                 users_data = users_data.replace({np.nan: None})
 
@@ -359,8 +543,45 @@ class IngestionService:
             logger.error(f"Error processing users: {e}")
             raise
 
-    async def _process_locations(self, tenant_id: str) -> tuple:
-        """Process locations from SFTP. Returns (count, errors) tuple."""
+    async def _process_locations(self, tenant_id: str) -> tuple[int, int]:
+        """
+        Download and process location/warehouse data from SFTP server.
+
+        This method downloads the locations Excel file from the configured SFTP server,
+        parses it using pandas, normalizes column names to match the database schema,
+        and performs batch upserts into the tenant's locations table.
+
+        The method handles various Excel file formats and column name variations,
+        ensuring compatibility with different source systems. Location data is cleaned
+        and validated before insertion.
+
+        Args:
+            tenant_id: Tenant ID for SFTP configuration lookup and database routing.
+
+        Returns:
+            tuple[int, int]: A tuple containing:
+                - count: Number of locations successfully processed
+                - errors: Number of batch upsert errors encountered
+
+        Raises:
+            ValueError: If SFTP configuration is missing or Excel file cannot be read.
+            Exception: Network errors, authentication failures, or file format issues
+                      with enhanced error messages for debugging.
+
+        Note:
+            - SFTP connection is created fresh for each operation (stateless)
+            - Excel file is downloaded to temporary file and cleaned up after processing
+            - Multiple parsing strategies are attempted for file format compatibility
+            - Data is processed in batches of 500 records for performance
+            - Batch failures are logged but don't stop processing
+            - Warehouse ID is required and records without it are filtered out
+            - String fields are normalized and NaN values converted to None
+
+        Example:
+            >>> count, errors = await service._process_locations(tenant_id)
+            >>> print(f"Processed {count} locations with {errors} errors")
+            Processed 25 locations with 0 errors
+        """
         try:
             logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
             sftp_client = await get_tenant_sftp_client(tenant_id)
@@ -377,7 +598,6 @@ class IngestionService:
             locations_data = sftp_client._get_locations_data_sync()
 
             if locations_data is not None and len(locations_data) > 0:
-                import numpy as np
 
                 locations_data = locations_data.replace({np.nan: None})
 

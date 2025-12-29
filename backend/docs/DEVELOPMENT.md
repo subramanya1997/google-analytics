@@ -1,6 +1,6 @@
 # Development Guide
 
-> **Last Updated**: November 2024  
+> **Last Updated**: December 2025  
 > **Target Audience**: New developers, contributors
 
 ## Table of Contents

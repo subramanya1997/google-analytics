@@ -92,12 +92,11 @@ services/auth_service/
        │                              │  8. User info + configs    │
        │                              │◀─────────────────────────────
        │                              │                            │
-       │                              │  9. Validate PostgreSQL    │
-       │                              │  10. Store tenant config   │
-       │                              │  11. Background: validate  │
+       │                              │  9. Store tenant config    │
+       │                              │  10. Background: validate  │
        │                              │      BigQuery/SFTP/SMTP    │
        │                              │                            │
-       │  12. Return session          │                            │
+       │  11. Return session          │                            │
        │◀─────────────────────────────│                            │
        │                              │                            │
 ```
@@ -124,13 +123,6 @@ When a user authenticates, their tenant configuration is retrieved from the exte
 
 ```json
 {
-  "postgres_config": {
-    "host": "db.example.com",
-    "port": 5432,
-    "database": "analytics",
-    "user": "user",
-    "password": "password"
-  },
   "bigquery_config": {
     "project_id": "my-project",
     "dataset_id": "analytics_dataset",
@@ -155,18 +147,14 @@ When a user authenticates, their tenant configuration is retrieved from the exte
 
 ### Validation Flow
 
-1. **PostgreSQL** - Required, validated synchronously (blocks login if fails)
-2. **BigQuery** - Optional, validated in background
-3. **SFTP** - Optional, validated in background
-4. **SMTP** - Optional, validated in background
+All configurations are optional and validated in the background:
+
+1. **BigQuery** - Optional, validated in background
+2. **SFTP** - Optional, validated in background
+3. **SMTP** - Optional, validated in background
 
 ```python
-# Synchronous: must pass
-postgres_valid = await self._test_postgres_connection_async(postgres_config)
-if not postgres_valid:
-    raise HTTPException(401, "PostgreSQL connection failed")
-
-# Background: doesn't block login
+# All validations happen in background - authentication proceeds immediately
 asyncio.create_task(
     self._validate_and_update_services_async(
         tenant_id, bigquery_config, sftp_config, email_config
@@ -230,17 +218,6 @@ class AuthServiceSettings(BaseServiceSettings):
 ```
 
 ## Service Validation
-
-### PostgreSQL Validation
-
-```python
-async def _test_postgres_connection_async(self, config: dict) -> bool:
-    connection_string = f"postgresql://{config['user']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}"
-    engine = create_engine(connection_string)
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    return True
-```
 
 ### BigQuery Validation
 
@@ -309,15 +286,6 @@ grep "validation" logs/auth-service-error.log
 grep "Invalid authentication code" logs/auth-service-error.log
 ```
 
-### PostgreSQL Connection Failed
-
-**Cause**: Invalid credentials or network issue  
-**Solution**: User must update configuration in external IdP
-
-```bash
-grep "PostgreSQL connection failed" logs/auth-service-error.log
-```
-
 ### Token Validation Returns Invalid
 
 **Cause**: Token expired or IdP unavailable  
@@ -330,10 +298,9 @@ curl "http://localhost:8003/api/v1/validate" \
 
 ## Security Considerations
 
-1. **Credentials Storage**: All credentials encrypted in `tenants.postgres_config`, etc.
+1. **Credentials Storage**: All credentials encrypted in tenant_config table
 2. **Token Validation**: Tokens validated against external IdP on each check
-3. **PostgreSQL Required**: Login blocked if PostgreSQL connection fails
-4. **Background Validation**: Non-critical services validated async
+3. **Background Validation**: All service configurations validated async
 
 ## API Documentation
 

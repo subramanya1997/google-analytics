@@ -272,7 +272,6 @@ class AuthenticationService:
                     )
 
                     # Extract configurations with the correct key names from the API
-                    postgres_config = parsed_settings.get("postgres-config", {})
                     bigquery_raw_config = parsed_settings.get(
                         "BigQuery", {}
                     )  # Note: "BigQuery" not "bigquery-config"
@@ -306,20 +305,18 @@ class AuthenticationService:
 
                     # Create the expected format for validation
                     formatted_settings = {
-                        "postgres_config": postgres_config,
                         "bigquery_config": bigquery_config,
                         "sftp_config": sftp_config,
                         "email_config": email_config,
                     }
 
                     logger.info(
-                        f"Configurations found - PostgreSQL: {'Yes' if postgres_config else 'No'}, BigQuery: {'Yes' if bigquery_config else 'No'}, SFTP: {'Yes' if sftp_config else 'No'}, SMTP: {'Yes' if email_config else 'No'}"
+                        f"Configurations found - BigQuery: {'Yes' if bigquery_config else 'No'}, SFTP: {'Yes' if sftp_config else 'No'}, SMTP: {'Yes' if email_config else 'No'}"
                     )
 
                 except json.JSONDecodeError as e:
                     logger.error(f"Failed to parse settingsValues JSON: {e}")
                     formatted_settings = {
-                        "postgres_config": {},
                         "bigquery_config": {},
                         "sftp_config": {},
                         "email_config": {},
@@ -349,14 +346,12 @@ class AuthenticationService:
                     }
 
                 # Step 4: Ensure tenant exists in database with all configurations
-                postgres_config = formatted_settings.get("postgres_config", {})
                 bigquery_config = formatted_settings.get("bigquery_config", {})
                 sftp_config = formatted_settings.get("sftp_config", {})
                 email_config = formatted_settings.get("email_config", {})
 
                 if not await self._upsert_tenant_configurations(
                     account_id,
-                    postgres_config,
                     bigquery_config,
                     sftp_config,
                     email_config,
@@ -408,46 +403,32 @@ class AuthenticationService:
         self, settings_data: dict[str, Any]
     ) -> dict[str, Any]:
         """
-        Validate tenant configurations with PostgreSQL as required, others optional.
+        Validate tenant configurations - all configurations are optional.
 
         This method validates tenant configurations retrieved from the external IdP.
-        It enforces strict validation for PostgreSQL (required) while gracefully
-        handling missing optional configurations (BigQuery, SFTP, SMTP).
+        All configurations (BigQuery, SFTP, SMTP) are optional and warnings are logged
+        if any are missing.
 
         Validation Rules:
-            - PostgreSQL: REQUIRED - Must be present and valid (connection test)
             - BigQuery: OPTIONAL - Logged as warning if missing
             - SFTP: OPTIONAL - Logged as warning if missing
             - SMTP: OPTIONAL - Logged as warning if missing
 
-        The method performs actual connection testing for PostgreSQL to ensure
-        credentials are valid and the database is accessible. Optional services
-        are not validated here (they may be validated asynchronously later).
-
         Args:
             settings_data (dict[str, Any]): Configuration data from IdP API with keys:
-                - postgres_config (dict): PostgreSQL connection configuration
-                    Required fields: user, password, host, port, database
                 - bigquery_config (dict): BigQuery configuration (optional)
                 - sftp_config (dict): SFTP configuration (optional)
                 - email_config (dict): SMTP configuration (optional)
 
         Returns:
             dict[str, Any]: Validation result dictionary with keys:
-                - valid (bool): Whether all required configurations are valid
-                - missing_configs (list[str]): List of missing required config keys
-                - invalid_configs (list[str]): List of invalid config keys
+                - valid (bool): Always True (no required configurations)
+                - missing_configs (list[str]): Always empty list
+                - invalid_configs (list[str]): Always empty list
 
         Example:
             ```python
             settings = {
-                "postgres_config": {
-                    "user": "user",
-                    "password": "pass",
-                    "host": "localhost",
-                    "port": 5432,
-                    "database": "analytics"
-                },
                 "bigquery_config": {},  # Optional
                 "sftp_config": {},  # Optional
                 "email_config": {}  # Optional
@@ -458,35 +439,14 @@ class AuthenticationService:
             ```
 
         Note:
-            - PostgreSQL validation performs actual connection test (synchronous)
             - Missing optional configs are logged as warnings, not errors
-            - Returns valid=False only if PostgreSQL is missing or invalid
-            - Connection test handles Google Cloud SQL format (skips actual connection)
+            - Authentication proceeds regardless of configuration availability
         """
-        postgres_config = settings_data.get("postgres_config", {})
         bigquery_config = settings_data.get("bigquery_config", {})
         sftp_config = settings_data.get("sftp_config", {})
         email_config = settings_data.get("email_config", {})
 
-        # Postgres is REQUIRED - authentication fails if missing or invalid
-        if not postgres_config:
-            logger.error("PostgreSQL configuration is required but missing")
-            return {
-                "valid": False,
-                "missing_configs": ["postgres_config"],
-                "invalid_configs": [],
-            }
-
-        postgres_valid = await self._test_postgres_connection_async(postgres_config)
-        if not postgres_valid:
-            logger.error("PostgreSQL configuration validation failed")
-            return {
-                "valid": False,
-                "missing_configs": [],
-                "invalid_configs": ["postgres_config"],
-            }
-
-        # Other configs are OPTIONAL - just log warnings if missing
+        # All configs are OPTIONAL - just log warnings if missing
         if not bigquery_config:
             logger.warning(
                 "Optional BigQuery configuration is missing - data ingestion from BigQuery will not be available"
@@ -503,7 +463,7 @@ class AuthenticationService:
             )
 
         logger.info(
-            "Configuration validation successful (Postgres validated, optional configs logged)"
+            "Configuration validation successful (optional configs logged)"
         )
         return {
             "valid": True,
@@ -511,138 +471,9 @@ class AuthenticationService:
             "invalid_configs": [],
         }
 
-    async def _test_postgres_connection_async(self, config: dict[str, Any]) -> bool:
-        """
-        Test PostgreSQL connection asynchronously with validation.
-
-        This method validates PostgreSQL configuration by performing an actual
-        connection test. It handles both standard PostgreSQL connections and
-        Google Cloud SQL format connections (which require special proxy setup).
-
-        For Google Cloud SQL format (project:region:instance), the method validates
-        the format but skips the actual connection test since it requires Cloud SQL
-        Proxy or specific network configuration.
-
-        For standard PostgreSQL connections, it creates a connection engine and
-        executes a simple query (SELECT 1) to verify credentials and connectivity.
-
-        Args:
-            config (dict[str, Any]): PostgreSQL configuration dictionary with keys:
-                - user (str): Database username (required)
-                - password (str): Database password (required)
-                - host (str): Database hostname or Cloud SQL connection string (required)
-                    Format: "hostname" or "project:region:instance" for Cloud SQL
-                - port (str | int): Database port number (required)
-                - database (str): Database name (optional, defaults to "postgres")
-
-        Returns:
-            bool: True if connection test succeeds or Cloud SQL format is valid,
-                False if connection fails or required fields are missing.
-
-        Raises:
-            Exception: Any exception during connection test is caught, logged,
-                and returns False. Common exceptions:
-                - sqlalchemy.exc.OperationalError: Connection refused, invalid credentials
-                - ValueError: Invalid port number
-                - KeyError: Missing required configuration fields
-
-        Example:
-            ```python
-            # Standard PostgreSQL
-            config = {
-                "user": "analytics_user",
-                "password": "secure_password",
-                "host": "db.example.com",
-                "port": 5432,
-                "database": "analytics"
-            }
-            result = await service._test_postgres_connection_async(config)
-            # Returns True if connection succeeds
-            
-            # Google Cloud SQL format
-            config = {
-                "user": "analytics_user",
-                "password": "secure_password",
-                "host": "project:region:instance",
-                "port": 5432
-            }
-            result = await service._test_postgres_connection_async(config)
-            # Returns True if format is valid (skips actual connection)
-            ```
-
-        Note:
-            - Uses thread pool executor to run blocking SQLAlchemy operations
-            - Defaults to "postgres" database if not specified
-            - Cloud SQL format detection: host contains 2+ colons
-            - Connection string format: postgresql://user:password@host:port/database
-            - Engine is disposed after connection test to free resources
-        """
-        try:
-            # Validate required fields
-            required_fields = ["user", "password", "host", "port"]
-            missing_fields = [field for field in required_fields if field not in config]
-            if missing_fields:
-                logger.error(
-                    f"PostgreSQL config missing required fields: {missing_fields}"
-                )
-                return False
-
-            # Parse host and port - handle Google Cloud SQL format
-            host_str = str(config["host"])
-            port_str = str(config["port"])
-
-            logger.info(f"Raw config - Host: {host_str}, Port: {port_str}")
-
-            # Check if host contains Cloud SQL format (project:region:instance)
-            if ":" in host_str and host_str.count(":") >= 2:
-                # Google Cloud SQL format detected - skip actual connection test
-                # These connections require Cloud SQL Proxy or specific network setup
-                # Just validate the format is correct
-                logger.info(
-                    f"Detected Google Cloud SQL format - Connection: {host_str}, Port: {port_str}"
-                )
-                logger.info(
-                    "Skipping actual connection test for Cloud SQL (requires proxy/network setup)"
-                )
-
-                # Validate port is numeric
-                try:
-                    int(port_str)
-                except ValueError:
-                    logger.error(f"Invalid port number: {port_str}")
-                    return False
-
-                # Format validation passed
-                return True
-            # Standard PostgreSQL host - attempt actual connection
-            logger.info(
-                f"Standard PostgreSQL format - Host: {host_str}, Port: {port_str}"
-            )
-
-            def test_connection() -> bool:
-                # Use 'postgres' as default database for connection testing
-                database = config.get("database", "postgres")
-                connection_string = f"postgresql://{config['user']}:{config['password']}@{host_str}:{port_str}/{database}"
-                engine = create_engine(connection_string)
-                with engine.connect() as conn:
-                    conn.execute(text("SELECT 1"))
-                engine.dispose()
-                return True
-
-            # Run the blocking operation in a thread pool
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, test_connection)
-
-            logger.info("PostgreSQL connection successful")
-            return result
-        except Exception as e:
-            logger.error(f"PostgreSQL connection test failed: {e}")
-            return False
-
     async def _upsert_tenant_configurations(
         self,
         tenant_id: str,
-        postgres_config: dict[str, Any],
         bigquery_config: dict[str, Any],
         sftp_config: dict[str, Any],
         email_config: dict[str, Any],
@@ -672,8 +503,6 @@ class AuthenticationService:
             tenant_id (str): Unique tenant identifier (UUID format). Used as:
                 - Database name for tenant isolation
                 - Primary key in tenant_config table
-            postgres_config (dict[str, Any]): PostgreSQL configuration dictionary.
-                Stored as JSON string in tenant_config.postgres_config column.
             bigquery_config (dict[str, Any]): BigQuery configuration dictionary.
                 Extracted fields: project_id, dataset_id, service_account.
                 Stored in separate columns: bigquery_project_id, bigquery_dataset_id,
@@ -700,7 +529,6 @@ class AuthenticationService:
             ```python
             result = await service._upsert_tenant_configurations(
                 tenant_id="550e8400-e29b-41d4-a716-446655440000",
-                postgres_config={"host": "db.example.com", "port": 5432, ...},
                 bigquery_config={"project_id": "my-project", "dataset_id": "analytics"},
                 sftp_config={"host": "sftp.example.com", "port": 22, ...},
                 email_config={"server": "smtp.example.com", "port": 587, ...},
@@ -753,7 +581,6 @@ class AuthenticationService:
                     "bigquery_credentials": json.dumps(
                         bigquery_config.get("service_account", {})
                     ),
-                    "postgres_config": json.dumps(postgres_config),
                     "sftp_config": json.dumps(sftp_config),
                     "email_config": json.dumps(email_config),
                 }
@@ -766,12 +593,12 @@ class AuthenticationService:
                             INSERT INTO tenant_config (
                                 id, name,
                                 bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
-                                postgres_config, sftp_config, email_config,
+                                sftp_config, email_config,
                                 is_active, created_at, updated_at
                             ) VALUES (
                                 :tenant_id, :name,
                                 :bigquery_project_id, :bigquery_dataset_id, :bigquery_credentials,
-                                :postgres_config, :sftp_config, :email_config,
+                                :sftp_config, :email_config,
                                 true, NOW(), NOW()
                             )
                         """
@@ -789,7 +616,6 @@ class AuthenticationService:
                                 bigquery_project_id = :bigquery_project_id,
                                 bigquery_dataset_id = :bigquery_dataset_id,
                                 bigquery_credentials = :bigquery_credentials,
-                                postgres_config = :postgres_config,
                                 sftp_config = :sftp_config,
                                 email_config = :email_config,
                                 is_active = true,

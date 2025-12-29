@@ -1,6 +1,6 @@
 # Operations Runbook
 
-> **Last Updated**: November 2024  
+> **Last Updated**: December 2025  
 > **Audience**: On-call engineers, DevOps team  
 > **Severity Levels**: P1 (Critical), P2 (High), P3 (Medium), P4 (Low)
 

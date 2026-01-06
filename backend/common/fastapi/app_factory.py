@@ -170,29 +170,27 @@ def create_fastapi_app(
     )
 
     # Configure CORS
+    dev_origins = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ]
+
     if settings.ENVIRONMENT == "production":
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.CORS_ORIGINS,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        # Production: use only explicitly configured origins
+        allowed_origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS else []
     else:
-        # Allow common development origins
-        # Note: allow_credentials=True is incompatible with allow_origins=["*"]
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=[
-                "http://localhost:3000",
-                "http://localhost:3001",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:3001",
-            ],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+        # Development: merge defaults with any configured origins
+        allowed_origins = list(set(dev_origins + (settings.CORS_ORIGINS or [])))
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # Add request timing middleware
     @app.middleware("http")

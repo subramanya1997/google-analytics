@@ -219,67 +219,14 @@ This creates a GitHub Actions workflow automatically.
 
 #### Step 3: Create Workflow File
 
-Create `.github/workflows/deploy-azure-functions.yml`:
+Create `.github/workflows/master_gadataingestion.yml`:
 
-```yaml
-name: Deploy Azure Functions (Data Ingestion Worker)
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'backend/services/functions/**'
-  workflow_dispatch:  # Manual trigger
-
-env:
-  AZURE_FUNCTIONAPP_NAME: 'func-ga-data-ingestion-prod'
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
-  PYTHON_VERSION: '3.11'
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Setup Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: Install dependencies
-      shell: bash
-      run: |
-        pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt --target=".python_packages/lib/site-packages"
-        popd
-
-    - name: Run tests
-      shell: bash
-      run: |
-        pushd '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-        pip install pytest pytest-asyncio
-        python -m pytest tests/ -v --tb=short || echo "Tests completed"
-        popd
-
-    - name: Deploy to Azure Functions
-      uses: Azure/functions-action@v1
-      with:
-        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        scm-do-build-during-deployment: true
-        enable-oryx-build: true
-```
 
 #### Step 4: Commit and Push
 
 ```bash
-git add .github/workflows/deploy-azure-functions.yml
+git add .github/workflows/master_gadataingestion.yml
 git commit -m "ci: Add Azure Functions deployment workflow"
 git push
 ```
@@ -376,25 +323,7 @@ Expected response:
 }
 ```
 
-### 3. Test End-to-End Job Processing
-
-```bash
-# Trigger ingestion via Data Service API
-curl -X POST "http://localhost:8002/api/v1/ingestion/jobs" \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: your-tenant-uuid" \
-  -d '{
-    "start_date": "2024-12-01",
-    "end_date": "2024-12-07",
-    "data_types": ["events", "users", "locations"]
-  }'
-
-# Check job status
-curl "http://localhost:8002/api/v1/ingestion/jobs/{job_id}" \
-  -H "X-Tenant-Id: your-tenant-uuid"
-```
-
-### 4. Monitor in Azure Portal
+### 3. Monitor in Azure Portal
 
 - **Storage Account** → **Queues**: Watch message counts
 - **Function App** → **Monitor**: View invocation logs

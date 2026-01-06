@@ -1,836 +1,416 @@
-# Development Guide
+# Azure Functions Deployment Guide
 
-> **Last Updated**: December 2025  
-> **Target Audience**: New developers, contributors
+> **Last Updated**: December 2024  
+> **Status**: Production Ready  
+> **Owner**: DevOps / Backend Team
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
-- [Development Environment](#development-environment)
-- [Project Structure](#project-structure)
-- [Coding Standards](#coding-standards)
-- [Testing](#testing)
-- [Debugging](#debugging)
-- [Common Tasks](#common-tasks)
+- [Overview](#overview)
+- [Architecture Context](#architecture-context)
+- [Prerequisites](#prerequisites)
+- [Deployment Methods](#deployment-methods)
+  - [Method 1: Azure Portal (GUI)](#method-1-azure-portal-gui-deployment)
+  - [Method 2: GitHub Actions](#method-2-github-actions-deployment)
+  - [Method 3: Azure CLI](#method-3-azure-cli-deployment)
+- [Post-Deployment Verification](#post-deployment-verification)
 - [Troubleshooting](#troubleshooting)
+- [Cost Considerations](#cost-considerations)
+- [Security Best Practices](#security-best-practices)
 
 ---
 
-## Quick Start
+## Overview
 
-### Prerequisites
+### Purpose
 
-| Tool | Version | Installation |
-|------|---------|--------------|
-| Python | 3.11+ | [python.org](https://www.python.org/downloads/) |
-| PostgreSQL | 14+ | `brew install postgresql` (macOS) |
-| uv | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+The Azure Functions service (`backend/services/functions/`) is a **serverless background worker** that handles long-running, resource-intensive operations asynchronously. It processes jobs that are queued by the FastAPI services, enabling the main API services to remain responsive.
 
-### 5-Minute Setup
+### What This Service Does
+
+| Function | Trigger | Description |
+|----------|---------|-------------|
+| `health_check` | HTTP GET | Health endpoint for monitoring and load balancers |
+| `process_ingestion_job` | Queue | Extracts GA4 events from BigQuery, downloads user/location data from SFTP |
+| `process_email_job` | Queue | Generates HTML branch reports and sends via SMTP |
+
+### Why Azure Functions?
+
+- **Long-running jobs**: Data ingestion can take 10-30 minutes for large date ranges
+- **Cost efficiency**: Pay only when jobs are running (serverless)
+- **Auto-scaling**: Handles multiple concurrent tenant jobs
+- **Isolation**: Keeps heavy processing separate from API latency
+
+---
+
+## Architecture Context
+
+### How It Fits in the System
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           GOOGLE ANALYTICS SYSTEM                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                 │
+│   │ Auth Service │    │ Data Service │    │  Analytics   │   FastAPI       │
+│   │    :8003     │    │    :8002     │    │   Service    │   Services      │
+│   └──────────────┘    └──────┬───────┘    │    :8001     │                 │
+│                              │            └──────┬───────┘                 │
+│                              │                   │                         │
+│                              │ Queue Messages    │                         │
+│                              ▼                   ▼                         │
+│                    ┌─────────────────────────────────────┐                 │
+│                    │       Azure Storage Queues          │                 │
+│                    │  • ingestion-jobs                   │                 │
+│                    │  • email-jobs                       │                 │
+│                    └─────────────────┬───────────────────┘                 │
+│                                      │                                     │
+│                                      ▼                                     │
+│                    ┌─────────────────────────────────────┐                 │
+│                    │       Azure Functions               │   Serverless    │
+│                    │  • process_ingestion_job            │   Workers       │
+│                    │  • process_email_job                │                 │
+│                    └─────────────────┬───────────────────┘                 │
+│                                      │                                     │
+│            ┌─────────────────────────┼─────────────────────────┐           │
+│            ▼                         ▼                         ▼           │
+│   ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐       │
+│   │    BigQuery     │    │   PostgreSQL    │    │   SMTP Server   │       │
+│   │  (GA4 Events)   │    │ (Tenant DBs)    │    │  (Email Send)   │       │
+│   └─────────────────┘    └─────────────────┘    └─────────────────┘       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Job Flow
+
+1. **User triggers ingestion** via Data Service API (`POST /api/v1/ingestion/jobs`)
+2. **Data Service** creates job record in database (status: `queued`)
+3. **Data Service** sends message to `ingestion-jobs` Azure Queue
+4. **Azure Function** (`process_ingestion_job`) picks up message automatically
+5. **Function** updates job status to `processing`, executes work, updates to `completed`/`failed`
+6. **User** can poll job status via API or receive webhook notification
+
+### Multi-Tenant Architecture
+
+Each tenant has their own isolated database for SOC2 compliance:
+- Database naming: `google-analytics-{tenant_id}`
+- Tenant ID is included in every queue message
+- Azure Functions connect to the correct tenant database automatically
+
+For more details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## Prerequisites
+
+Before deploying, ensure you have:
+
+| Requirement | Description |
+|-------------|-------------|
+| Azure Subscription | Active subscription with permissions to create resources |
+| GitHub Repository | Repository containing the `backend/services/functions/` code |
+| PostgreSQL Database | Accessible from Azure (Azure Database for PostgreSQL or external) |
+| BigQuery Access | Service account credentials for GA4 data (stored per-tenant) |
+| SMTP Server | For email reports (configured per-tenant) |
+
+---
+
+## Deployment Methods
+
+### Method 1: Azure Portal (GUI) Deployment
+
+#### Step 1: Create a Resource Group
+
+1. Go to [Azure Portal](https://portal.azure.com)
+2. Click **"Create a resource"** → Search for **"Resource group"**
+3. Configure:
+   - **Subscription**: Select your subscription
+   - **Resource group**: `rg-google-analytics-prod`
+   - **Region**: Select your preferred region (e.g., `East US 2`)
+4. Click **"Review + create"** → **"Create"**
+
+#### Step 2: Create a Storage Account (Required for Queues)
+
+1. Click **"Create a resource"** → Search for **"Storage account"**
+2. **Basics tab**:
+   - **Resource group**: Select the one you created
+   - **Storage account name**: `stgadataingestion` (globally unique, lowercase)
+   - **Region**: Same as resource group
+   - **Performance**: Standard
+   - **Redundancy**: Locally-redundant storage (LRS)
+3. Click **"Review + create"** → **"Create"**
+4. After creation:
+   - Go to Storage Account → **"Access keys"** → Copy the **Connection string**
+   - Go to **"Queues"** → Create two queues:
+     - `ingestion-jobs`
+     - `email-jobs`
+
+#### Step 3: Create the Function App
+
+1. Click **"Create a resource"** → Search for **"Function App"**
+2. **Basics tab**:
+   - **Resource group**: Select yours
+   - **Function App name**: `func-ga-data-ingestion-prod` (globally unique)
+   - **Publish**: Code
+   - **Runtime stack**: Python
+   - **Version**: 3.11
+   - **Region**: Same as resource group
+   - **Operating System**: Linux
+   - **Plan type**: **Premium (EP1)** or **Dedicated (App Service)**
+
+> ⚠️ **Important**: Consumption plan has a **10-minute max timeout**. Use **Premium** or **Dedicated** for jobs that may run up to 30 minutes.
+
+3. **Hosting tab**: Select the storage account you created
+4. **Monitoring tab**: Enable Application Insights (recommended)
+5. Click **"Review + create"** → **"Create"**
+
+#### Step 4: Configure Application Settings
+
+Go to Function App → **"Configuration"** → Add these settings:
+
+| Name | Value | Description |
+|------|-------|-------------|
+| `POSTGRES_HOST` | `your-db.postgres.database.azure.com` | Database server hostname |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `POSTGRES_USER` | `your-username` | Database username |
+| `POSTGRES_PASSWORD` | `your-password` | Database password |
+| `AzureWebJobsStorage` | Connection string from Step 2 | **Required** for queue triggers |
+
+> **Critical**: `AzureWebJobsStorage` must point to the Storage Account containing the queues. Without this, queue triggers will not work.
+
+Click **"Save"**.
+
+#### Step 5: Configure Function Timeout
+
+1. Go to Function App → **"Configuration"** → **"General settings"**
+2. Set **Function timeout** to `00:30:00` (30 minutes)
+3. Click **"Save"**
+
+#### Step 6: Deploy via Deployment Center
+
+1. Go to Function App → **"Deployment Center"**
+2. **Source**: GitHub
+3. Authorize and select:
+   - **Repository**: `google-analytics`
+   - **Branch**: `main` (or your deployment branch)
+4. **Build provider**: GitHub Actions
+5. Click **"Save"**
+
+This creates a GitHub Actions workflow automatically.
+
+---
+
+### Method 2: GitHub Actions Deployment
+
+#### Step 1: Get Azure Publish Profile
+
+1. Go to Function App in Azure Portal
+2. Click **"Get publish profile"** (top toolbar)
+3. Open the downloaded file and copy the entire content
+
+#### Step 2: Add GitHub Secret
+
+1. Go to GitHub Repository → **"Settings"** → **"Secrets and variables"** → **"Actions"**
+2. Create secret:
+   - **Name**: `AZURE_FUNCTIONAPP_PUBLISH_PROFILE`
+   - **Value**: Paste the publish profile content
+
+#### Step 3: Create Workflow File
+
+Create `.github/workflows/master_gadataingestion.yml`:
+
+
+
+#### Step 4: Commit and Push
 
 ```bash
-# 1. Navigate to backend
-cd google-analytics/backend
-
-# 2. Install dependencies
-uv sync --dev
-
-# 3. Set up environment
-cp .env.example .env
-# Edit .env with your PostgreSQL credentials
-
-# 4. Initialize database
-make db_setup
-# Or: uv run python scripts/init_db.py
-
-# 5. Start services
-make services_start
-# Or start individually:
-#   make service_analytics  (port 8001)
-#   make service_data       (port 8002)
-#   make service_auth       (port 8003)
-
-# 6. Verify
-curl http://localhost:8001/health
+git add .github/workflows/master_gadataingestion.yml
+git commit -m "ci: Add Azure Functions deployment workflow"
+git push
 ```
 
-### Environment Variables
+Monitor deployment in GitHub → **"Actions"** tab.
 
-Create a `.env` file in the backend directory:
+---
 
-```env
-# Required: Database
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=analytics_user
-POSTGRES_PASSWORD=your_password
-POSTGRES_DATABASE=google_analytics_db
+### Method 3: Azure CLI Deployment
 
-# Optional: Pool settings
-DATABASE_POOL_SIZE=5
-DATABASE_MAX_OVERFLOW=5
+```bash
+# Login to Azure
+az login
 
-# Optional: Service settings
-ENVIRONMENT=DEV
-DEBUG=true
-LOG_LEVEL=DEBUG
+# Create resource group
+az group create --name rg-google-analytics-prod --location eastus2
+
+# Create storage account
+az storage account create \
+  --name stgadataingestion \
+  --resource-group rg-google-analytics-prod \
+  --location eastus2 \
+  --sku Standard_LRS
+
+# Get storage connection string
+STORAGE_CONN=$(az storage account show-connection-string \
+  --name stgadataingestion \
+  --resource-group rg-google-analytics-prod \
+  --query connectionString -o tsv)
+
+# Create queues
+az storage queue create --name ingestion-jobs --connection-string "$STORAGE_CONN"
+az storage queue create --name email-jobs --connection-string "$STORAGE_CONN"
+
+# Create Premium function app plan (for 30-min timeout)
+az functionapp plan create \
+  --name plan-ga-data-ingestion \
+  --resource-group rg-google-analytics-prod \
+  --location eastus2 \
+  --sku EP1 \
+  --is-linux
+
+# Create function app
+az functionapp create \
+  --name func-ga-data-ingestion-prod \
+  --resource-group rg-google-analytics-prod \
+  --plan plan-ga-data-ingestion \
+  --runtime python \
+  --runtime-version 3.11 \
+  --storage-account stgadataingestion \
+  --functions-version 4
+
+# Configure app settings
+az functionapp config appsettings set \
+  --name func-ga-data-ingestion-prod \
+  --resource-group rg-google-analytics-prod \
+  --settings \
+    POSTGRES_HOST=your-db-host \
+    POSTGRES_PORT=5432 \
+    POSTGRES_USER=your-user \
+    POSTGRES_PASSWORD=your-password \
+    AzureWebJobsStorage="$STORAGE_CONN"
+
+# Deploy from local
+cd backend/services/functions
+func azure functionapp publish func-ga-data-ingestion-prod
 ```
 
 ---
 
-## Development Environment
+## Post-Deployment Verification
 
-### IDE Setup
+### 1. Verify Functions are Registered
 
-#### VS Code (Recommended)
+Go to Function App → **"Functions"**. You should see:
+- `health_check` (HTTP Trigger)
+- `process_ingestion_job` (Queue Trigger)
+- `process_email_job` (Queue Trigger)
 
-Install these extensions:
-- **Python** (Microsoft)
-- **Pylance** (Microsoft)
-- **Python Debugger** (Microsoft)
-- **SQLTools** + **PostgreSQL Driver**
+### 2. Test Health Endpoint
 
-`.vscode/settings.json`:
+```bash
+curl https://func-ga-data-ingestion-prod.azurewebsites.net/api/health
+```
+
+Expected response:
 ```json
 {
-  "python.defaultInterpreterPath": ".venv/bin/python",
-  "python.analysis.typeCheckingMode": "basic",
-  "python.formatting.provider": "black",
-  "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
-  "editor.formatOnSave": true,
-  "[python]": {
-    "editor.defaultFormatter": "ms-python.black-formatter"
-  }
+  "status": "healthy",
+  "timestamp": "2024-12-30T10:30:00.123456",
+  "version": "1.0.0",
+  "service": "data-ingestion-email-worker",
+  "mode": "queue-based background processing"
 }
 ```
 
-`.vscode/launch.json`:
-```json
-{
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Analytics Service",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "uvicorn",
-      "args": ["services.analytics_service:app", "--port", "8001", "--reload"],
-      "cwd": "${workspaceFolder}",
-      "env": {"PYTHONPATH": "${workspaceFolder}"}
-    },
-    {
-      "name": "Data Service",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "uvicorn",
-      "args": ["services.data_service:app", "--port", "8002", "--reload"],
-      "cwd": "${workspaceFolder}",
-      "env": {"PYTHONPATH": "${workspaceFolder}"}
-    },
-    {
-      "name": "Auth Service",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "uvicorn",
-      "args": ["services.auth_service:app", "--port", "8003", "--reload"],
-      "cwd": "${workspaceFolder}",
-      "env": {"PYTHONPATH": "${workspaceFolder}"}
-    }
-  ]
-}
-```
-
-#### PyCharm
-
-1. Open project directory
-2. Set Python interpreter: `.venv/bin/python`
-3. Mark `backend` as Sources Root
-4. Configure run configurations for each service
-
-### Virtual Environment
-
-The project uses `uv` for dependency management:
-
-```bash
-# Create/update virtual environment
-uv sync
-
-# Add a dependency
-uv add package_name
-
-# Add dev dependency
-uv add --dev pytest
-
-# Update all dependencies
-uv sync --upgrade
-```
-
----
-
-## Project Structure
-
-```
-backend/
-├── common/                      # Shared code across services
-│   ├── __init__.py
-│   ├── config/
-│   │   ├── __init__.py
-│   │   └── settings.py          # Pydantic settings classes
-│   ├── database/
-│   │   ├── __init__.py          # Exports: Base, get_async_db_session
-│   │   ├── base.py              # SQLAlchemy declarative base
-│   │   ├── session.py           # Engine & session management
-│   │   └── tenant_config.py     # Multi-tenant config helpers
-│   ├── fastapi/
-│   │   ├── __init__.py
-│   │   └── app_factory.py       # create_fastapi_app() factory
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── events.py            # Event SQLAlchemy models
-│   │   ├── locations.py
-│   │   ├── tenants.py
-│   │   └── users.py
-│   ├── logging.py               # Loguru configuration
-│   └── scheduler_client.py      # External scheduler integration
-│
-├── database/                    # SQL schema files
-│   ├── tables/                  # CREATE TABLE scripts
-│   └── functions/               # PL/pgSQL function scripts
-│
-├── services/                    # Microservices
-│   ├── analytics_service/
-│   │   ├── __init__.py
-│   │   ├── main.py              # FastAPI app entrypoint
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   ├── dependencies.py  # FastAPI dependencies
-│   │   │   └── v1/
-│   │   │       ├── api.py       # Router aggregation
-│   │   │       ├── endpoints/   # Endpoint modules
-│   │   │       └── models/      # Pydantic request/response models
-│   │   ├── database/
-│   │   │   └── postgres_client.py
-│   │   ├── services/            # Business logic
-│   │   └── templates/           # Jinja2 email templates
-│   │
-│   ├── data_service/
-│   │   ├── main.py
-│   │   ├── api/...
-│   │   ├── clients/             # BigQuery, SFTP clients
-│   │   ├── database/
-│   │   │   └── sqlalchemy_repository.py
-│   │   └── services/
-│   │       └── ingestion_service.py
-│   │
-│   └── auth_service/
-│       ├── main.py
-│       ├── api/...
-│       └── services/
-│           └── auth_service.py
-│
-├── scripts/                     # CLI scripts
-│   ├── init_db.py
-│   ├── clear_db.py
-│   └── cancel_running_jobs.py
-│
-├── logs/                        # Log files (gitignored)
-├── .env                         # Environment variables (gitignored)
-├── pyproject.toml              # Project configuration
-└── uv.lock                     # Locked dependencies
-```
-
-### Key Files Explained
-
-| File | Purpose |
-|------|---------|
-| `common/fastapi/app_factory.py` | Factory that creates FastAPI apps with standard middleware |
-| `common/database/session.py` | SQLAlchemy engine creation with connection pooling |
-| `common/config/settings.py` | Pydantic settings classes for each service |
-| `services/*/main.py` | Service entrypoint, creates FastAPI app |
-| `services/*/api/v1/api.py` | Aggregates all endpoint routers |
-| `services/*/database/*.py` | Database operations for the service |
-| `services/*/services/*.py` | Business logic layer |
-
----
-
-## Coding Standards
-
-### Python Style Guide
-
-We follow PEP 8 with these tools:
-- **Black** for formatting
-- **Flake8** for linting
-- **isort** for import sorting
-- **mypy** for type checking
-
-```bash
-# Format code
-uv run black .
-
-# Lint code
-uv run flake8 .
-
-# Sort imports
-uv run isort .
-
-# Type check
-uv run mypy .
-```
-
-### Type Hints
-
-Always use type hints for function parameters and return values:
-
-```python
-# ✅ Good
-async def get_dashboard_stats(
-    tenant_id: str,
-    start_date: Optional[str] = None,
-    end_date: Optional[str] = None,
-) -> Dict[str, Any]:
-    ...
-
-# ❌ Bad
-async def get_dashboard_stats(tenant_id, start_date=None, end_date=None):
-    ...
-```
-
-### Async/Await
-
-Use async for all I/O operations:
-
-```python
-# ✅ Good - async database operation
-async with get_async_db_session("analytics-service") as session:
-    result = await session.execute(query)
-
-# ❌ Bad - blocking database operation in async context
-with get_db_session("analytics-service") as session:
-    result = session.execute(query)  # Blocks event loop!
-```
-
-### Error Handling
-
-Use structured logging and meaningful exceptions:
-
-```python
-from loguru import logger
-from fastapi import HTTPException, status
-
-async def process_data(tenant_id: str) -> Dict[str, Any]:
-    try:
-        # Business logic
-        result = await some_operation()
-        logger.info(f"Processed data for tenant", tenant_id=tenant_id)
-        return result
-    except ValueError as e:
-        logger.warning(f"Invalid input", tenant_id=tenant_id, error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid input: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Processing failed", tenant_id=tenant_id, error=str(e), exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while processing"
-        )
-```
-
-### Docstrings
-
-Use Google-style docstrings:
-
-```python
-async def get_purchase_tasks(
-    tenant_id: str,
-    page: int,
-    limit: int,
-    location_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    Get purchase follow-up tasks with pagination.
-
-    Retrieves purchase events that represent sales opportunities,
-    enriched with customer contact information.
-
-    Args:
-        tenant_id: UUID of the tenant.
-        page: Page number (1-indexed).
-        limit: Number of items per page.
-        location_id: Optional branch filter.
-
-    Returns:
-        Dict containing:
-            - data: List of purchase task objects
-            - total: Total number of matching records
-            - page: Current page number
-            - limit: Items per page
-            - has_more: Whether more pages exist
-
-    Raises:
-        HTTPException: If database query fails.
-
-    Example:
-        >>> result = await get_purchase_tasks("tenant-uuid", 1, 50)
-        >>> print(result["total"])
-        523
-    """
-```
-
-### File Organization
-
-```python
-# Standard import order (enforced by isort)
-# 1. Standard library
-import asyncio
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-
-# 2. Third-party
-from fastapi import APIRouter, Depends, HTTPException
-from loguru import logger
-from sqlalchemy import text
-
-# 3. Local imports
-from common.config import get_settings
-from common.database import get_async_db_session
-from services.analytics_service.database import AnalyticsPostgresClient
-```
-
----
-
-## Testing
-
-### Test Structure
-
-```
-tests/
-├── conftest.py                  # Shared fixtures
-├── unit/
-│   ├── test_settings.py
-│   ├── test_database.py
-│   └── services/
-│       ├── test_analytics.py
-│       ├── test_data.py
-│       └── test_auth.py
-├── integration/
-│   ├── test_api_analytics.py
-│   ├── test_api_data.py
-│   └── test_api_auth.py
-└── e2e/
-    └── test_full_flow.py
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=services --cov-report=html
-
-# Run specific test file
-uv run pytest tests/unit/test_settings.py
-
-# Run tests matching pattern
-uv run pytest -k "test_purchase"
-
-# Run with verbose output
-uv run pytest -v
-
-# Run and stop on first failure
-uv run pytest -x
-```
-
-### Writing Tests
-
-```python
-# tests/unit/services/test_analytics.py
-import pytest
-from unittest.mock import AsyncMock, patch
-
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
-
-
-@pytest.fixture
-def client():
-    return AnalyticsPostgresClient()
-
-
-@pytest.fixture
-def mock_session():
-    """Mock async database session."""
-    session = AsyncMock()
-    return session
-
-
-class TestAnalyticsPostgresClient:
-    @pytest.mark.asyncio
-    async def test_get_locations_returns_list(self, client, mock_session):
-        """Test that get_locations returns a list of location dicts."""
-        # Arrange
-        mock_result = AsyncMock()
-        mock_result.fetchall.return_value = [
-            type('Row', (), {
-                'location_id': 'D01',
-                'location_name': 'Downtown',
-                'city': 'NYC',
-                'state': 'NY'
-            })()
-        ]
-        mock_session.execute.return_value = mock_result
-
-        with patch(
-            'services.analytics_service.database.postgres_client.get_async_db_session'
-        ) as mock_get_session:
-            mock_get_session.return_value.__aenter__.return_value = mock_session
-            
-            # Act
-            result = await client.get_locations("tenant-uuid")
-            
-            # Assert
-            assert len(result) == 1
-            assert result[0]["locationId"] == "D01"
-            assert result[0]["city"] == "NYC"
-
-
-    @pytest.mark.asyncio
-    async def test_get_locations_handles_empty_result(self, client, mock_session):
-        """Test that get_locations returns empty list when no locations."""
-        mock_result = AsyncMock()
-        mock_result.fetchall.return_value = []
-        mock_session.execute.return_value = mock_result
-
-        with patch(
-            'services.analytics_service.database.postgres_client.get_async_db_session'
-        ) as mock_get_session:
-            mock_get_session.return_value.__aenter__.return_value = mock_session
-            
-            result = await client.get_locations("tenant-uuid")
-            
-            assert result == []
-```
-
-### Integration Tests
-
-```python
-# tests/integration/test_api_analytics.py
-import pytest
-from httpx import AsyncClient
-from services.analytics_service.main import app
-
-
-@pytest.fixture
-async def client():
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
-
-
-class TestAnalyticsAPI:
-    @pytest.mark.asyncio
-    async def test_health_check(self, client):
-        response = await client.get("/health")
-        assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
-
-    @pytest.mark.asyncio
-    async def test_locations_requires_auth(self, client):
-        response = await client.get("/api/v1/locations")
-        assert response.status_code == 401
-```
-
----
-
-## Debugging
-
-### Logging
-
-All services use Loguru for logging:
-
-```python
-from loguru import logger
-
-# Info level
-logger.info("Processing request", tenant_id=tenant_id, endpoint="/stats")
-
-# Warning level
-logger.warning("Rate limit approaching", current=95, limit=100)
-
-# Error level with traceback
-logger.error("Database query failed", error=str(e), exc_info=True)
-
-# Debug level (only in DEV)
-logger.debug("Query result", rows=len(result), query_time=elapsed)
-```
-
-Log files are in `backend/logs/`:
-```
-logs/
-├── analytics-service.log
-├── analytics-service-error.log
-├── data-ingestion-service.log
-├── data-ingestion-service-error.log
-├── auth-service.log
-└── auth-service-error.log
-```
-
-### Viewing Logs
-
-```bash
-# Real-time log viewing
-tail -f logs/analytics-service.log
-
-# Search for errors
-grep -r "ERROR" logs/
-
-# View last 100 lines
-tail -100 logs/analytics-service.log
-```
-
-### Database Debugging
-
-```python
-# Enable SQL echo in .env
-DATABASE_ECHO=true
-
-# Or temporarily in code
-engine = create_engine(url, echo=True)
-```
-
-### Breakpoint Debugging
-
-```python
-# Add breakpoint in code
-import pdb; pdb.set_trace()
-
-# Or use breakpoint() (Python 3.7+)
-breakpoint()
-```
-
-### VS Code Debugging
-
-1. Add breakpoints in the editor
-2. Select debug configuration (e.g., "Analytics Service")
-3. Press F5 to start debugging
-4. Use Debug Console for inspection
-
----
-
-## Common Tasks
-
-### Adding a New Endpoint
-
-1. **Create endpoint function**:
-```python
-# services/analytics_service/api/v1/endpoints/new_feature.py
-from fastapi import APIRouter, Depends
-from services.analytics_service.api.dependencies import get_current_tenant
-
-router = APIRouter()
-
-@router.get("/new-feature")
-async def get_new_feature(
-    tenant_id: str = Depends(get_current_tenant)
-):
-    # Implementation
-    return {"data": "result"}
-```
-
-2. **Add to router**:
-```python
-# services/analytics_service/api/v1/api.py
-from services.analytics_service.api.v1.endpoints import new_feature
-
-api_router.include_router(new_feature.router, prefix="/new-feature", tags=["New Feature"])
-```
-
-### Adding a New Database Function
-
-1. **Create SQL file**:
-```sql
--- database/functions/get_new_feature.sql
-CREATE OR REPLACE FUNCTION get_new_feature(
-    p_tenant_id UUID,
-    p_param TEXT
-) RETURNS JSONB AS $$
-BEGIN
-    RETURN jsonb_build_object(
-        'data', 'result'
-    );
-END;
-$$ LANGUAGE plpgsql;
-```
-
-2. **Apply to database**:
-```bash
-make db_setup
-```
-
-3. **Call from Python**:
-```python
-result = await session.execute(
-    text("SELECT get_new_feature(:tenant_id, :param)"),
-    {"tenant_id": tenant_id, "param": param}
-)
-data = result.scalar()
-```
-
-### Adding a New Table
-
-1. **Create SQL file**:
-```sql
--- database/tables/new_table.sql
-CREATE TABLE IF NOT EXISTS new_table (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id),
-    data TEXT,
-    created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_new_table_tenant ON new_table(tenant_id);
-```
-
-2. **Add to creation order**:
-```python
-# scripts/init_db.py
-TABLE_CREATION_ORDER = [
-    ...
-    "new_table.sql",
-]
-```
-
-3. **Create SQLAlchemy model** (optional):
-```python
-# common/models/new_table.py
-from sqlalchemy import String, text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-from common.database import Base
-
-class NewTable(Base):
-    __tablename__ = "new_table"
-    
-    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
-    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False))
-    data: Mapped[str] = mapped_column(String(500))
-```
-
-### Adding a New Service
-
-1. **Create service directory**:
-```
-services/new_service/
-├── __init__.py
-├── main.py
-├── api/
-│   ├── __init__.py
-│   ├── dependencies.py
-│   └── v1/
-│       ├── __init__.py
-│       ├── api.py
-│       └── endpoints/
-│           └── __init__.py
-└── services/
-    └── __init__.py
-```
-
-2. **Create main.py**:
-```python
-from common.fastapi import create_fastapi_app
-from services.new_service.api.v1.api import api_router
-
-app = create_fastapi_app(
-    service_name="new-service",
-    description="New service description",
-    api_router=api_router,
-    root_path="/new",
-)
-```
-
-3. **Add settings class**:
-```python
-# common/config/settings.py
-class NewServiceSettings(BaseServiceSettings):
-    SERVICE_NAME: str = "new-service"
-    SERVICE_VERSION: str = "0.0.1"
-    PORT: int = 8004
-```
-
-4. **Add to Makefile**:
-```makefile
-service_new:
-    uv run uvicorn services.new_service:app --port 8004 --reload
-```
+### 3. Monitor in Azure Portal
+
+- **Storage Account** → **Queues**: Watch message counts
+- **Function App** → **Monitor**: View invocation logs
+- **Application Insights** → **Live Metrics**: Real-time monitoring
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Functions not showing | Deployment failed | Check Deployment Center logs |
+| Queue triggers not firing | Missing `AzureWebJobsStorage` | Verify app setting points to correct storage |
+| Message decoding errors | Encoding mismatch | Ensure `host.json` has `"queues.messageEncoding": "none"` |
+| Jobs stuck in "queued" | Function crashed | Check poison queues (`*-poison`) for failed messages |
+| Database connection failed | Firewall/credentials | Verify connection string and Azure firewall rules |
+| Timeout errors | Job too long | Use Premium plan (30-min timeout) or optimize job |
+| BigQuery errors | Invalid credentials | Check `tenant_config.bigquery_credentials` |
+| Email sending fails | SMTP misconfigured | Verify `tenant_config.email_config` |
 
-#### Import Errors
+### View Logs
 
-```
-ModuleNotFoundError: No module named 'common'
-```
-
-**Solution**: Ensure you're running from the `backend` directory:
 ```bash
-cd backend
-uv run uvicorn services.analytics_service:app --port 8001
+# Stream live logs
+az functionapp log stream \
+  --name func-ga-data-ingestion-prod \
+  --resource-group rg-google-analytics-prod
 ```
 
-#### Database Connection Failed
-
-```
-Connection refused on localhost:5432
-```
-
-**Solution**:
-1. Check PostgreSQL is running: `brew services list | grep postgres`
-2. Verify credentials in `.env`
-3. Test connection: `psql -h localhost -U analytics_user -d google_analytics_db`
-
-#### Port Already in Use
-
-```
-OSError: [Errno 48] Address already in use
-```
-
-**Solution**:
-```bash
-# Find process using port
-lsof -i :8001
-
-# Kill process
-kill -9 <PID>
-```
-
-#### Async Session Errors
-
-```
-RuntimeError: Task attached to a different loop
-```
-
-**Solution**: Ensure you're using async session in async context:
-```python
-# ✅ Correct
-async with get_async_db_session("service") as session:
-    ...
-
-# ❌ Wrong - mixing sync/async
-with get_db_session("service") as session:
-    await session.execute(...)  # Error!
-```
-
-### Getting Help
-
-1. Check logs: `tail -f logs/*.log`
-2. Ask in team Slack channel
-3. Check the documentation
+Or in Azure Portal: Function App → Functions → Select function → **Monitor**
 
 ---
+
+## Cost Considerations
+
+| Plan | Max Timeout | Cost Model | Best For |
+|------|-------------|------------|----------|
+| **Consumption** | 10 min | Pay per execution | Light workloads, testing |
+| **Premium (EP1)** | 60 min | Always-warm instances | Production with long jobs |
+| **Dedicated (B1+)** | Unlimited | Fixed monthly | Predictable high volume |
+
+**Recommendation**: Use **Premium EP1** for production. Data ingestion jobs can run 10-30 minutes depending on date range and data volume.
+
+---
+
+## Security Best Practices
+
+### 1. Use Azure Key Vault for Secrets
+
+```bash
+# Create Key Vault
+az keyvault create --name kv-ga-secrets --resource-group rg-google-analytics-prod
+
+# Store secrets
+az keyvault secret set --vault-name kv-ga-secrets --name POSTGRES-PASSWORD --value "your-password"
+
+# Reference in app settings
+POSTGRES_PASSWORD=@Microsoft.KeyVault(SecretUri=https://kv-ga-secrets.vault.azure.net/secrets/POSTGRES-PASSWORD/)
+```
+
+### 2. Enable Managed Identity
+
+```bash
+az functionapp identity assign \
+  --name func-ga-data-ingestion-prod \
+  --resource-group rg-google-analytics-prod
+```
+
+### 3. Network Security
+
+- Enable **Private Endpoints** for database connections
+- Configure **VNet Integration** for the Function App
+- Enable **HTTPS Only** in Configuration → General settings
+
+### 4. Access Control
+
+- Use **Azure RBAC** for deployment permissions
+- Restrict Function App access with **IP restrictions** if needed
+- Enable **Application Insights** for audit logging
+
+---
+
+## Related Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - System architecture overview
+- [DATABASE.md](./DATABASE.md) - Database schema and tenant isolation
+- [RUNBOOK.md](./RUNBOOK.md) - Operational procedures and incident response
+- [API.md](./API.md) - Data Service API for triggering jobs
+- [Functions README](../services/functions/README.md) - Service-specific documentation
 

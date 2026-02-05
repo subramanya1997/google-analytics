@@ -123,13 +123,13 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                   onValueChange={(value) => setSelectedLocation(value === "all" ? null : value)}
                   disabled={loadingLocations}
                 >
-                  <SelectTrigger className={isMobile ? 'w-10 h-10 p-0 [&>svg:last-child]:hidden flex items-center justify-center' : 'w-full sm:w-[250px]'}>
+                  <SelectTrigger className={isMobile ? 'w-10 h-10 p-0 [&>svg:last-child]:hidden flex items-center justify-center' : 'h-9 px-2 text-sm w-auto max-w-[250px]'}>
                     {isMobile ? (
                       <MapPin className="h-4 w-4 shrink-0 text-foreground" />
                     ) : (
                       <>
-                        <MapPin className="h-4 w-4 shrink-0 text-foreground" />
-                        <SelectValue placeholder="Select location" />
+                        <MapPin className="h-4 w-4 text-foreground" />
+                        <SelectValue placeholder="Select location" className="truncate" />
                       </>
                     )}
                   </SelectTrigger>
@@ -145,7 +145,6 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                 <DateRangeSelector
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
-                  className={isMobile ? "w-10" : "w-[200px] lg:w-[260px]"}
                   iconOnly={isMobile}
                 />
               </>

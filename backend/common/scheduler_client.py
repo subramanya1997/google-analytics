@@ -98,7 +98,7 @@ class SchedulerClient:
         """
         if not scheduler_url:
             raise ValueError("scheduler_url cannot be empty")
-        self.scheduler_url = scheduler_url.rstrip("/")
+        self.scheduler_url = scheduler_url
 
     def _make_request(
         self,

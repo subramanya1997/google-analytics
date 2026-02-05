@@ -33,7 +33,7 @@ Example:
     GET /api/v1/email/config
     Headers:
         X-Tenant-Id: tenant-123
-    
+
     # Create branch mapping
     POST /api/v1/email/mappings
     Body:
@@ -41,7 +41,7 @@ Example:
             "branch_code": "BRANCH-001",
             "sales_rep_email": "rep@company.com"
         }
-    
+
     # Send reports
     POST /api/v1/email/send-reports
     Body:
@@ -52,7 +52,7 @@ Example:
     ```
 
 See Also:
-    - services.analytics_service.database.postgres_client: Database client methods
+    - services.data_service.database.email_repository: Database repository methods
     - common.database.get_tenant_service_status: Service status checking
 """
 
@@ -68,34 +68,33 @@ from loguru import logger
 from common.config import get_settings
 from common.database import get_tenant_service_status
 from common.exceptions import create_api_error, handle_database_error
-from services.analytics_service.api.dependencies import get_tenant_id
-from services.analytics_service.api.v1.models import (
+from services.data_service.api.dependencies import get_email_repository, get_tenant_id
+from services.data_service.api.v1.models.email import (
     BranchEmailMappingRequest,
     BranchEmailMappingResponse,
     EmailJobResponse,
     SendReportsRequest,
 )
-from services.analytics_service.database.dependencies import get_analytics_db_client
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
+from services.data_service.database.email_repository import EmailRepository
 
 router = APIRouter()
 
 # Get settings for pagination constants
-_settings = get_settings("analytics-service")
+_settings = get_settings("data-ingestion-service")
 
 
 @router.get("/config", response_model=dict[str, Any])
 async def get_email_config(
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Get email configuration for the tenant.
 
-    Returns the SMTP configuration stored in the tenants table.
+    Returns the SMTP configuration stored in the tenant_config table.
     """
     try:
-        config = await db_client.get_email_config(tenant_id)
+        config = await repo.get_email_config(tenant_id)
 
         # Don't expose sensitive information like passwords
         if config and "password" in config:
@@ -119,7 +118,7 @@ async def get_email_config(
 async def get_branch_email_mappings(
     tenant_id: str = Depends(get_tenant_id),
     branch_code: str | None = Query(default=None, description="Filter by branch code"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> list[BranchEmailMappingResponse]:
     """
     Get branch to email mappings for the tenant.
@@ -128,7 +127,7 @@ async def get_branch_email_mappings(
     should receive reports for which branches.
     """
     try:
-        mappings = await db_client.get_branch_email_mappings(tenant_id, branch_code)
+        mappings = await repo.get_branch_email_mappings(tenant_id, branch_code)
 
         logger.info(f"Retrieved {len(mappings)} email mappings for tenant {tenant_id}")
 
@@ -145,13 +144,13 @@ async def get_branch_email_mappings(
 async def create_branch_email_mapping(
     mapping: BranchEmailMappingRequest,
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Create a new branch email mapping for the tenant.
     """
     try:
-        result = await db_client.create_branch_email_mapping(tenant_id, mapping)
+        result = await repo.create_branch_email_mapping(tenant_id, mapping)
 
         logger.info(f"Created new email mapping for tenant {tenant_id}: {result}")
 
@@ -173,7 +172,7 @@ async def update_branch_email_mapping(
     mapping_id: str,
     mapping: BranchEmailMappingRequest,
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Update a specific branch email mapping by ID.
@@ -181,9 +180,7 @@ async def update_branch_email_mapping(
     Updates the mapping identified by the given ID for the current tenant.
     """
     try:
-        result = await db_client.update_branch_email_mapping(
-            tenant_id, mapping_id, mapping
-        )
+        result = await repo.update_branch_email_mapping(tenant_id, mapping_id, mapping)
 
         if not result:
             raise HTTPException(
@@ -210,7 +207,7 @@ async def update_branch_email_mapping(
 async def delete_branch_email_mapping(
     mapping_id: str,
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Delete a specific branch email mapping by ID.
@@ -218,7 +215,7 @@ async def delete_branch_email_mapping(
     Removes the mapping identified by the given ID for the current tenant.
     """
     try:
-        result = await db_client.delete_branch_email_mapping(tenant_id, mapping_id)
+        result = await repo.delete_branch_email_mapping(tenant_id, mapping_id)
 
         if not result:
             raise HTTPException(
@@ -246,7 +243,7 @@ async def send_reports(
     request: SendReportsRequest,
     background_tasks: BackgroundTasks,
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> EmailJobResponse:
     """
     Initiate automated branch report distribution via email.
@@ -260,7 +257,7 @@ async def send_reports(
             - branch_codes (Optional[List[str]]): Specific branches or None for all
         background_tasks (BackgroundTasks): FastAPI background task scheduler
         tenant_id (str): Unique tenant identifier (from X-Tenant-Id header)
-        db_client (AnalyticsPostgresClient): Database client dependency
+        repo (EmailRepository): Database repository dependency
 
     Returns:
         EmailJobResponse: Job information containing:
@@ -276,7 +273,7 @@ async def send_reports(
     """
     try:
         # Check SMTP service status
-        service_status = await get_tenant_service_status(tenant_id, "analytics-service")
+        service_status = await get_tenant_service_status(tenant_id, "data-service")
 
         if not service_status["smtp"]["enabled"]:
             error_msg = service_status["smtp"]["error"] or "SMTP service is disabled"
@@ -297,7 +294,7 @@ async def send_reports(
             "report_date": request.report_date,
             "target_branches": request.branch_codes or [],
         }
-        await db_client.create_email_job(job_data)
+        await repo.create_email_job(job_data)
 
         logger.info(
             f"Created email job {job_id} for tenant {tenant_id}, sending to queue..."
@@ -307,9 +304,7 @@ async def send_reports(
         connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
         if not connection_string:
             msg = "AZURE_STORAGE_CONNECTION_STRING environment variable not set"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
         queue_client = QueueClient.from_connection_string(
             connection_string, "email-jobs"
@@ -363,13 +358,13 @@ async def get_email_send_history(
     end_date: str | None = Query(
         default=None, description="Filter to date (YYYY-MM-DD)"
     ),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Get email sending history with pagination and filtering.
     """
     try:
-        history = await db_client.get_email_send_history(
+        history = await repo.get_email_send_history(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -403,13 +398,13 @@ async def get_email_jobs(
         description="Items per page",
     ),
     status: str | None = Query(default=None, description="Filter by status"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: EmailRepository = Depends(get_email_repository),
 ) -> dict[str, Any]:
     """
     Get email job history with pagination and filtering.
     """
     try:
-        jobs = await db_client.get_email_jobs(
+        jobs = await repo.get_email_jobs(
             tenant_id=tenant_id, page=page, limit=limit, status=status
         )
 

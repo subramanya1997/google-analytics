@@ -32,7 +32,7 @@ Error Handling:
 
 See Also:
     - services.functions: Background job processing
-    - services.data_service.database.sqlalchemy_repository: Database operations
+    - services.data_service.database.ingestion_repository: Database operations
 """
 
 from datetime import datetime
@@ -48,12 +48,15 @@ from loguru import logger
 from common.config import get_settings
 from common.database import get_tenant_service_status
 from common.exceptions import create_api_error, handle_database_error
-from services.data_service.api.dependencies import get_repository, get_tenant_id
+from services.data_service.api.dependencies import (
+    get_ingestion_repository,
+    get_tenant_id,
+)
 from services.data_service.api.v1.models import (
     CreateIngestionJobRequest,
     IngestionJobResponse,
 )
-from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepository
+from services.data_service.database.ingestion_repository import IngestionRepository
 
 router = APIRouter()
 
@@ -65,7 +68,7 @@ _settings = get_settings("data-service")
 async def create_ingestion_job(
     request: CreateIngestionJobRequest,
     tenant_id: str = Depends(get_tenant_id),
-    repo: SqlAlchemyRepository = Depends(get_repository),
+    repo: IngestionRepository = Depends(get_ingestion_repository),
 ) -> IngestionJobResponse:
     """
     Create and start a new data ingestion job for multi-source analytics data processing.
@@ -183,7 +186,7 @@ async def create_ingestion_job(
 @router.get("/data-availability")
 async def get_data_availability(
     tenant_id: str = Depends(get_tenant_id),
-    repo: SqlAlchemyRepository = Depends(get_repository),
+    repo: IngestionRepository = Depends(get_ingestion_repository),
 ) -> dict[str, Any]:
     """
     Get the date range of available data for the tenant with detailed breakdown.
@@ -237,7 +240,7 @@ async def get_data_availability(
 @router.get("/jobs")
 async def get_ingestion_jobs(
     tenant_id: str = Depends(get_tenant_id),
-    repo: SqlAlchemyRepository = Depends(get_repository),
+    repo: IngestionRepository = Depends(get_ingestion_repository),
     limit: int | None = Query(default=50, le=100),
     offset: int | None = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -295,7 +298,7 @@ async def get_ingestion_jobs(
         # Get first page
         curl -H "X-Tenant-Id: tenant-uuid" \
              "http://localhost:8002/api/v1/jobs?limit=20&offset=0"
-        
+
         # Get second page
         curl -H "X-Tenant-Id: tenant-uuid" \
              "http://localhost:8002/api/v1/jobs?limit=20&offset=20"

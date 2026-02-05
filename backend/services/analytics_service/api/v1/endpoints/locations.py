@@ -25,7 +25,7 @@ Example:
     ```
 
 See Also:
-    - services.analytics_service.database.postgres_client: Database client methods
+    - services.analytics_service.database.locations_repository: LocationsRepository
     - backend/database/functions/get_locations.sql: SQL function
 """
 
@@ -33,10 +33,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from loguru import logger
 
 from common.exceptions import handle_database_error
-from services.analytics_service.api.dependencies import get_tenant_id
+from services.analytics_service.api.dependencies import (
+    get_locations_repository,
+    get_tenant_id,
+)
 from services.analytics_service.api.v1.models import LocationResponse
-from services.analytics_service.database.dependencies import get_analytics_db_client
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.database import LocationsRepository
 
 router = APIRouter()
 
@@ -44,7 +46,7 @@ router = APIRouter()
 @router.get("/locations", response_model=list[LocationResponse])
 async def get_locations(
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: LocationsRepository = Depends(get_locations_repository),
 ) -> list[LocationResponse]:
     """
     Retrieve all active locations (branches) for a tenant.
@@ -55,7 +57,7 @@ async def get_locations(
 
     Args:
         tenant_id: Tenant identifier extracted from X-Tenant-Id header.
-        db_client: Database client dependency injection.
+        repo: LocationsRepository dependency injection.
 
     Returns:
         list[LocationResponse]: List of location objects, each containing:
@@ -83,7 +85,7 @@ async def get_locations(
     """
     try:
         # Get locations with activity
-        locations = await db_client.get_locations(tenant_id)
+        locations = await repo.get_locations(tenant_id)
 
         logger.info(
             f"Retrieved {len(locations)} active locations for tenant {tenant_id}"

@@ -98,7 +98,11 @@ services/analytics_service/
 │           ├── email.py         # Email Pydantic models
 │           └── locations.py     # Location models
 ├── database/
-│   └── postgres_client.py       # Database operations
+│   ├── base.py                  # Shared constants
+│   ├── locations_repository.py  # Location queries
+│   ├── tasks_repository.py      # Task queries
+│   ├── history_repository.py    # History queries
+│   └── stats_repository.py      # Statistics queries
 ├── services/
 │   ├── email_service.py         # SMTP email sending
 │   ├── report_service.py        # Report generation

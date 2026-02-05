@@ -286,7 +286,7 @@ class AnalyticsServiceSettings(BaseServiceSettings):
     Settings configuration for the analytics service.
 
     This class extends BaseServiceSettings with analytics-service-specific
-    configuration options, including scheduler settings and Azure Storage integration.
+    configuration options.
 
     Inherited Attributes:
         All attributes from BaseServiceSettings are available with these overrides:
@@ -295,12 +295,8 @@ class AnalyticsServiceSettings(BaseServiceSettings):
         - PORT: 8001
 
     Additional Attributes:
-        EMAIL_NOTIFICATION_CRON (str): Cron expression for scheduled email notifications.
-            Default: "0 8 * * *" (Daily at 8:00 AM UTC).
         ANALYTICS_SERVICE_URL (str): Public URL of the analytics service endpoint.
             Used for generating callback URLs in scheduled jobs.
-        AZURE_STORAGE_CONNECTION_STRING (str): Azure Storage account connection string
-            for queue operations. Should be set via environment variable for security.
 
     Example:
         ```python
@@ -309,12 +305,9 @@ class AnalyticsServiceSettings(BaseServiceSettings):
         settings = AnalyticsServiceSettings()
         print(settings.SERVICE_NAME)  # "analytics-service"
         print(settings.PORT)  # 8001
-        print(settings.EMAIL_NOTIFICATION_CRON)  # "0 8 * * *"
         ```
 
     Note:
-        - Azure Storage connection string should be stored securely (env vars, secrets manager)
-        - Cron expressions use UTC timezone
         - Service URL should match the deployed service endpoint
     """
 
@@ -322,14 +315,9 @@ class AnalyticsServiceSettings(BaseServiceSettings):
     SERVICE_VERSION: str = "0.0.1"
     PORT: int = 8001
 
-    # Scheduler Configuration
-    EMAIL_NOTIFICATION_CRON: str = "0 8 * * *"  # Daily at 8 AM
     ANALYTICS_SERVICE_URL: str = (
         "https://devenv-ai-tech-assistant.extremeb2b.com/analytics"
     )
-
-    # Azure Storage Queue Configuration
-    AZURE_STORAGE_CONNECTION_STRING: str = ""
 
 
 class DataServiceSettings(BaseServiceSettings):
@@ -350,10 +338,18 @@ class DataServiceSettings(BaseServiceSettings):
         DATA_INGESTION_CRON (str): Cron expression for scheduled data ingestion jobs.
             Default: "0 2 * * *" (Daily at 2:00 AM UTC). This time is chosen to
             minimize impact on production traffic.
+        EMAIL_NOTIFICATION_CRON (str): Cron expression for scheduled email notifications.
+            Default: "0 8 * * *" (Daily at 8:00 AM UTC).
         DATA_SERVICE_URL (str): Public URL of the data ingestion service endpoint.
             Used for generating callback URLs in scheduled jobs.
         AZURE_STORAGE_CONNECTION_STRING (str): Azure Storage account connection string
             for queue operations. Should be set via environment variable for security.
+        JOB_MONITOR_ENABLED (bool): Enable/disable the background job status monitor.
+            Default: True.
+        JOB_MONITOR_INTERVAL_SECONDS (int): How often to check job statuses in seconds.
+            Default: 300 (5 minutes).
+        JOB_STUCK_TIMEOUT_MINUTES (int): Minutes before a processing job is considered stuck.
+            Default: 10.
 
     Example:
         ```python
@@ -378,10 +374,16 @@ class DataServiceSettings(BaseServiceSettings):
 
     # Scheduler Configuration
     DATA_INGESTION_CRON: str = "0 2 * * *"  # Daily at 2 AM
+    EMAIL_NOTIFICATION_CRON: str = "0 8 * * *"  # Daily at 8 AM
     DATA_SERVICE_URL: str = "https://devenv-ai-tech-assistant.extremeb2b.com/data"
 
     # Azure Storage Queue Configuration
     AZURE_STORAGE_CONNECTION_STRING: str = ""
+
+    # Job Monitor Configuration
+    JOB_MONITOR_ENABLED: bool = True
+    JOB_MONITOR_INTERVAL_SECONDS: int = 300  # 5 minutes
+    JOB_STUCK_TIMEOUT_MINUTES: int = 10
 
 
 class AuthServiceSettings(BaseServiceSettings):

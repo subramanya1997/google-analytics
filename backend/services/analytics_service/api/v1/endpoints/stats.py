@@ -36,7 +36,7 @@ Example:
     ```
 
 See Also:
-    - services.analytics_service.database.postgres_client: Database client methods
+    - services.analytics_service.database.stats_repository: StatsRepository
     - backend/database/functions/get_dashboard_overview_stats.sql: SQL function
 """
 
@@ -45,9 +45,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from common.exceptions import handle_database_error
-from services.analytics_service.api.dependencies import get_tenant_id
-from services.analytics_service.database.dependencies import get_analytics_db_client
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.api.dependencies import get_stats_repository, get_tenant_id
+from services.analytics_service.database import StatsRepository
 
 router = APIRouter()
 
@@ -63,7 +62,7 @@ async def get_overview_stats(
     location_id: str | None = Query(default=None, description="Location ID filter"),
     start_date: str | None = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="End date (YYYY-MM-DD)"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: StatsRepository = Depends(get_stats_repository),
 ) -> dict[str, Any]:
     """
     Retrieve dashboard overview statistics for a date range.
@@ -80,7 +79,7 @@ async def get_overview_stats(
             provided, returns default empty metrics.
         end_date: Optional end date filter (YYYY-MM-DD format). If not
             provided, returns default empty metrics.
-        db_client: Database client dependency injection.
+        repo: StatsRepository dependency injection.
 
     Returns:
         dict[str, Any]: Dictionary containing:
@@ -113,7 +112,7 @@ async def get_overview_stats(
     """
     try:
         if start_date and end_date:
-            metrics = await db_client.get_overview_stats(
+            metrics = await repo.get_overview_stats(
                 tenant_id=tenant_id,
                 start_date=start_date,
                 end_date=end_date,
@@ -146,7 +145,7 @@ async def get_chart_stats(
     start_date: str | None = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="End date (YYYY-MM-DD)"),
     granularity: str = Query(default="daily", description="Time granularity"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: StatsRepository = Depends(get_stats_repository),
 ) -> list[dict[str, Any]]:
     """
     Retrieve time-series chart data for dashboard visualizations.
@@ -167,7 +166,7 @@ async def get_chart_stats(
             - "daily": Group by day (default)
             - "weekly": Group by week
             - "monthly": Group by month
-        db_client: Database client dependency injection.
+        repo: StatsRepository dependency injection.
 
     Returns:
         list[dict[str, Any]]: List of time-series data points, each containing:
@@ -197,7 +196,7 @@ async def get_chart_stats(
     """
     try:
         if start_date and end_date:
-            chart_data = await db_client.get_chart_data(
+            chart_data = await repo.get_chart_data(
                 tenant_id=tenant_id,
                 start_date=start_date,
                 end_date=end_date,
@@ -219,7 +218,7 @@ async def get_location_stats(
     tenant_id: str = Depends(get_tenant_id),
     start_date: str | None = Query(default=None, description="Start date (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="End date (YYYY-MM-DD)"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: StatsRepository = Depends(get_stats_repository),
 ) -> list[dict[str, Any]]:
     """
     Retrieve aggregated statistics grouped by location/branch.
@@ -234,7 +233,7 @@ async def get_location_stats(
             provided, returns empty list.
         end_date: Optional end date filter (YYYY-MM-DD format). If not
             provided, returns empty list.
-        db_client: Database client dependency injection.
+        repo: StatsRepository dependency injection.
 
     Returns:
         list[dict[str, Any]]: List of location statistics, each containing:
@@ -265,7 +264,7 @@ async def get_location_stats(
     """
     try:
         if start_date and end_date:
-            location_stats = await db_client.get_location_stats(
+            location_stats = await repo.get_location_stats(
                 tenant_id=tenant_id,
                 start_date=start_date,
                 end_date=end_date,

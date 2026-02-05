@@ -33,7 +33,7 @@ Example:
     ```
 
 See Also:
-    - services.analytics_service.database.postgres_client: Database client methods
+    - services.analytics_service.database.history_repository: HistoryRepository
     - backend/database/functions/get_user_history.sql: SQL function
     - backend/database/functions/get_session_history.sql: SQL function
 """
@@ -43,9 +43,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from common.exceptions import handle_database_error
-from services.analytics_service.api.dependencies import get_tenant_id
-from services.analytics_service.database.dependencies import get_analytics_db_client
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.api.dependencies import (
+    get_history_repository,
+    get_tenant_id,
+)
+from services.analytics_service.database import HistoryRepository
 
 router = APIRouter()
 
@@ -55,7 +57,7 @@ router = APIRouter()
 async def get_user_history_compat(
     user_id: str = Query(..., description="User ID"),
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: HistoryRepository = Depends(get_history_repository),
 ) -> list[dict[str, Any]]:
     """
     Retrieve the complete event history for a specific user across all sessions.
@@ -67,7 +69,7 @@ async def get_user_history_compat(
     Args:
         user_id: Unique user identifier to retrieve history for (required).
         tenant_id: Tenant identifier extracted from X-Tenant-Id header.
-        db_client: Database client dependency injection.
+        repo: HistoryRepository dependency injection.
 
     Returns:
         list[dict[str, Any]]: Chronologically ordered list of event objects
@@ -96,7 +98,7 @@ async def get_user_history_compat(
         implementing pagination or date range filtering in future versions.
     """
     try:
-        return await db_client.get_user_history(tenant_id, user_id)
+        return await repo.get_user_history(tenant_id, user_id)
     except HTTPException:
         raise
     except Exception as e:
@@ -108,7 +110,7 @@ async def get_user_history_compat(
 async def get_session_history_compat(
     session_id: str = Query(..., description="Session ID"),
     tenant_id: str = Depends(get_tenant_id),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: HistoryRepository = Depends(get_history_repository),
 ) -> list[dict[str, Any]]:
     """
     Retrieve the complete event history for a specific session.
@@ -121,7 +123,7 @@ async def get_session_history_compat(
     Args:
         session_id: Unique session identifier to retrieve history for (required).
         tenant_id: Tenant identifier extracted from X-Tenant-Id header.
-        db_client: Database client dependency injection.
+        repo: HistoryRepository dependency injection.
 
     Returns:
         list[dict[str, Any]]: Chronologically ordered list of event objects,
@@ -149,7 +151,7 @@ async def get_session_history_compat(
         facilitate understanding of the user's session flow.
     """
     try:
-        return await db_client.get_session_history(tenant_id, session_id)
+        return await repo.get_session_history(tenant_id, session_id)
     except HTTPException:
         raise
     except Exception as e:

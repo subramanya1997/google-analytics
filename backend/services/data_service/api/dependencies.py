@@ -2,12 +2,13 @@
 Shared API Dependencies for Data Service
 
 This module provides reusable FastAPI dependencies that are used across multiple
-endpoints in the Data Ingestion Service. These dependencies handle common concerns
+endpoints in the Data Service. These dependencies handle common concerns
 like tenant identification, database repository injection, and request validation.
 
 Dependencies:
     - get_tenant_id: Extracts and validates tenant ID from HTTP headers
-    - get_repository: Provides cached database repository instance
+    - get_ingestion_repository: Provides cached ingestion repository instance
+    - get_email_repository: Provides cached email repository instance
 
 These dependencies ensure consistent behavior across all endpoints and provide
 proper multi-tenant isolation and resource management.
@@ -15,19 +16,30 @@ proper multi-tenant isolation and resource management.
 Example:
     ```python
     from fastapi import Depends
-    from services.data_service.api.dependencies import get_tenant_id, get_repository
-    
-    @router.get("/endpoint")
-    async def my_endpoint(
+    from services.data_service.api.dependencies import (
+        get_tenant_id,
+        get_ingestion_repository,
+        get_email_repository,
+    )
+
+    @router.get("/jobs")
+    async def get_jobs(
         tenant_id: str = Depends(get_tenant_id),
-        repo: SqlAlchemyRepository = Depends(get_repository),
+        repo: IngestionRepository = Depends(get_ingestion_repository),
     ):
-        # Use tenant_id and repo here
-        pass
+        return await repo.get_tenant_jobs(tenant_id)
+
+    @router.get("/email/config")
+    async def get_email_config(
+        tenant_id: str = Depends(get_tenant_id),
+        repo: EmailRepository = Depends(get_email_repository),
+    ):
+        return await repo.get_email_config(tenant_id)
     ```
 
 See Also:
-    - services.data_service.database.sqlalchemy_repository: Database repository implementation
+    - services.data_service.database.ingestion_repository: Ingestion database operations
+    - services.data_service.database.email_repository: Email database operations
 """
 
 from functools import lru_cache
@@ -35,7 +47,8 @@ from functools import lru_cache
 from fastapi import Header, HTTPException
 from loguru import logger
 
-from services.data_service.database.sqlalchemy_repository import SqlAlchemyRepository
+from services.data_service.database.email_repository import EmailRepository
+from services.data_service.database.ingestion_repository import IngestionRepository
 
 
 def get_tenant_id(
@@ -87,9 +100,9 @@ def get_tenant_id(
 
 
 @lru_cache(maxsize=1)
-def get_repository() -> SqlAlchemyRepository:
+def get_ingestion_repository() -> IngestionRepository:
     """
-    Get a cached singleton instance of the SqlAlchemyRepository.
+    Get a cached singleton instance of the IngestionRepository.
 
     This dependency provides a single repository instance per application lifecycle,
     ensuring efficient resource usage and consistent database connection management.
@@ -97,7 +110,7 @@ def get_repository() -> SqlAlchemyRepository:
     requests.
 
     Returns:
-        SqlAlchemyRepository: Singleton repository instance for database operations
+        IngestionRepository: Singleton repository instance for ingestion operations
 
     Performance:
         Using lru_cache ensures that:
@@ -114,10 +127,45 @@ def get_repository() -> SqlAlchemyRepository:
         ```python
         @router.post("/ingest")
         async def create_job(
-            repo: SqlAlchemyRepository = Depends(get_repository),
+            repo: IngestionRepository = Depends(get_ingestion_repository),
         ):
-            # Use repo for database operations
             await repo.create_processing_job(job_data)
         ```
     """
-    return SqlAlchemyRepository()
+    return IngestionRepository()
+
+
+@lru_cache(maxsize=1)
+def get_email_repository() -> EmailRepository:
+    """
+    Get a cached singleton instance of the EmailRepository.
+
+    This dependency provides a single repository instance per application lifecycle,
+    ensuring efficient resource usage and consistent database connection management.
+    The LRU cache ensures that only one instance is created and reused across all
+    requests.
+
+    Returns:
+        EmailRepository: Singleton repository instance for email operations
+
+    Performance:
+        Using lru_cache ensures that:
+        - Only one repository instance is created per application startup
+        - Database connection pooling is managed efficiently
+        - Memory usage is minimized
+
+    Thread Safety:
+        The repository instance is thread-safe and can be used concurrently
+        across multiple async requests. Each request gets its own database session
+        through the repository's session management.
+
+    Example:
+        ```python
+        @router.get("/email/config")
+        async def get_config(
+            repo: EmailRepository = Depends(get_email_repository),
+        ):
+            return await repo.get_email_config(tenant_id)
+        ```
+    """
+    return EmailRepository()

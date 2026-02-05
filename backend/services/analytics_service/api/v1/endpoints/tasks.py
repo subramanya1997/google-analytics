@@ -35,7 +35,7 @@ Example:
     ```
 
 See Also:
-    - services.analytics_service.database.postgres_client: Database client methods
+    - services.analytics_service.database.tasks_repository: TasksRepository
     - backend/database/functions/: PostgreSQL task functions
 """
 
@@ -46,9 +46,8 @@ from loguru import logger
 
 from common.config import get_settings
 from common.exceptions import handle_database_error
-from services.analytics_service.api.dependencies import get_tenant_id
-from services.analytics_service.database.dependencies import get_analytics_db_client
-from services.analytics_service.database.postgres_client import AnalyticsPostgresClient
+from services.analytics_service.api.dependencies import get_tasks_repository, get_tenant_id
+from services.analytics_service.database import TasksRepository
 
 router = APIRouter()
 
@@ -71,7 +70,7 @@ async def get_purchase_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
     Retrieve paginated purchase analysis tasks with optional filtering.
@@ -111,10 +110,10 @@ async def get_purchase_tasks(
         ```
     """
     try:
-        # Database client injected via dependency
+        # Repository injected via dependency
 
         # Fetch purchase tasks
-        result = await db_client.get_purchase_tasks(
+        result = await repo.get_purchase_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -151,7 +150,7 @@ async def get_cart_abandonment_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
     Retrieve paginated cart abandonment tasks with optional filtering.
@@ -168,7 +167,7 @@ async def get_cart_abandonment_tasks(
         location_id: Optional location filter to restrict results to a specific branch.
         start_date: Optional start date filter (YYYY-MM-DD format).
         end_date: Optional end date filter (YYYY-MM-DD format).
-        db_client: Database client dependency injection.
+        repo: TasksRepository dependency injection.
 
     Returns:
         dict[str, Any]: Paginated response containing:
@@ -191,10 +190,10 @@ async def get_cart_abandonment_tasks(
         ```
     """
     try:
-        # Database client injected via dependency
+        # Repository injected via dependency
 
         # Fetch cart abandonment tasks
-        result = await db_client.get_cart_abandonment_tasks(
+        result = await repo.get_cart_abandonment_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -234,7 +233,7 @@ async def get_search_analysis_tasks(
     include_converted: bool = Query(
         default=False, description="Include sessions that resulted in a purchase"
     ),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
     Retrieve paginated search analysis tasks with optional filtering.
@@ -254,7 +253,7 @@ async def get_search_analysis_tasks(
         end_date: Optional end date filter (YYYY-MM-DD format).
         include_converted: If True, includes searches that resulted in purchases.
             If False (default), only includes searches without conversions.
-        db_client: Database client dependency injection.
+        repo: TasksRepository dependency injection.
 
     Returns:
         dict[str, Any]: Paginated response containing:
@@ -281,10 +280,10 @@ async def get_search_analysis_tasks(
         ```
     """
     try:
-        # Database client injected via dependency
+        # Repository injected via dependency
 
         # Fetch search analysis tasks
-        result = await db_client.get_search_analysis_tasks(
+        result = await repo.get_search_analysis_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -321,7 +320,7 @@ async def get_performance_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
     Retrieve paginated branch performance tasks with optional filtering.
@@ -338,7 +337,7 @@ async def get_performance_tasks(
             specified location. If None, returns all locations.
         start_date: Optional start date filter (YYYY-MM-DD format).
         end_date: Optional end date filter (YYYY-MM-DD format).
-        db_client: Database client dependency injection.
+        repo: TasksRepository dependency injection.
 
     Returns:
         dict[str, Any]: Paginated response containing:
@@ -366,10 +365,10 @@ async def get_performance_tasks(
         ```
     """
     try:
-        # Database client injected via dependency
+        # Repository injected via dependency
 
         # Fetch performance tasks
-        result = await db_client.get_performance_tasks(
+        result = await repo.get_performance_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,
@@ -405,7 +404,7 @@ async def get_repeat_visit_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
-    db_client: AnalyticsPostgresClient = Depends(get_analytics_db_client),
+    repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
     Retrieve paginated repeat visit tasks with optional filtering.
@@ -423,7 +422,7 @@ async def get_repeat_visit_tasks(
         location_id: Optional location filter to restrict results to a specific branch.
         start_date: Optional start date filter (YYYY-MM-DD format).
         end_date: Optional end date filter (YYYY-MM-DD format).
-        db_client: Database client dependency injection.
+        repo: TasksRepository dependency injection.
 
     Returns:
         dict[str, Any]: Paginated response containing:
@@ -447,10 +446,10 @@ async def get_repeat_visit_tasks(
         ```
     """
     try:
-        # Database client injected via dependency
+        # Repository injected via dependency
 
         # Fetch repeat visit tasks
-        result = await db_client.get_repeat_visit_tasks(
+        result = await repo.get_repeat_visit_tasks(
             tenant_id=tenant_id,
             page=page,
             limit=limit,

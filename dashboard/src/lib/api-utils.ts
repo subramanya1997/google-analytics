@@ -324,12 +324,12 @@ export async function getDataIngestionSchedule() {
   return fetchFromDataService('data/schedule')
 }
 
-// Email Reports Schedule
+// Email Reports Schedule (now in data service)
 export async function upsertEmailSchedule(data: {
   cron_expression?: string
   status?: 'active' | 'inactive'
 }) {
-  return fetchFromAnalyticsService('email/schedule', {
+  return fetchFromDataService('email/schedule', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -339,7 +339,7 @@ export async function upsertEmailSchedule(data: {
 }
 
 export async function getEmailSchedule() {
-  return fetchFromAnalyticsService('email/schedule')
+  return fetchFromDataService('email/schedule')
 }
 
 // =============== Auth Service APIs ===============
@@ -380,18 +380,18 @@ export async function validateToken(accessToken: string) {
   })
 }
 
-// =============== Email Management APIs ===============
+// =============== Email Management APIs (now in data service) ===============
 
 export async function fetchEmailConfig() {
-  return fetchFromAnalyticsService('email/config')
+  return fetchFromDataService('email/config')
 }
 
 export async function fetchBranchEmailMappings() {
-  return fetchFromAnalyticsService('email/mappings')
+  return fetchFromDataService('email/mappings')
 }
 
 export async function updateBranchEmailMapping(mappingId: string, mapping: BranchEmailMapping) {
-  return fetchFromAnalyticsService(`email/mappings/${mappingId}`, {
+  return fetchFromDataService(`email/mappings/${mappingId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -401,7 +401,7 @@ export async function updateBranchEmailMapping(mappingId: string, mapping: Branc
 }
 
 export async function createBranchEmailMapping(mapping: Omit<BranchEmailMapping, 'id'>) {
-  return fetchFromAnalyticsService('email/mappings', {
+  return fetchFromDataService('email/mappings', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -411,7 +411,7 @@ export async function createBranchEmailMapping(mapping: Omit<BranchEmailMapping,
 }
 
 export async function deleteBranchEmailMapping(mappingId: string) {
-  return fetchFromAnalyticsService(`email/mappings/${mappingId}`, {
+  return fetchFromDataService(`email/mappings/${mappingId}`, {
     method: 'DELETE',
   })
 }
@@ -420,7 +420,7 @@ export async function sendEmailReports(data: {
   report_date?: string
   branch_codes?: string[]
 }) {
-  return fetchFromAnalyticsService('email/send-reports', {
+  return fetchFromDataService('email/send-reports', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -440,7 +440,7 @@ export async function fetchEmailJobs(params: {
   if (params.status) queryParams.append('status', params.status)
   
   const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
-  return fetchFromAnalyticsService(`email/jobs${query}`)
+  return fetchFromDataService(`email/jobs${query}`)
 }
 
 export async function fetchEmailHistory(params: {
@@ -456,5 +456,5 @@ export async function fetchEmailHistory(params: {
   if (params.branch_code) queryParams.append('branch_code', params.branch_code)
   
   const query = queryParams.toString() ? `?${queryParams.toString()}` : ''
-  return fetchFromAnalyticsService(`email/history${query}`)
+  return fetchFromDataService(`email/history${query}`)
 }

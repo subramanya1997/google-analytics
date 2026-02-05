@@ -19,7 +19,7 @@ Validation:
 
 Example:
     ```python
-    from services.analytics_service.api.v1.models.email import (
+    from services.data_service.api.v1.models.email import (
         BranchEmailMappingRequest,
         SendReportsRequest
     )

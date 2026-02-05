@@ -338,19 +338,22 @@ class SchedulerClient:
             - When updating by event_id, you can optionally update job_name and app_name as well.
             - Partial updates are supported - only provide the fields you want to change.
         """
-        params = {}
-        if event_id:
-            params["event_id"] = event_id
-        elif job_name and app_name:
-            params["job_name"] = job_name
-            params["app_name"] = app_name
-        else:
+        if not event_id and not (job_name and app_name):
             msg = "Must provide either event_id or both job_name and app_name"
-            raise ValueError(
-                msg
-            )
+            raise ValueError(msg)
 
+        # Build job config with all update fields in the body
         job_config = {}
+
+        # Include identifier in body (event_id preferred for updates)
+        if event_id:
+            job_config["event_id"] = event_id
+        if job_name:
+            job_config["job_name"] = job_name
+        if app_name:
+            job_config["app_name"] = app_name
+
+        # Include update fields
         if url is not None:
             job_config["url"] = url
         if method is not None:
@@ -364,15 +367,8 @@ class SchedulerClient:
         if body is not None:
             job_config["body"] = body
 
-        # Include job_name and app_name in body if updating by event_id
-        if event_id and job_name:
-            job_config["job_name"] = job_name
-        if event_id and app_name:
-            job_config["app_name"] = app_name
-
-        return self._make_request(
-            "PUT", auth_token, params=params, json_data=job_config
-        )
+        # PUT request with all data in body (no query params)
+        return self._make_request("PUT", auth_token, json_data=job_config)
 
     def execute_schedule(
         self,

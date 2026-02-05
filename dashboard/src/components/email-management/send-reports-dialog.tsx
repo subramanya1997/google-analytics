@@ -68,7 +68,7 @@ export function SendReportsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="min-w-4xl max-h-[90vh]">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5" />
@@ -79,7 +79,7 @@ export function SendReportsDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4">
           <div className="space-y-2">
             <Label>Report Date</Label>
             <Popover>
@@ -175,22 +175,24 @@ export function SendReportsDialog({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-shrink-0 pt-4 border-t gap-2 sm:gap-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
             disabled={isSendingReports}
+            className="min-w-[100px]"
           >
             Cancel
           </Button>
           <Button 
             onClick={handleSendReports}
             disabled={isSendingReports || !sendDate || !emailConfig?.configured}
+            className="min-w-[120px]"
           >
             {isSendingReports ? (
               <>
                 <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Sending Reports...
+                <span className="whitespace-nowrap">Sending...</span>
               </>
             ) : (
               <>

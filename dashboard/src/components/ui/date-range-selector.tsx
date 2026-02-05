@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CalendarIcon, X } from "lucide-react"
+import { CalendarIcon } from "lucide-react"
 import { DateRange } from "react-day-picker"
 import { format, subDays, startOfDay, subMonths } from "date-fns"
 
@@ -48,7 +48,6 @@ export function DateRangeSelector({
   }, [dateRange])
 
   const handleDateChange = (newRange: DateRange | undefined) => {
-
     // Update local state immediately for responsive UI
     setDate(newRange)
     
@@ -61,8 +60,7 @@ export function DateRangeSelector({
           to: startOfDay(newRange.to)
         }
         onDateRangeChange(normalizedRange)
-        // Close popover after complete selection
-        setTimeout(() => setOpen(false), 150)
+        // Keep popover open - user will close by clicking outside
       } else {
         // If only start date, use it as both start and end temporarily
         const tempRange: DateRange = {
@@ -93,19 +91,6 @@ export function DateRangeSelector({
     // Don't reset as user might be clicking outside temporarily
   }
 
-  const clearDateRange = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    // Reset to last 7 days
-    const yesterday = startOfDay(subDays(new Date(), 1))
-    const sevenDaysAgo = startOfDay(subDays(yesterday, 6))
-    const defaultRange: DateRange = {
-      from: sevenDaysAgo,
-      to: yesterday
-    }
-    setDate(defaultRange)
-    onDateRangeChange(defaultRange)
-  }
-
   // Preset ranges for quick selection
   const handlePresetClick = (days: number) => {
     const end = startOfDay(subDays(new Date(), 1)) // yesterday
@@ -113,41 +98,33 @@ export function DateRangeSelector({
     const range: DateRange = { from: start, to: end }
     setDate(range)
     onDateRangeChange(range)
-    setOpen(false)
+    // Keep popover open - user will close by clicking outside
   }
 
   return (
-    <div className={cn("grid gap-2", className)}>
-      <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger asChild>
-          <Button
-            id="date"
-            variant={"outline"}
-            className={cn(
-              iconOnly 
-                ? "w-10 h-10 p-0 justify-center"
-                : "w-full sm:w-[260px] justify-between text-left font-normal truncate group",
-              !date && "text-muted-foreground"
-            )}
-          >
-            {iconOnly ? (
-              <CalendarIcon className="h-4 w-4 shrink-0" />
-            ) : (
-              <>
-                <span className="flex items-center truncate">
-                  <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                  <span className="truncate">{formatDateRange()}</span>
-                </span>
-                {date && (
-                  <X 
-                    className="h-4 w-4 opacity-50 group-hover:opacity-100 transition-opacity" 
-                    onClick={clearDateRange}
-                  />
-                )}
-              </>
-            )}
-          </Button>
-        </PopoverTrigger>
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          id="date"
+          variant="outline"
+          size="sm"
+          className={cn(
+            "h-9 px-2 text-sm font-normal gap-1",
+            iconOnly && "w-9 p-0 justify-center",
+            !date && "text-muted-foreground",
+            className
+          )}
+        >
+          {iconOnly ? (
+            <CalendarIcon className="h-4 w-4" />
+          ) : (
+            <>
+              <CalendarIcon className="mr-2 h-4 w-4" />
+              {formatDateRange()}
+            </>
+          )}
+        </Button>
+      </PopoverTrigger>
         <PopoverContent className="w-auto p-0" align="end">
           <div className="flex flex-col">
             {/* Preset buttons */}
@@ -197,7 +174,6 @@ export function DateRangeSelector({
             )}
           </div>
         </PopoverContent>
-      </Popover>
-    </div>
+    </Popover>
   )
 } 

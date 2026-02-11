@@ -9,8 +9,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+import logging
 from jinja2 import Environment, FileSystemLoader
-from loguru import logger
+
+logger = logging.getLogger(__name__)
 
 
 class TemplateService:

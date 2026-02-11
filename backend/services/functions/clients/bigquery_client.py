@@ -8,10 +8,12 @@ through Durable Functions activities.
 
 from typing import Any
 
+import logging
 from google.cloud import bigquery
 from google.oauth2 import service_account
-from loguru import logger
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class BigQueryClient:

@@ -7,13 +7,15 @@ Handles BigQuery event extraction and SFTP user/location downloads.
 
 import asyncio
 from datetime import datetime
+import logging
 from typing import Any
 import numpy as np
 from clients import get_tenant_bigquery_client, get_tenant_sftp_client
-from loguru import logger
 import pandas as pd
 from shared.database import create_repository
 from shared.models import CreateIngestionJobRequest
+
+logger = logging.getLogger(__name__)
 
 
 class IngestionService:

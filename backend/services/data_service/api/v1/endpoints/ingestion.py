@@ -148,10 +148,6 @@ async def create_ingestion_job(
                 msg
             )
 
-        queue_client = QueueClient.from_connection_string(
-            connection_string, "ingestion-jobs"
-        )
-
         message = {
             "job_id": job_id,
             "tenant_id": tenant_id,
@@ -160,8 +156,11 @@ async def create_ingestion_job(
             "data_types": request.data_types,
         }
 
-        await queue_client.send_message(json.dumps(message))
-        logger.info(f"Successfully queued ingestion job {job_id} for processing")
+        async with QueueClient.from_connection_string(
+            connection_string, "ingestion-jobs"
+        ) as queue_client:
+            await queue_client.send_message(json.dumps(message))
+            logger.info(f"Successfully queued ingestion job {job_id} for processing")
 
         return IngestionJobResponse(
             job_id=job_id,

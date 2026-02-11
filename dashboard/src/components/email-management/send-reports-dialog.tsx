@@ -22,7 +22,7 @@ import {
   Send,
   RefreshCw,
   MapPin,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
 } from "lucide-react"
 import { format } from "date-fns"
 import { EmailConfigResponse, Location } from "@/types"
@@ -59,7 +59,6 @@ export function SendReportsDialog({
   const handleSendReports = async () => {
     try {
       await onSendReports()
-      // Close dialog after successful send (onSendReports handles the success state)
       onOpenChange(false)
     } catch {
       // Error is already handled in onSendReports, just keep dialog open
@@ -80,45 +79,41 @@ export function SendReportsDialog({
         </DialogHeader>
         
         <div className="flex-1 overflow-y-auto space-y-4">
-          <div className="space-y-2">
-            <Label>Report Date</Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {sendDate ? format(sendDate, 'PPP') : 'Select date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
-                <Calendar
-                  mode="single"
-                  selected={sendDate}
-                  onSelect={(date) => date && setSendDate(date)}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label>Target Branches</Label>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  if (selectedBranches.length === locations.length) {
-                    setSelectedBranches([])
-                  } else {
-                    setSelectedBranches(locations.map(l => l.locationId))
-                  }
-                }}
-              >
-                {selectedBranches.length === locations.length ? 'Deselect All' : 'Select All'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <CalendarIcon className="h-4 w-4 mr-2" />
+                      {format(sendDate, 'PPP')}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={sendDate}
+                      onSelect={(date) => date && setSendDate(date)}
+                      disabled={(d) => d > new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    if (selectedBranches.length === locations.length) {
+                      setSelectedBranches([])
+                    } else {
+                      setSelectedBranches(locations.map(l => l.locationId))
+                    }
+                  }}
+                >
+                  {selectedBranches.length === locations.length ? 'Deselect All' : 'Select All'}
+                </Button>
+              </div>
             </div>
             
             {loadingLocations ? (

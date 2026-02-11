@@ -2,9 +2,11 @@
 Factory for creating tenant-aware clients using configurations from the database.
 """
 
-from loguru import logger
+import logging
 
 from .bigquery_client import BigQueryClient
+
+logger = logging.getLogger(__name__)
 from .sftp_client import SFTPClient
 from typing import Any
 

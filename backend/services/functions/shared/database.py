@@ -15,9 +15,11 @@ import os
 from typing import Any
 import uuid
 
+import logging
 from dotenv import load_dotenv
-from loguru import logger
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

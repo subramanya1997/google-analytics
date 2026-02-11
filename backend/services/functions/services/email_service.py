@@ -14,8 +14,10 @@ from collections import defaultdict
 import smtplib
 from typing import Any
 
-from loguru import logger
+import logging
 from shared.database import create_repository
+
+logger = logging.getLogger(__name__)
 
 from services.report_service import ReportService
 

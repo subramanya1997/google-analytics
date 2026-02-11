@@ -9,10 +9,10 @@ data ingestion jobs. It tests the queue-based architecture where:
 3. Check Azure Functions logs or database to see job progress
 
 Usage:
-    python test_ingestion.py --tenant-id <tenant-uuid> --connection-string <conn-str>
+    uv run test_ingestion.py --tenant-id <tenant-uuid> --connection-string <conn-str>
 
 Example:
-    python test_ingestion.py \\
+    uv run test_ingestion.py \\
       --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
       --connection-string "DefaultEndpointsProtocol=https;AccountName=..."
 """
@@ -108,14 +108,13 @@ class IngestionQueueTester:
         print(f"\n📤 Step 2: Sending message to '{self.queue_name}' queue...")
 
         try:
-            # Connect to queue
-            queue_client = QueueClient.from_connection_string(
-                self.connection_string, self.queue_name
-            )
-
-            # Send message
+            # Connect to queue and send message
             message_json = json.dumps(message)
-            queue_client.send_message(message_json)
+            
+            with QueueClient.from_connection_string(
+                self.connection_string, self.queue_name
+            ) as queue_client:
+                queue_client.send_message(message_json)
 
             print("✅ Message sent to queue successfully!")
             print(f"   Queue: {self.queue_name}")
@@ -147,17 +146,17 @@ def main():
         epilog="""
 Examples:
   # Send ingestion job to queue (reads connection string from .env file)
-  python test_ingestion.py \\
+  uv run test_ingestion.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000"
 
   # Test only events for last 3 days
-  python test_ingestion.py \\
+  uv run test_ingestion.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --data-types events \\
     --days 3
 
   # Or explicitly provide connection string
-  python test_ingestion.py \\
+  uv run test_ingestion.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --connection-string "DefaultEndpointsProtocol=https;AccountName=..."
 

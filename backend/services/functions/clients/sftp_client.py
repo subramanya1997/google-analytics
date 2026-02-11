@@ -11,9 +11,11 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from loguru import logger
+import logging
 import pandas as pd
 import paramiko
+
+logger = logging.getLogger(__name__)
 
 
 class SFTPClient:

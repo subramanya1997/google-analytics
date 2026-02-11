@@ -10,14 +10,14 @@ email sending jobs. It tests the queue-based architecture where:
 Note: Email mappings must be configured in the database (branch_email_mappings table).
 
 Usage:
-    python test_email_sending.py \\
+    uv run test_email_sending.py \\
       --tenant-id YOUR_TENANT_ID \\
       --connection-string "DefaultEndpointsProtocol=https;AccountName=..." \\
       --report-date 2025-12-23 \\
       --branch-codes D01,D02
 
     # Or for all branches:
-    python test_email_sending.py \\
+    uv run test_email_sending.py \\
       --tenant-id YOUR_TENANT_ID \\
       --connection-string "..." \\
       --report-date 2025-12-23
@@ -112,14 +112,13 @@ class EmailQueueTester:
         print(f"\n📤 Step 2: Sending message to '{self.queue_name}' queue...")
 
         try:
-            # Connect to queue
-            queue_client = QueueClient.from_connection_string(
-                self.connection_string, self.queue_name
-            )
-
-            # Send message
+            # Connect to queue and send message
             message_json = json.dumps(message)
-            queue_client.send_message(message_json)
+            
+            with QueueClient.from_connection_string(
+                self.connection_string, self.queue_name
+            ) as queue_client:
+                queue_client.send_message(message_json)
 
             print("✅ Message sent to queue successfully!")
             print(f"   Queue: {self.queue_name}")
@@ -154,18 +153,18 @@ def main():
         epilog="""
 Examples:
   # Send email job to queue for all branches (reads connection string from .env)
-  python test_email_sending.py \\
+  uv run test_email_sending.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --report-date 2025-12-23
 
   # Send for specific branches
-  python test_email_sending.py \\
+  uv run test_email_sending.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --report-date 2025-12-23 \\
     --branch-codes D01,D02,D03
 
   # Or explicitly provide connection string
-  python test_email_sending.py \\
+  uv run test_email_sending.py \\
     --tenant-id "123e4567-e89b-12d3-a456-426614174000" \\
     --connection-string "DefaultEndpointsProtocol=https;..." \\
     --report-date 2025-12-23

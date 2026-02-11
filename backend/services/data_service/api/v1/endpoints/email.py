@@ -306,10 +306,6 @@ async def send_reports(
             msg = "AZURE_STORAGE_CONNECTION_STRING environment variable not set"
             raise ValueError(msg)
 
-        queue_client = QueueClient.from_connection_string(
-            connection_string, "email-jobs"
-        )
-
         message = {
             "job_id": job_id,
             "tenant_id": tenant_id,
@@ -317,8 +313,11 @@ async def send_reports(
             "branch_codes": request.branch_codes,
         }
 
-        await queue_client.send_message(json.dumps(message))
-        logger.info(f"Successfully queued email job {job_id} for processing")
+        async with QueueClient.from_connection_string(
+            connection_string, "email-jobs"
+        ) as queue_client:
+            await queue_client.send_message(json.dumps(message))
+            logger.info(f"Successfully queued email job {job_id} for processing")
 
         return EmailJobResponse(
             job_id=job_id,

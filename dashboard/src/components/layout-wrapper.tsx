@@ -24,46 +24,34 @@ import {
 import { DateRangeSelector } from "@/components/ui/date-range-selector"
 import { getPageInfo } from "@/lib/page-config"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Plus, Send, Clock, RefreshCw, MapPin } from "lucide-react"
+import { Plus, Send, Clock, RefreshCw, MapPin, type LucideIcon } from "lucide-react"
+
+function emit(name: string) {
+  window.dispatchEvent(new CustomEvent(name))
+}
+
+function HeaderButton({ icon: Icon, label, onClick, isMobile }: {
+  icon: LucideIcon
+  label: string
+  onClick: () => void
+  isMobile: boolean
+}) {
+  return (
+    <Button onClick={onClick} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
+      <Icon className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
+      {!isMobile && label}
+    </Button>
+  )
+}
 
 export function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const { selectedLocation, setSelectedLocation, dateRange, setDateRange, locations, loadingLocations } = useDashboard()
+  const { selectedLocation, setSelectedLocation, dateRange, setDateRange, locations, loadingLocations, dataAvailability } = useDashboard()
   const isMobile = useIsMobile()
 
   const { subtitle } = getPageInfo(pathname)
   const isDataManagementPage = pathname === '/data-management'
   const isEmailManagementPage = pathname === '/email-management'
-
-  const handleAddMapping = () => {
-    // Dispatch a custom event that the email management page can listen to
-    window.dispatchEvent(new CustomEvent('openMappingDialog'))
-  }
-
-  const handleSendReports = () => {
-    // Dispatch a custom event that the email management page can listen to
-    window.dispatchEvent(new CustomEvent('openSendReportsDialog'))
-  }
-
-  const handleScheduleDataIngestion = () => {
-    // Dispatch a custom event that the data management page can listen to
-    window.dispatchEvent(new CustomEvent('openDataIngestionScheduler'))
-  }
-
-  const handleScheduleEmailReports = () => {
-    // Dispatch a custom event that the email management page can listen to
-    window.dispatchEvent(new CustomEvent('openEmailReportsScheduler'))
-  }
-
-  const handleRefreshData = () => {
-    // Dispatch a custom event that the data management page can listen to
-    window.dispatchEvent(new CustomEvent('refreshDataManagement'))
-  }
-
-  const handleRefreshEmail = () => {
-    // Dispatch a custom event that the email management page can listen to
-    window.dispatchEvent(new CustomEvent('refreshEmailManagement'))
-  }
 
   return (
     <SidebarProvider>
@@ -84,36 +72,18 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             {isDataManagementPage && (
               <>
-                <Button onClick={handleRefreshData} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <RefreshCw className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Refresh'}
-                </Button>
+                <HeaderButton icon={RefreshCw} label="Refresh" onClick={() => emit('refreshDataManagement')} isMobile={isMobile} />
                 <div className="h-4 w-px bg-border" />
-                <Button onClick={handleScheduleDataIngestion} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <Clock className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Schedule'}
-                </Button>
+                <HeaderButton icon={Clock} label="Schedule" onClick={() => emit('openDataIngestionScheduler')} isMobile={isMobile} />
               </>
             )}
             {isEmailManagementPage && (
               <>
-                <Button onClick={handleRefreshEmail} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <RefreshCw className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Refresh'}
-                </Button>
+                <HeaderButton icon={RefreshCw} label="Refresh" onClick={() => emit('refreshEmailManagement')} isMobile={isMobile} />
                 <div className="h-4 w-px bg-border" />
-                <Button onClick={handleScheduleEmailReports} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <Clock className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Schedule'}
-                </Button>
-                <Button onClick={handleSendReports} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <Send className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Send'}
-                </Button>
-                <Button onClick={handleAddMapping} size="sm" variant="outline" className={isMobile ? "w-10 px-0" : ""}>
-                  <Plus className={`h-4 w-4 ${!isMobile ? 'mr-2' : ''}`} />
-                  {!isMobile && 'Add Mapping'}
-                </Button>
+                <HeaderButton icon={Clock} label="Schedule" onClick={() => emit('openEmailReportsScheduler')} isMobile={isMobile} />
+                <HeaderButton icon={Send} label="Send" onClick={() => emit('openSendReportsDialog')} isMobile={isMobile} />
+                <HeaderButton icon={Plus} label="Add Mapping" onClick={() => emit('openMappingDialog')} isMobile={isMobile} />
               </>
             )}
             {!isDataManagementPage && !isEmailManagementPage && (
@@ -146,6 +116,8 @@ export function LayoutWrapper({ children }: { children: React.ReactNode }) {
                   dateRange={dateRange}
                   onDateRangeChange={setDateRange}
                   iconOnly={isMobile}
+                  earliestDate={dataAvailability?.earliest_date}
+                  latestDate={dataAvailability?.latest_date}
                 />
               </>
             )}

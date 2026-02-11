@@ -358,7 +358,7 @@ async def upsert_email_schedule(
                 "X-Tenant-Id": tenant_id,
                 "Content-Type": "application/json",
             },
-            "body": {"report_date": "auto", "branch_codes": None},
+            "body": {"report_date": None, "branch_codes": None},
         }
 
         # Create or update schedule

@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { DateRange } from 'react-day-picker'
 import { startOfDay, subDays } from 'date-fns'
-import { fetchLocations } from '@/lib/api-utils'
-import { Location } from '@/types'
+import { fetchLocations, fetchDataAvailability } from '@/lib/api-utils'
+import { Location, DataAvailability } from '@/types'
 
 interface DashboardContextType {
   selectedLocation: string | null
@@ -14,9 +14,14 @@ interface DashboardContextType {
   locations: Location[]
   loadingLocations: boolean
   refreshLocations: () => Promise<void>
+  dataAvailability: DataAvailability | null
+  loadingDataAvailability: boolean
 }
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
+
+const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
+const CACHE_TTL_MS = 5 * 60 * 1000
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
@@ -27,21 +32,20 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const didInitRef = useRef(false)
   const lastFetchAtRef = useRef<number>(0)
   
+  // Data availability state
+  const [dataAvailability, setDataAvailability] = useState<DataAvailability | null>(null)
+  const [loadingDataAvailability, setLoadingDataAvailability] = useState(false)
+
   // Initialize with last 7 days from yesterday
-  const yesterday = startOfDay(subDays(new Date(), 1))
-  const sevenDaysAgo = startOfDay(subDays(yesterday, 6))
-  const [dateRange, setDateRange] = useState<DateRange | undefined>({
-    from: sevenDaysAgo,
-    to: yesterday,
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    const yesterday = startOfDay(subDays(new Date(), 1))
+    return { from: startOfDay(subDays(yesterday, 6)), to: yesterday }
   })
   
   // Internal fetch function with TTL and in-flight guard
   const doFetchLocations = useCallback(async (force: boolean = false) => {
     if (isFetchingRef.current) return
     const now = Date.now()
-
-    const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
-    const CACHE_TTL_MS = 5 * 60 * 1000
 
     const cachedAt = locationsCacheTime || lastFetchAtRef.current
     if (!force && locations.length > 0 && cachedAt && (now - cachedAt) < CACHE_TTL_MS) {
@@ -98,17 +102,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         // ignore storage errors
       }
     } catch (error) {
-      // Only log non-abort and non-timeout errors
-      if (error instanceof Error) {
-        if (error.name === 'AbortError' || error.message.includes('aborted') || error.message.includes('timeout')) {
-          console.warn('Location fetch was cancelled or timed out')
-        } else {
-          console.error('Error fetching locations:', error)
-        }
-      } else {
-        console.error('Error fetching locations:', error)
-      }
-      
+      console.error('Error fetching locations:', error)
+
       // Try to load from cache as fallback if we don't have any locations
       if (locations.length === 0) {
         try {
@@ -133,7 +128,6 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   // Refresh locations (force fetch)
   const refreshLocations = useCallback(async () => {
-    const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
     try {
       sessionStorage.removeItem(SESSION_STORAGE_KEY)
     } catch {
@@ -144,14 +138,29 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     await doFetchLocations(true)
   }, [doFetchLocations])
 
-  // Fetch locations on mount
+  // Fetch data availability
+  const doFetchDataAvailability = useCallback(async () => {
+    try {
+      setLoadingDataAvailability(true)
+      const response = await fetchDataAvailability()
+      if (!response.ok) {
+        throw new Error('Failed to fetch data availability')
+      }
+      const data = await response.json()
+      setDataAvailability(data.summary ?? data)
+    } catch (error) {
+      console.error('Error fetching data availability:', error)
+    } finally {
+      setLoadingDataAvailability(false)
+    }
+  }, [])
+
+  // Fetch locations and data availability on mount
   useEffect(() => {
     if (didInitRef.current) return
     didInitRef.current = true
 
     const loadFromSession = () => {
-      const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
-      const CACHE_TTL_MS = 5 * 60 * 1000
       try {
         const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
         if (!raw) return false
@@ -173,10 +182,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (!hasValidCache) {
         await doFetchLocations(false)
       }
+      await doFetchDataAvailability()
     }
 
     void init()
-  }, [doFetchLocations])
+  }, [doFetchLocations, doFetchDataAvailability])
 
   return (
     <DashboardContext.Provider 
@@ -187,7 +197,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         setDateRange,
         locations,
         loadingLocations,
-        refreshLocations
+        refreshLocations,
+        dataAvailability,
+        loadingDataAvailability,
       }}
     >
       {children}

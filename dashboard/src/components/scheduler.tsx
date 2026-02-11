@@ -34,7 +34,6 @@ const commonCronPresets = [
   { label: "Weekly on Monday at 9 AM", value: "0 9 * * 1" },
 ]
 
-
 export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProps) {
   const [cronExpression, setCronExpression] = useState('')
   const [selectedPreset, setSelectedPreset] = useState('')
@@ -57,16 +56,9 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
             
             // New simplified response format: { cron_expression, status, source }
             if (data.cron_expression) {
-              // Check if it's an active schedule from scheduler
-              const isActiveSchedule = data.status === 'active' && data.source === 'scheduler'
-              
-              if (isActiveSchedule) {
-                setExistingSchedule(data)
-              } else {
-                // It's from database or default - no active schedule
-                setExistingSchedule(null)
-              }
-              
+              const isActive = data.status === 'active' && data.source === 'scheduler'
+              setExistingSchedule(isActive ? data : null)
+
               // Pre-populate the form with the cron expression
               setCronExpression(data.cron_expression)
               
@@ -106,7 +98,6 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
     const cronRegex = /^(\*|(\d+|\d+-\d+|(\d+(,\d+)*)|(\*\/\d+))) (\*|(\d+|\d+-\d+|(\d+(,\d+)*)|(\*\/\d+))) (\*|(\d+|\d+-\d+|(\d+(,\d+)*)|(\*\/\d+))) (\*|(\d+|\d+-\d+|(\d+(,\d+)*)|(\*\/\d+))) (\*|(\d+|\d+-\d+|(\d+(,\d+)*)|(\*\/\d+)))$/
     return cronRegex.test(cron.trim())
   }
-
 
   const handleSubmit = async () => {
     if (!cronExpression.trim()) {
@@ -160,7 +151,6 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
     }
   }
 
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -200,7 +190,13 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
                     <Input
                       id="cronExpression"
                       value={cronExpression}
-                      onChange={(e) => setCronExpression(e.target.value)}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        setCronExpression(value)
+                        // Sync preset: highlight if matches, clear otherwise
+                        const match = commonCronPresets.find(p => p.value === value.trim())
+                        setSelectedPreset(match ? match.value : '')
+                      }}
                       placeholder="0 2 * * *"
                       disabled={isLoadingSchedule}
                     />
@@ -236,7 +232,6 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
                 </div>
               </div>
             </div>
-
 
             <DialogFooter>
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isLoadingSchedule}>

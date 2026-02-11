@@ -19,12 +19,22 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  ChevronLeft,
   ChevronRight,
   Users,
   Loader2
 } from "lucide-react"
 import { format } from "date-fns"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { usePageNumbers, PAGE_SIZE_OPTIONS } from "@/hooks/use-pagination"
+import { formatDurationBetween } from "@/lib/utils"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { EmailJob, EmailHistory } from "@/types"
 
 interface EmailActivitySectionProps {
@@ -37,6 +47,7 @@ interface EmailActivitySectionProps {
   currentJobsPage: number
   totalJobs: number
   itemsPerPage: number
+  onItemsPerPageChange: (value: string) => void
   fetchJobsData: (page: number) => Promise<void>
   
   // History data
@@ -61,6 +72,7 @@ export function EmailActivitySection({
   currentJobsPage,
   totalJobs,
   itemsPerPage,
+  onItemsPerPageChange,
   fetchJobsData,
   emailHistory,
   loadingHistory,
@@ -110,27 +122,13 @@ export function EmailActivitySection({
     }
   }
 
-  // Format duration
-  const formatDuration = (startDate?: string, endDate?: string) => {
-    if (!startDate || !endDate) return 'N/A'
-    
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    const durationMs = end.getTime() - start.getTime()
-    const durationMinutes = Math.floor(durationMs / (1000 * 60))
-    
-    if (durationMinutes < 60) {
-      return `${durationMinutes}m`
-    } else {
-      const hours = Math.floor(durationMinutes / 60)
-      const minutes = durationMinutes % 60
-      return `${hours}h ${minutes}m`
-    }
-  }
 
   // Pagination calculations
   const totalJobPages = Math.ceil(totalJobs / itemsPerPage)
   const totalHistoryPages = Math.ceil(totalHistory / itemsPerPage)
+  // usePageNumbers is 1-indexed; currentJobsPage/currentHistoryPage are 0-indexed
+  const jobPageNumbers = usePageNumbers(currentJobsPage + 1, totalJobPages)
+  const historyPageNumbers = usePageNumbers(currentHistoryPage + 1, totalHistoryPages)
 
   return (
     <div>
@@ -262,7 +260,7 @@ export function EmailActivitySection({
                               </TableCell>
                               <TableCell>
                                 <div className="text-sm font-medium">
-                                  {formatDuration(job.started_at, job.completed_at)}
+                                  {formatDurationBetween(job.started_at, job.completed_at)}
                                 </div>
                               </TableCell>
                               <TableCell>
@@ -322,9 +320,19 @@ export function EmailActivitySection({
                 {/* Jobs Pagination */}
                 {!loadingJobs && totalJobPages > 1 && jobs.length > 0 && (
                   <div className="flex items-center justify-between pt-4">
-                    <p className="text-sm text-muted-foreground">
-                      Showing {currentJobsPage * itemsPerPage + 1} to {Math.min((currentJobsPage + 1) * itemsPerPage, totalJobs)} of {totalJobs} jobs
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Select value={itemsPerPage.toString()} onValueChange={onItemsPerPageChange}>
+                        <SelectTrigger className="h-8 w-[70px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PAGE_SIZE_OPTIONS.map((size) => (
+                            <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-muted-foreground">per page</span>
+                    </div>
                     <div className="flex items-center space-x-2">
                       <Button
                         variant="outline"
@@ -332,11 +340,22 @@ export function EmailActivitySection({
                         onClick={() => fetchJobsData(currentJobsPage - 1)}
                         disabled={currentJobsPage === 0}
                       >
+                        <ChevronLeft className="h-4 w-4" />
                         Previous
                       </Button>
-                      <span className="text-sm">
-                        Page {currentJobsPage + 1} of {totalJobPages}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        {jobPageNumbers.map((pageNum) => (
+                          <Button
+                            key={`job-page-${pageNum}`}
+                            variant={pageNum === currentJobsPage + 1 ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => fetchJobsData(pageNum - 1)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {pageNum}
+                          </Button>
+                        ))}
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -344,6 +363,7 @@ export function EmailActivitySection({
                         disabled={currentJobsPage === totalJobPages - 1}
                       >
                         Next
+                        <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -513,9 +533,19 @@ export function EmailActivitySection({
                 {/* History Pagination */}
                 {!loadingHistory && totalHistoryPages > 1 && emailHistory.length > 0 && (
                   <div className="flex items-center justify-between pt-4">
-                    <p className="text-sm text-muted-foreground">
-                      Showing {currentHistoryPage * itemsPerPage + 1} to {Math.min((currentHistoryPage + 1) * itemsPerPage, totalHistory)} of {totalHistory} emails
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Select value={itemsPerPage.toString()} onValueChange={onItemsPerPageChange}>
+                        <SelectTrigger className="h-8 w-[70px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PAGE_SIZE_OPTIONS.map((size) => (
+                            <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-muted-foreground">per page</span>
+                    </div>
                     <div className="flex items-center space-x-2">
                       <Button
                         variant="outline"
@@ -523,11 +553,22 @@ export function EmailActivitySection({
                         onClick={() => fetchHistoryData(currentHistoryPage - 1)}
                         disabled={currentHistoryPage === 0}
                       >
+                        <ChevronLeft className="h-4 w-4" />
                         Previous
                       </Button>
-                      <span className="text-sm">
-                        Page {currentHistoryPage + 1} of {totalHistoryPages}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        {historyPageNumbers.map((pageNum) => (
+                          <Button
+                            key={`history-page-${pageNum}`}
+                            variant={pageNum === currentHistoryPage + 1 ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => fetchHistoryData(pageNum - 1)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {pageNum}
+                          </Button>
+                        ))}
+                      </div>
                       <Button
                         variant="outline"
                         size="sm"
@@ -535,6 +576,7 @@ export function EmailActivitySection({
                         disabled={currentHistoryPage === totalHistoryPages - 1}
                       >
                         Next
+                        <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>

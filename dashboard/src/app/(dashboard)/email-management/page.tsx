@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback } from "react"
 import { format } from "date-fns"
 import { toast } from "sonner"
+import { DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
 import {
   fetchEmailConfig,
   fetchBranchEmailMappings,
@@ -66,7 +67,7 @@ export default function EmailManagementPage() {
   const [currentHistoryPage, setCurrentHistoryPage] = useState(0)
   const [totalHistory, setTotalHistory] = useState(0)
   
-  const [itemsPerPage] = useState(10)
+  const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_PAGE_SIZE)
   
   // Send Report Form State
   const [sendDate, setSendDate] = useState<Date>(() => {
@@ -215,6 +216,11 @@ export default function EmailManagementPage() {
     }
   }, [itemsPerPage])
 
+  const handleItemsPerPageChange = useCallback((value: string) => {
+    setItemsPerPage(Number(value))
+    setCurrentJobsPage(0)
+    setCurrentHistoryPage(0)
+  }, [])
 
   useEffect(() => {
     // Load all data in parallel
@@ -460,6 +466,7 @@ export default function EmailManagementPage() {
         currentJobsPage={currentJobsPage}
         totalJobs={totalJobs}
         itemsPerPage={itemsPerPage}
+        onItemsPerPageChange={handleItemsPerPageChange}
         fetchJobsData={fetchJobsData}
         emailHistory={emailHistory}
         loadingHistory={loadingHistory}

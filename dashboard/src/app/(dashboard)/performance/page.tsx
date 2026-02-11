@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { fetchPerformanceTasks } from "@/lib/api-utils"
+import { usePageNumbers, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
 import { Task, PerformanceApiTask, FrequentlyBouncedPage, PerformanceApiResponse, SortField, SortOrder } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,7 +34,7 @@ export default function PerformancePage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [itemsPerPage, setItemsPerPage] = useState(50)
+  const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_PAGE_SIZE)
   
   // Filter states
   const [searchQuery, setSearchQuery] = useState("")
@@ -192,6 +193,8 @@ export default function PerformancePage() {
       setSortOrder('desc')
     }
   }
+
+  const pageNumbers = usePageNumbers(currentPage, totalPages)
 
   const clearFilters = () => {
     setSearchQuery("")
@@ -379,23 +382,17 @@ export default function PerformancePage() {
 
             {/* Pagination Controls */}
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-              <div className="flex items-center space-x-2 text-xs sm:text-sm">
-                <p className="text-muted-foreground">
-                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount} results
-                </p>
-                <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                  <SelectTrigger className="h-8 w-[70px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-muted-foreground hidden sm:inline">per page</span>
-              </div>
+              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground">per page</span>
               
               <div className="flex items-center space-x-2">
                 <Button
@@ -409,53 +406,24 @@ export default function PerformancePage() {
                   <span className="hidden sm:inline">Previous</span>
                 </Button>
                 <div className="flex items-center gap-1">
-                  {/* Show fewer page buttons on mobile */}
-                  {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                    let pageNum
-                    if (totalPages <= 3) {
-                      pageNum = i + 1
-                    } else if (currentPage === 1) {
-                      pageNum = i + 1
-                    } else if (currentPage === totalPages) {
-                      pageNum = totalPages - 2 + i
-                    } else {
-                      pageNum = currentPage - 1 + i
-                    }
-                    
-                    return (
-                      <Button
-                        key={`mobile-${pageNum}`}
-                        variant={pageNum === currentPage ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => handlePageChange(pageNum)}
-                        className="h-8 w-8 p-0 text-xs sm:text-sm"
-                      >
-                        {pageNum}
-                      </Button>
-                    )
-                  })}
+                  {pageNumbers.map((pageNum, index) => (
+                    <Button
+                      key={`perf-page-${pageNum}`}
+                      variant={pageNum === currentPage ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`h-8 w-8 p-0 text-xs sm:text-sm ${
+                        index > 0 && index < pageNumbers.length - 1 && pageNum !== currentPage
+                          ? "hidden sm:inline-flex"
+                          : ""
+                      }`}
+                    >
+                      {pageNum}
+                    </Button>
+                  ))}
                   <span className="text-xs text-muted-foreground px-1 sm:hidden">
                     of {totalPages}
                   </span>
-                  {/* Show more page buttons on desktop */}
-                  <div className="hidden sm:flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, totalPages) - 3 }, (_, i) => {
-                      const pageNum = currentPage <= 3 ? 4 + i : currentPage >= totalPages - 2 ? totalPages - 4 + i : currentPage + i
-                      if (pageNum > totalPages || pageNum < 1) return null
-                      
-                      return (
-                        <Button
-                          key={`desktop-${pageNum}-${i}`}
-                          variant={pageNum === currentPage ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handlePageChange(pageNum)}
-                          className="h-8 w-8 p-0"
-                        >
-                          {pageNum}
-                        </Button>
-                      )
-                    })}
-                  </div>
                 </div>
                 <Button
                   variant="outline"

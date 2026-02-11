@@ -38,7 +38,7 @@ on:
           - staging
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'gadataingestion'
+  AZURE_FUNCTIONAPP_NAME: 'fapp-ai-tech-assistant-extremeb2b-prod'
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
   PYTHON_VERSION: '3.10'
 
@@ -102,11 +102,6 @@ jobs:
       with:
         name: function-app-package
         path: ./function-app
-
-    - name: Login to Azure
-      uses: Azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Setup Python ${{ env.PYTHON_VERSION }}
       uses: actions/setup-python@v5
@@ -175,4 +170,3 @@ jobs:
         echo "- This workflow file" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Note:** Changes to tests/ or documentation files do not trigger deployment." >> $GITHUB_STEP_SUMMARY
-

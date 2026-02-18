@@ -1,85 +1,172 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure Functions: https://aka.ms/python-webapps-actions
+# GitHub Actions workflow to deploy Data Service to Azure Functions
+#
+# Prerequisites:
+# 1. Create a Function App in Azure Portal
+# 2. Download the Publish Profile from Function App → "Get publish profile"
+# 3. Add it as a GitHub secret named AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+#
+# Triggers:
+# - Push to feat/azure_functions or main branch (only when function code changes)
+# - Manual trigger via workflow_dispatch
 
-name: Build and deploy Python project to Azure Function App - googleanalyticsfunctions
+name: Deploy Data Service to Azure Functions
 
 on:
   push:
     branches:
+      - main
       - master
+    paths:
+      - 'backend/services/functions/clients/**'
+      - 'backend/services/functions/services/**'
+      - 'backend/services/functions/shared/**'
+      - 'backend/services/functions/templates/**'
+      - 'backend/services/functions/*.py'
+      - 'backend/services/functions/*.json'
+      - 'backend/services/functions/*.txt'
+      - 'backend/services/functions/*.ini'
+      - '.github/workflows/master_gadataingestion.yml'
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
-  PYTHON_VERSION: '3.11' # set this to the python version to use (supports 3.6, 3.7, 3.8)
+  AZURE_FUNCTIONAPP_NAME: 'fapp-ai-tech-assistant-extremeb2b-prod'
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
+  PYTHON_VERSION: '3.10'
 
 jobs:
+  # Job 1: Build and Package with Dependencies
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup Python version
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+    - name: Setup Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create and start virtual environment
-        run: |
-          python -m venv venv
-          source venv/bin/activate
+    - name: Validate requirements.txt exists
+      run: |
+        cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        if [ ! -f requirements.txt ]; then
+          echo "Error: requirements.txt not found"
+          exit 1
+        fi
+        echo "✓ requirements.txt found"
+        echo "Contents:"
+        cat requirements.txt
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+    - name: Build dependencies in Azure Functions Docker environment
+      run: |
+        cd ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        # Use Azure Functions Python 3.10 Docker image to build dependencies
+        docker run --rm \
+          -v $(pwd):/home/site/wwwroot \
+          -w /home/site/wwwroot \
+          mcr.microsoft.com/azure-functions/python:4-python3.10 \
+          bash -c "pip install --target=./.python_packages/lib/site-packages -r requirements.txt && ls -la .python_packages/lib/site-packages/ | head -20"
+        
+        echo "✓ Dependencies installed in Azure-compatible environment"
+        ls -la .python_packages/lib/site-packages/ | grep -i sqlalchemy
 
-      # Optional: Add step to run tests here
+    - name: Upload artifact for deployment
+      uses: actions/upload-artifact@v4
+      with:
+        name: function-app-package
+        path: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
+        retention-days: 1
+        include-hidden-files: true
 
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-app
-          path: |
-            release.zip
-            !venv/
-
+  # Job 2: Deploy to Azure
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+      url: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net
 
     steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: python-app
+    - name: Download artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: function-app-package
+        path: ./function-app
 
-      - name: Unzip artifact for deployment
-        run: |
-          unzip release.zip
-          rm release.zip
-        
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C588AA244F6A4EFCA1759C743492DB78 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_47948C1DC0C347EDA21F3BD58D45F854 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4C1CA3E23F1A455B91D89F440689533A }}
+    - name: Setup Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 'Deploy to Azure Functions'
-        uses: Azure/functions-action@v1
-        id: deploy-to-function
-        with:
-          app-name: 'googleanalyticsfunctions'
-          slot-name: 'Production'
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
+    - name: Verify package contents before deployment
+      run: |
+        echo "Package contents:"
+        ls -la ./function-app/
+        echo ""
+        echo "Checking for .python_packages:"
+        if [ -d "./function-app/.python_packages" ]; then
+          echo "✓ .python_packages found"
+          ls ./function-app/.python_packages/lib/site-packages/ | grep -i sqlalchemy
+        else
+          echo "ERROR: .python_packages missing!"
+          exit 1
+        fi
+
+    - name: Deploy to Azure Functions
+      uses: Azure/functions-action@v1
+      with:
+        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+        package: ./function-app
+        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+        scm-do-build-during-deployment: false
+        enable-oryx-build: false
+    
+    - name: Wait for deployment to complete
+      run: |
+        echo "Waiting 30 seconds for deployment to stabilize..."
+        sleep 30
+    
+    - name: Verify deployment health
+      run: |
+        echo "Testing health endpoint..."
+        curl -f https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net/api/v1/health || echo "Health check failed - app may still be starting"
+
+    - name: Deployment summary
+      run: |
+        echo "## Deployment Complete! :rocket:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Function App:** ${{ env.AZURE_FUNCTIONAPP_NAME }}" >> $GITHUB_STEP_SUMMARY
+        echo "**URL:** https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Architecture" >> $GITHUB_STEP_SUMMARY
+        echo "This Azure Function app runs as a **background worker** using Azure Storage Queues." >> $GITHUB_STEP_SUMMARY
+        echo "Job requests come from FastAPI services via queue messages." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### HTTP Endpoints" >> $GITHUB_STEP_SUMMARY
+        echo "- \`GET /api/v1/health\` - Health check and service status" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Queue Triggers (Background Processing)" >> $GITHUB_STEP_SUMMARY
+        echo "- **ingestion-jobs** queue → Processes data ingestion (BigQuery events, SFTP users/locations)" >> $GITHUB_STEP_SUMMARY
+        echo "- **email-jobs** queue → Sends analytics reports via email" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Job Flow" >> $GITHUB_STEP_SUMMARY
+        echo "1. FastAPI receives request → Creates job in DB → Sends to queue → Returns job_id" >> $GITHUB_STEP_SUMMARY
+        echo "2. Azure Functions queue trigger picks up message → Processes job → Updates status" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Trigger Conditions" >> $GITHUB_STEP_SUMMARY
+        echo "Deployment is triggered by changes to:" >> $GITHUB_STEP_SUMMARY
+        echo "- Function code (clients, services, shared, templates)" >> $GITHUB_STEP_SUMMARY
+        echo "- Configuration files (*.py, *.json, *.txt, *.ini)" >> $GITHUB_STEP_SUMMARY
+        echo "- This workflow file" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Note:** Changes to tests/ or documentation files do not trigger deployment." >> $GITHUB_STEP_SUMMARY

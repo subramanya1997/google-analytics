@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.view_item (
   user_pseudo_id character varying(255),
   user_prop_webuserid character varying(100),
   user_prop_default_branch_id character varying(100),
+  user_prop_webcustomerid character varying(100),
   param_ga_session_id character varying(100),
   first_item_item_id character varying(255),
   first_item_item_name character varying(500),
@@ -64,6 +65,10 @@ WHERE items_json IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_view_item_session_lookup 
 ON view_item (param_ga_session_id, tenant_id) 
 WHERE param_ga_session_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_view_item_tenant_customer 
+ON view_item (tenant_id, user_prop_webcustomerid)
+WHERE user_prop_webcustomerid IS NOT NULL;
 
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_view_item_location_stats_covering 

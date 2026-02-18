@@ -11,6 +11,9 @@ BEGIN
             ac.param_ga_session_id,
             COUNT(*) OVER() as total_count
         FROM add_to_cart ac
+        LEFT JOIN users u ON u.tenant_id = p_tenant_id
+            AND (u.user_id = ac.user_prop_webuserid
+                 OR (ac.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = ac.user_prop_webcustomerid))
         WHERE ac.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR ac.user_prop_default_branch_id = p_location_id)
           AND (p_start_date IS NULL OR ac.event_date >= TO_DATE(p_start_date, 'YYYY-MM-DD'))
@@ -20,6 +23,10 @@ BEGIN
               WHERE p.param_ga_session_id = ac.param_ga_session_id
                 AND p.tenant_id = p_tenant_id
           )
+          AND (p_query IS NULL OR
+               u.buying_company_name ILIKE '%' || p_query || '%' OR
+               u.email ILIKE '%' || p_query || '%' OR
+               ac.first_item_item_name ILIKE '%' || p_query || '%')
     ),
     paginated_sessions AS (
         SELECT param_ga_session_id, total_count
@@ -32,6 +39,7 @@ BEGIN
         SELECT
             ac.param_ga_session_id,
             ac.user_prop_webuserid,
+            MAX(ac.user_prop_webcustomerid) AS user_prop_webcustomerid,
             MAX(ac.event_timestamp) AS last_activity,
             COUNT(ac.id) AS items_count,
             SUM(ac.first_item_price * ac.first_item_quantity) AS total_value,
@@ -67,7 +75,9 @@ BEGIN
                 )
             )
             FROM session_details sd
-            LEFT JOIN users u ON u.user_id = sd.user_prop_webuserid AND u.tenant_id = p_tenant_id
+            LEFT JOIN users u ON u.tenant_id = p_tenant_id
+                AND (u.user_id = sd.user_prop_webuserid
+                     OR (sd.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = sd.user_prop_webcustomerid))
         ),
         'total', (SELECT MAX(total_count) FROM paginated_sessions),
         'page', p_page,

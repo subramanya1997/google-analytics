@@ -350,6 +350,11 @@ class FunctionsRepository:
             await session.commit()
             return result.rowcount > 0
 
+    VALID_EVENT_TYPES = frozenset({
+        "purchase", "add_to_cart", "page_view",
+        "view_search_results", "no_search_results", "view_item",
+    })
+
     async def replace_event_data(
         self,
         tenant_id: str,
@@ -382,6 +387,10 @@ class FunctionsRepository:
             - Handles empty event lists gracefully (returns 0)
             - Logs deletion and insertion counts for monitoring
         """
+        if event_type not in self.VALID_EVENT_TYPES:
+            msg = f"Invalid event_type: {event_type!r}"
+            raise ValueError(msg)
+
         tenant_uuid_str = ensure_uuid_string(tenant_id)
 
         async with get_db_session(tenant_id=self.tenant_id) as session:
@@ -407,20 +416,19 @@ class FunctionsRepository:
                 await session.commit()
                 return 0
 
-            # Insert in batches
+            JSONB_COLUMNS = frozenset({"items_json", "raw_data"})
+
             total = len(events_data)
             batch_size = 500
 
             for i in range(0, total, batch_size):
                 batch = events_data[i : i + batch_size]
 
-                # Normalize each record
                 normalized_batch = []
                 for ev in batch:
                     ev_copy = dict(ev)
                     ev_copy["tenant_id"] = tenant_uuid_str
 
-                    # Handle date conversion
                     if isinstance(ev_copy.get("event_date"), str):
                         ev_date = ev_copy["event_date"]
                         if len(ev_date) == 8 and ev_date.isdigit():
@@ -430,19 +438,32 @@ class FunctionsRepository:
 
                     normalized_batch.append(ev_copy)
 
-                # Build insert statement dynamically based on first record
                 if normalized_batch:
                     columns = list(normalized_batch[0].keys())
-                    placeholders = ", ".join([f":{col}" for col in columns])
                     columns_str = ", ".join(columns)
+
+                    values_clauses = []
+                    params: dict[str, Any] = {}
+
+                    for idx, record in enumerate(normalized_batch):
+                        prefix = f"e{idx}_"
+                        col_placeholders = []
+                        for col in columns:
+                            param_key = f"{prefix}{col}"
+                            if col in JSONB_COLUMNS:
+                                col_placeholders.append(f"CAST(:{param_key} AS jsonb)")
+                            else:
+                                col_placeholders.append(f":{param_key}")
+                            params[param_key] = record.get(col)
+
+                        values_clauses.append(f"({', '.join(col_placeholders)})")
 
                     insert_stmt = text(f"""
                         INSERT INTO {event_type} ({columns_str})
-                        VALUES ({placeholders})
+                        VALUES {", ".join(values_clauses)}
                     """)
 
-                    for record in normalized_batch:
-                        await session.execute(insert_stmt, record)
+                    await session.execute(insert_stmt, params)
 
             await session.commit()
             logger.info(f"Inserted {total} {event_type} events")
@@ -476,7 +497,7 @@ class FunctionsRepository:
             - Logs batch progress and errors for monitoring
         """
         if not users_data:
-            return 0
+            return 0, 0
 
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         batch_size = 500
@@ -530,7 +551,26 @@ class FunctionsRepository:
                     middle_name = EXCLUDED.middle_name,
                     last_name = EXCLUDED.last_name,
                     job_title = EXCLUDED.job_title,
+                    user_erp_id = EXCLUDED.user_erp_id,
                     email = EXCLUDED.email,
+                    office_phone = EXCLUDED.office_phone,
+                    cell_phone = EXCLUDED.cell_phone,
+                    fax = EXCLUDED.fax,
+                    address1 = EXCLUDED.address1,
+                    address2 = EXCLUDED.address2,
+                    address3 = EXCLUDED.address3,
+                    city = EXCLUDED.city,
+                    state = EXCLUDED.state,
+                    country = EXCLUDED.country,
+                    zip = EXCLUDED.zip,
+                    warehouse_code = EXCLUDED.warehouse_code,
+                    registered_date = EXCLUDED.registered_date,
+                    last_login_date = EXCLUDED.last_login_date,
+                    cimm_buying_company_id = EXCLUDED.cimm_buying_company_id,
+                    buying_company_name = EXCLUDED.buying_company_name,
+                    buying_company_erp_id = EXCLUDED.buying_company_erp_id,
+                    role_name = EXCLUDED.role_name,
+                    site_name = EXCLUDED.site_name,
                     is_active = EXCLUDED.is_active,
                     updated_at = NOW()
             """)
@@ -580,7 +620,7 @@ class FunctionsRepository:
             - Logs batch progress and errors for monitoring
         """
         if not locations_data:
-            return 0
+            return 0, 0
 
         tenant_uuid_str = ensure_uuid_string(tenant_id)
         batch_size = 500
@@ -901,198 +941,6 @@ class FunctionsRepository:
                     "country": row["country"],
                 }
             return None
-
-    # Analytics task query methods
-    async def get_purchase_tasks(
-        self,
-        tenant_id: str,
-        page: int,
-        limit: int,
-        query: str | None = None,
-        location_id: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Get purchase analysis tasks with pagination and filtering."""
-        try:
-            async with get_db_session(tenant_id=self.tenant_id) as session:
-                # Use the existing RPC function from functions.sql
-                result = await session.execute(
-                    text("""
-                        SELECT get_purchase_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
-                    """),
-                    {
-                        "p_tenant_id": tenant_id,
-                        "p_page": page,
-                        "p_limit": limit,
-                        "p_query": query,
-                        "p_location_id": location_id,
-                        "p_start_date": start_date,
-                        "p_end_date": end_date,
-                    },
-                )
-                tasks = result.scalar()
-
-                return tasks or {
-                    "data": [],
-                    "total": 0,
-                    "page": page,
-                    "limit": limit,
-                    "has_more": False,
-                }
-
-        except Exception as e:
-            logger.error(f"Error fetching purchase tasks: {e}")
-            return {
-                "data": [],
-                "total": 0,
-                "page": page,
-                "limit": limit,
-                "has_more": False,
-            }
-
-    async def get_cart_abandonment_tasks(
-        self,
-        tenant_id: str,
-        page: int,
-        limit: int,
-        query: str | None = None,
-        location_id: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Get cart abandonment tasks using the RPC function."""
-        try:
-            async with get_db_session(tenant_id=self.tenant_id) as session:
-                result = await session.execute(
-                    text("""
-                        SELECT get_cart_abandonment_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
-                    """),
-                    {
-                        "p_tenant_id": tenant_id,
-                        "p_page": page,
-                        "p_limit": limit,
-                        "p_query": query,
-                        "p_location_id": location_id,
-                        "p_start_date": start_date,
-                        "p_end_date": end_date,
-                    },
-                )
-                tasks = result.scalar()
-
-                return tasks or {
-                    "data": [],
-                    "total": 0,
-                    "page": page,
-                    "limit": limit,
-                    "has_more": False,
-                }
-
-        except Exception as e:
-            logger.error(f"Error fetching cart abandonment tasks: {e}")
-            return {
-                "data": [],
-                "total": 0,
-                "page": page,
-                "limit": limit,
-                "has_more": False,
-            }
-
-    async def get_search_analysis_tasks(
-        self,
-        tenant_id: str,
-        page: int,
-        limit: int,
-        query: str | None = None,
-        location_id: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        include_converted: bool = False,
-    ) -> dict[str, Any]:
-        """Get search analysis tasks using the RPC function."""
-        try:
-            async with get_db_session(tenant_id=self.tenant_id) as session:
-                result = await session.execute(
-                    text("""
-                        SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted)
-                    """),
-                    {
-                        "p_tenant_id": tenant_id,
-                        "p_page": page,
-                        "p_limit": limit,
-                        "p_query": query,
-                        "p_location_id": location_id,
-                        "p_start_date": start_date,
-                        "p_end_date": end_date,
-                        "p_include_converted": include_converted,
-                    },
-                )
-                tasks = result.scalar()
-
-                return tasks or {
-                    "data": [],
-                    "total": 0,
-                    "page": page,
-                    "limit": limit,
-                    "has_more": False,
-                }
-
-        except Exception as e:
-            logger.error(f"Error fetching search analysis tasks: {e}")
-            return {
-                "data": [],
-                "total": 0,
-                "page": page,
-                "limit": limit,
-                "has_more": False,
-            }
-
-    async def get_repeat_visit_tasks(
-        self,
-        tenant_id: str,
-        page: int,
-        limit: int,
-        query: str | None = None,
-        location_id: str | None = None,
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Get repeat visit tasks using the RPC function."""
-        try:
-            async with get_db_session(tenant_id=self.tenant_id) as session:
-                result = await session.execute(
-                    text("""
-                        SELECT get_repeat_visit_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
-                    """),
-                    {
-                        "p_tenant_id": tenant_id,
-                        "p_page": page,
-                        "p_limit": limit,
-                        "p_query": query,
-                        "p_location_id": location_id,
-                        "p_start_date": start_date,
-                        "p_end_date": end_date,
-                    },
-                )
-                tasks = result.scalar()
-
-                return tasks or {
-                    "data": [],
-                    "total": 0,
-                    "page": page,
-                    "limit": limit,
-                    "has_more": False,
-                }
-
-        except Exception as e:
-            logger.error(f"Error fetching repeat visit tasks: {e}")
-            return {
-                "data": [],
-                "total": 0,
-                "page": page,
-                "limit": limit,
-                "has_more": False,
-            }
 
 
 def create_repository(tenant_id: str) -> FunctionsRepository:

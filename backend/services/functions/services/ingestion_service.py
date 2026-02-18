@@ -211,8 +211,9 @@ class IngestionService:
                     await self.repo.update_job_status(
                         job_id, "processing", progress={"current": "events"}
                     )
-                    event_results = await self._process_events_async(tenant_id, request)
+                    event_results, event_warnings = await self._process_events_async(tenant_id, request)
                     results.update(event_results)
+                    warnings.extend(event_warnings)
 
                 except Exception as e:
                     logger.error(
@@ -338,15 +339,14 @@ class IngestionService:
                         msg
                     ) from e
 
-            # Log any warnings but keep status as completed
             if warnings:
                 logger.warning(f"Job {job_id} completed with warnings: {warnings}")
                 results["warnings"] = warnings
 
-            # Update job status to completed
+            final_status = "completed_with_warnings" if warnings else "completed"
             await self.repo.update_job_status(
                 job_id,
-                "completed",
+                final_status,
                 completed_at=datetime.now(),
                 records_processed=results,
             )
@@ -364,7 +364,7 @@ class IngestionService:
 
     async def _process_events_async(
         self, tenant_id: str, request: CreateIngestionJobRequest
-    ) -> dict[str, int]:
+    ) -> tuple[dict[str, int], list[str]]:
         """
         Extract and process all event types from BigQuery for the specified date range.
 
@@ -427,34 +427,99 @@ class IngestionService:
                 request.start_date.isoformat(), request.end_date.isoformat()
             )
 
-            results = {}
+            # Reclassify mistagged search events: the GA4 implementation fires
+            # no_search_results for ALL searches on /searchPage.action regardless
+            # of outcome. We use page title to distinguish genuinely failed searches
+            # from successful ones that were mistagged.
+            events_by_type = self._reclassify_search_events(events_by_type)
 
-            # Process each event type
-            for event_type, events_data in events_by_type.items():
+            results: dict[str, int] = {}
+            event_warnings: list[str] = []
+
+            async def _insert_event_type_safe(
+                et: str, data: list[dict[str, Any]]
+            ) -> tuple[str, int, str | None]:
                 try:
-                    if events_data:
+                    if data:
                         count = await self.repo.replace_event_data(
                             tenant_id,
-                            event_type,
+                            et,
                             request.start_date,
                             request.end_date,
-                            events_data,
+                            data,
                         )
-                        results[event_type] = count
-                        logger.info(f"Processed {count} {event_type} events")
-                    else:
-                        results[event_type] = 0
-                        logger.info(f"No {event_type} events found")
-
+                        logger.info(f"Processed {count} {et} events")
+                        return et, count, None
+                    logger.info(f"No {et} events found")
+                    return et, 0, None
                 except Exception as e:
-                    logger.error(f"Error processing {event_type} events: {e}")
-                    results[event_type] = 0
+                    logger.error(f"Failed to insert {et} events: {e}")
+                    return et, 0, str(e)
 
-            return results
+            tasks = [
+                _insert_event_type_safe(et, data)
+                for et, data in events_by_type.items()
+            ]
+
+            for coro in asyncio.as_completed(tasks):
+                event_type, count, error = await coro
+                results[event_type] = count
+                if error:
+                    event_warnings.append(f"{event_type}: {error}")
+
+            return results, event_warnings
 
         except Exception as e:
             logger.error(f"Error processing BigQuery events: {e}")
             raise
+
+    @staticmethod
+    def _reclassify_search_events(
+        events_by_type: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Reclassify mistagged no_search_results events into view_search_results.
+
+        The GA4 implementation on the site fires ``no_search_results`` for all
+        searches on ``/searchPage.action``, regardless of whether results were
+        found.  Events whose page title does NOT contain "No Results Found" are
+        actually successful searches and belong in ``view_search_results``.
+
+        For reclassified events the ``param_no_search_results_term`` key is
+        renamed to ``param_search_term`` so the record matches the
+        ``view_search_results`` table schema.
+        """
+        NO_RESULTS_MARKER = "No Results Found"
+
+        no_search = events_by_type.get("no_search_results", [])
+        if not no_search:
+            return events_by_type
+
+        genuinely_failed: list[dict[str, Any]] = []
+        reclassified: list[dict[str, Any]] = []
+
+        for event in no_search:
+            title = event.get("param_page_title") or ""
+            if NO_RESULTS_MARKER in title:
+                genuinely_failed.append(event)
+            else:
+                converted = dict(event)
+                converted["param_search_term"] = converted.pop(
+                    "param_no_search_results_term", None
+                )
+                reclassified.append(converted)
+
+        events_by_type["no_search_results"] = genuinely_failed
+
+        existing_vsr = events_by_type.get("view_search_results", [])
+        events_by_type["view_search_results"] = existing_vsr + reclassified
+
+        if reclassified:
+            logger.info(
+                f"Reclassified {len(reclassified)} mistagged no_search_results "
+                f"events as view_search_results (genuinely failed: {len(genuinely_failed)})"
+            )
+
+        return events_by_type
 
     async def _process_users(self, tenant_id: str) -> tuple[int, int]:
         """

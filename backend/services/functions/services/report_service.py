@@ -9,11 +9,12 @@ from datetime import date, datetime
 from typing import Any
 
 import logging
-from shared.database import create_repository
-
-logger = logging.getLogger(__name__)
 
 from services.template_service import TemplateService
+from shared.database import create_repository
+from shared.tasks_repository import TasksRepository
+
+logger = logging.getLogger(__name__)
 
 
 class ReportService:
@@ -57,6 +58,7 @@ class ReportService:
         """
         self.tenant_id = tenant_id
         self.repo = create_repository(tenant_id)
+        self.tasks_repo = TasksRepository()
         self.template_service = TemplateService()
 
     async def generate_branch_report(
@@ -232,8 +234,8 @@ class ReportService:
             dict[str, Any]: Paginated results containing purchase task data
                           and total count.
         """
-        return await self.repo.get_purchase_tasks(
-            tenant_id, 1, 50, None, branch_code, date_str, date_str
+        return await self.tasks_repo.get_purchase_tasks(
+            tenant_id, 1, 500, None, branch_code, date_str, date_str
         )
 
     async def _get_cart_abandonment_tasks_async(
@@ -254,8 +256,8 @@ class ReportService:
             dict[str, Any]: Paginated results containing cart abandonment data
                           and total count.
         """
-        return await self.repo.get_cart_abandonment_tasks(
-            tenant_id, 1, 50, None, branch_code, date_str, date_str
+        return await self.tasks_repo.get_cart_abandonment_tasks(
+            tenant_id, 1, 500, None, branch_code, date_str, date_str
         )
 
     async def _get_search_analysis_tasks_async(
@@ -276,8 +278,8 @@ class ReportService:
             dict[str, Any]: Paginated results containing search analysis data
                           and total count.
         """
-        return await self.repo.get_search_analysis_tasks(
-            tenant_id, 1, 50, None, branch_code, date_str, date_str, False
+        return await self.tasks_repo.get_search_analysis_tasks(
+            tenant_id, 1, 500, None, branch_code, date_str, date_str, False
         )
 
     async def _get_repeat_visit_tasks_async(
@@ -298,8 +300,8 @@ class ReportService:
             dict[str, Any]: Paginated results containing repeat visit data
                           and total count.
         """
-        return await self.repo.get_repeat_visit_tasks(
-            tenant_id, 1, 50, None, branch_code, date_str, date_str
+        return await self.tasks_repo.get_repeat_visit_tasks(
+            tenant_id, 1, 500, None, branch_code, date_str, date_str
         )
 
     def _safe_get_task_data(self, task_result: Any, task_type: str) -> dict[str, Any]:

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.purchase (
   user_pseudo_id character varying(255),
   user_prop_webuserid character varying(100),
   user_prop_default_branch_id character varying(100),
+  user_prop_webcustomerid character varying(100),
   param_ga_session_id character varying(100),
   param_transaction_id character varying(100),
   param_page_title character varying(500),
@@ -70,6 +71,10 @@ WHERE param_ga_session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_purchase_items_gin 
 ON purchase USING GIN (items_json) 
 WHERE items_json IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_purchase_tenant_customer 
+ON purchase (tenant_id, user_prop_webcustomerid)
+WHERE user_prop_webcustomerid IS NOT NULL;
 
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_purchase_location_stats_covering 

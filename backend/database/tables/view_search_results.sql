@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.view_search_results (
   user_pseudo_id character varying(255),
   user_prop_webuserid character varying(100),
   user_prop_default_branch_id character varying(100),
+  user_prop_webcustomerid character varying(100),
   param_ga_session_id character varying(100),
   param_search_term character varying(500),
   param_page_title character varying(500),
@@ -59,6 +60,10 @@ ON view_search_results (tenant_id, event_date DESC, event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_view_search_results_session_lookup 
 ON view_search_results (param_ga_session_id, tenant_id) 
 WHERE param_ga_session_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_view_search_results_tenant_customer 
+ON view_search_results (tenant_id, user_prop_webcustomerid)
+WHERE user_prop_webcustomerid IS NOT NULL;
 
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_view_search_results_location_stats_covering 

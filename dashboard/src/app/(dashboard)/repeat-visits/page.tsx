@@ -57,16 +57,27 @@ export default function RepeatVisitsPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
+  // Map frontend SortField values to backend column names for server-side sorting.
+  // 'products' and 'priority' are computed on the frontend and remain client-side only.
+  const SERVER_SORT_FIELDS: Partial<Record<SortField, string>> = {
+    customer: 'customer_name',
+    visitCount: 'page_views_count',
+    lastVisit: 'last_activity',
+  }
+
   const fetchRepeatVisitTasksData = useCallback(async () => {
     try {
       setLoading(true)
-      
+
+      const backendSortField = SERVER_SORT_FIELDS[sortField]
       const response = await fetchRepeatVisitTasks({
         selectedLocation,
         dateRange,
         page: currentPage,
         limit: itemsPerPage,
-        query: debouncedSearchQuery
+        query: debouncedSearchQuery,
+        sortField: backendSortField,
+        sortOrder: backendSortField ? sortOrder : undefined,
       })
       const data: RepeatVisitApiResponse = await response.json()
 
@@ -121,7 +132,7 @@ export default function RepeatVisitsPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange, sortField, sortOrder])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
@@ -140,43 +151,34 @@ export default function RepeatVisitsPage() {
     setCurrentPage(1) // Reset to first page when changing items per page
   }
 
-  // Filter and sort tasks
+  // Filter tasks client-side (priority is a computed field, not in DB).
+  // For server-sortable fields (customer, visitCount, lastVisit) the data already
+  // arrives pre-sorted from the API. For client-only fields (products, priority) we
+  // fall back to a local sort on the current page.
   const filteredAndSortedTasks = useMemo(() => {
     const filtered = tasks.filter(task => {
-      // Client-side filter (priority only)
       if (priorityFilter !== "all" && task.priority !== priorityFilter) return false
       return true
     })
 
-    // Sort the filtered tasks
+    const isServerSorted = sortField in SERVER_SORT_FIELDS
+    if (isServerSorted) return filtered
+
     return [...filtered].sort((a, b) => {
       let compareValue = 0
-      
       switch (sortField) {
-        case 'customer':
-          compareValue = a.customer.name.localeCompare(b.customer.name)
-          break
-        case 'lastVisit':
-          const aDate = new Date(a.metadata?.lastVisit || 0).getTime()
-          const bDate = new Date(b.metadata?.lastVisit || 0).getTime()
-          compareValue = aDate - bDate
-          break
-        case 'visitCount':
-          const aCount = a.metadata?.visitCount || 0
-          const bCount = b.metadata?.visitCount || 0
-          compareValue = aCount - bCount
-          break
-        case 'products':
+        case 'products': {
           const aProducts = a.metadata?.products?.length || 0
           const bProducts = b.metadata?.products?.length || 0
           compareValue = aProducts - bProducts
           break
-        case 'priority':
-          const priorityOrder = { high: 3, medium: 2, low: 1 }
+        }
+        case 'priority': {
+          const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 }
           compareValue = (priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)
           break
+        }
       }
-      
       return sortOrder === 'asc' ? compareValue : -compareValue
     })
   }, [tasks, priorityFilter, sortField, sortOrder])
@@ -188,6 +190,7 @@ export default function RepeatVisitsPage() {
       setSortField(field)
       setSortOrder('desc')
     }
+    setCurrentPage(1)
   }
 
   const clearFilters = () => {

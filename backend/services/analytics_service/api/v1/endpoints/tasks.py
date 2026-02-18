@@ -233,6 +233,16 @@ async def get_search_analysis_tasks(
     include_converted: bool = Query(
         default=False, description="Include sessions that resulted in a purchase"
     ),
+    sort_field: str | None = Query(
+        default=None,
+        pattern="^(search_count|search_term|customer_name)$",
+        description="Field to sort by",
+    ),
+    sort_order: str | None = Query(
+        default=None,
+        pattern="^(asc|desc)$",
+        description="Sort direction",
+    ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
@@ -292,6 +302,8 @@ async def get_search_analysis_tasks(
             start_date=start_date,
             end_date=end_date,
             include_converted=include_converted,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
         logger.info(
@@ -320,6 +332,16 @@ async def get_performance_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
+    sort_field: str | None = Query(
+        default=None,
+        pattern="^(last_activity|customer_name|entry_page)$",
+        description="Field to sort by",
+    ),
+    sort_order: str | None = Query(
+        default=None,
+        pattern="^(asc|desc)$",
+        description="Sort direction",
+    ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
@@ -375,6 +397,8 @@ async def get_performance_tasks(
             location_id=location_id,
             start_date=start_date,
             end_date=end_date,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
         logger.info(f"Retrieved performance tasks for tenant {tenant_id}")
@@ -404,6 +428,16 @@ async def get_repeat_visit_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
+    sort_field: str | None = Query(
+        default=None,
+        pattern="^(page_views_count|last_activity|customer_name)$",
+        description="Field to sort by",
+    ),
+    sort_order: str | None = Query(
+        default=None,
+        pattern="^(asc|desc)$",
+        description="Sort direction",
+    ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
@@ -457,6 +491,8 @@ async def get_repeat_visit_tasks(
             location_id=location_id,
             start_date=start_date,
             end_date=end_date,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
         logger.info(

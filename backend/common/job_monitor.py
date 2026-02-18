@@ -81,7 +81,7 @@ class JobStatusMonitor:
         self,
         azure_connection_string: str,
         interval_seconds: int = 300,
-        stuck_timeout_minutes: int = 10,
+        stuck_timeout_minutes: int = 15,
     ) -> None:
         """
         Initialize the job status monitor.
@@ -138,53 +138,91 @@ class JobStatusMonitor:
     async def _check_all_jobs(self) -> None:
         """Check job statuses across all tenants."""
         logger.debug("Starting job status check...")
-        
+
         # Get queue statistics
         await self._log_queue_stats()
-        
+
         # Get all tenant database names
         tenant_ids = await self._get_all_tenant_ids()
-        
+
         if not tenant_ids:
             logger.debug("No tenant databases found")
             return
-        
-        total_stuck_ingestion = 0
-        total_stuck_email = 0
-        
+
+        total_failed = 0
+        total_retriggered = 0
+
         # Check each tenant database for stuck jobs
         for tenant_id in tenant_ids:
             try:
                 # Check ingestion jobs
                 stuck_ingestion = await self._get_stuck_jobs(tenant_id, "ingestion")
                 for job in stuck_ingestion:
-                    await self._mark_job_failed(
-                        tenant_id=tenant_id,
-                        job_id=job["job_id"],
-                        job_type="ingestion",
-                        error_message=f"Job timed out - no progress for {self.stuck_timeout_minutes} minutes",
-                    )
-                    total_stuck_ingestion += 1
-                
-                # Check email jobs
+                    status = job.get("status", "unknown")
+
+                    if status == "queued":
+                        progress = job.get("progress") or {}
+                        retrigger_count = progress.get("retrigger_count", 0)
+                        max_retriggers = 3
+
+                        if retrigger_count < max_retriggers:
+                            # Attempt re-trigger (up to 3 times)
+                            retriggered = await self._retrigger_queued_job(tenant_id, job, retrigger_count + 1)
+                            if retriggered:
+                                logger.info(
+                                    f"Re-trigger attempt {retrigger_count + 1}/{max_retriggers} "
+                                    f"for job {job['job_id']} (tenant {tenant_id})"
+                                )
+                                total_retriggered += 1
+                                continue
+
+                        # Exhausted all 3 retries or re-trigger failed — mark as failed
+                        await self._mark_job_failed(
+                            tenant_id=tenant_id,
+                            job_id=job["job_id"],
+                            job_type="ingestion",
+                            error_message=f"Job failed after {max_retriggers} re-trigger attempts — worker never picked it up successfully",
+                        )
+                        total_failed += 1
+
+                    else:
+                        # processing — killed mid-job (OOM, SIGKILL)
+                        progress = job.get("progress") or {}
+                        current_step = progress.get("current", "unknown step")
+                        await self._mark_job_failed(
+                            tenant_id=tenant_id,
+                            job_id=job["job_id"],
+                            job_type="ingestion",
+                            error_message=f"Worker was killed (OOM or crash) while processing '{current_step}' after {self.stuck_timeout_minutes} minutes",
+                        )
+                        total_failed += 1
+
+                # Check email jobs (mark failed only — no re-trigger for email)
                 stuck_email = await self._get_stuck_jobs(tenant_id, "email")
                 for job in stuck_email:
+                    status = job.get("status", "unknown")
+                    progress = job.get("progress") or {}
+                    current_step = progress.get("current", "unknown step")
+                    if status == "queued":
+                        error_msg = f"Email job was never picked up by worker after {self.stuck_timeout_minutes} minutes"
+                    else:
+                        error_msg = f"Email worker was killed (OOM or crash) while processing '{current_step}'"
                     await self._mark_job_failed(
                         tenant_id=tenant_id,
                         job_id=job["job_id"],
                         job_type="email",
-                        error_message=f"Job timed out - no progress for {self.stuck_timeout_minutes} minutes",
+                        error_message=error_msg,
                     )
-                    total_stuck_email += 1
-                    
+                    total_failed += 1
+
             except Exception as e:
                 logger.warning(f"Error checking jobs for tenant {tenant_id}: {e}")
                 continue
-        
-        if total_stuck_ingestion > 0 or total_stuck_email > 0:
+
+        if total_failed > 0 or total_retriggered > 0:
             logger.info(
-                f"Job monitor: marked {total_stuck_ingestion} ingestion jobs "
-                f"and {total_stuck_email} email jobs as failed (stuck)"
+                f"Job monitor: marked {total_failed} jobs as failed, "
+                f"re-triggered {total_retriggered} stuck queued jobs"
             )
         else:
             logger.debug("Job monitor: no stuck jobs found")
@@ -224,43 +262,127 @@ class JobStatusMonitor:
 
     async def _get_stuck_jobs(self, tenant_id: str, job_type: str) -> list[dict[str, Any]]:
         """
-        Query database for jobs stuck in 'processing' status.
-        
+        Query database for jobs stuck in 'processing' or 'queued' status for
+        more than stuck_timeout_minutes (default 15 minutes).
+
         Args:
             tenant_id: The tenant ID to query.
             job_type: Either 'ingestion' or 'email'.
-            
+
         Returns:
-            List of stuck job records.
+            List of stuck job records with all fields needed for re-trigger or failure.
         """
         table = "processing_jobs" if job_type == "ingestion" else "email_sending_jobs"
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.stuck_timeout_minutes)
-        
+
         db_name = f"google-analytics-{tenant_id}"
         url = _create_sqlalchemy_url(db_name, async_driver=True)
-        
+
         engine = create_async_engine(url, pool_size=1, max_overflow=0)
         session_maker = async_sessionmaker(
             bind=engine,
             class_=AsyncSession,
             expire_on_commit=False,
         )
-        
+
         try:
             async with session_maker() as session:
-                result = await session.execute(
-                    text(f"""
-                        SELECT job_id, tenant_id, status, updated_at
-                        FROM {table}
-                        WHERE status = 'processing'
-                        AND updated_at < :cutoff
-                    """),
-                    {"cutoff": cutoff},
-                )
+                if job_type == "ingestion":
+                    result = await session.execute(
+                        text(f"""
+                            SELECT job_id, tenant_id, status, updated_at,
+                                   progress, start_date, end_date, data_types
+                            FROM {table}
+                            WHERE status IN ('processing', 'queued')
+                            AND updated_at < :cutoff
+                        """),
+                        {"cutoff": cutoff},
+                    )
+                else:
+                    result = await session.execute(
+                        text(f"""
+                            SELECT job_id, tenant_id, status, updated_at, progress
+                            FROM {table}
+                            WHERE status IN ('processing', 'queued')
+                            AND updated_at < :cutoff
+                        """),
+                        {"cutoff": cutoff},
+                    )
                 rows = result.mappings().all()
                 return [dict(row) for row in rows]
         finally:
             await engine.dispose()
+
+    async def _retrigger_queued_job(
+        self, tenant_id: str, job: dict[str, Any], new_retrigger_count: int
+    ) -> bool:
+        """
+        Re-send a stuck queued ingestion job to the Azure Storage Queue using the same job_id.
+        Increments retrigger_count in progress so we can track how many times we've retried.
+        Resets updated_at so the job won't be picked up again by the monitor this cycle.
+
+        Args:
+            tenant_id: The tenant ID.
+            job: The stuck job record (must include job_id, start_date, end_date, data_types).
+            new_retrigger_count: The updated retry count to store (1, 2, or 3).
+
+        Returns:
+            True if successfully re-queued, False otherwise.
+        """
+        job_id = job["job_id"]
+
+        try:
+            # Re-send to queue with same job_id
+            message = {
+                "job_id": job_id,
+                "tenant_id": tenant_id,
+                "start_date": job["start_date"].isoformat() if hasattr(job["start_date"], "isoformat") else str(job["start_date"]),
+                "end_date": job["end_date"].isoformat() if hasattr(job["end_date"], "isoformat") else str(job["end_date"]),
+                "data_types": job["data_types"] if isinstance(job["data_types"], list) else list(job["data_types"]),
+            }
+
+            queue_client = QueueClient.from_connection_string(
+                self.azure_connection_string, "ingestion-jobs"
+            )
+            async with queue_client:
+                await queue_client.send_message(json.dumps(message))
+
+            # Stamp retrigger_count and reset updated_at to prevent immediate
+            # re-trigger on the next monitor cycle
+            db_name = f"google-analytics-{tenant_id}"
+            url = _create_sqlalchemy_url(db_name, async_driver=True)
+            engine = create_async_engine(url, pool_size=1, max_overflow=0)
+            session_maker = async_sessionmaker(
+                bind=engine, class_=AsyncSession, expire_on_commit=False
+            )
+            try:
+                async with session_maker() as session:
+                    await session.execute(
+                        text("""
+                            UPDATE processing_jobs
+                            SET progress = jsonb_set(
+                                    COALESCE(progress, '{}'::jsonb),
+                                    '{retrigger_count}',
+                                    :count::jsonb
+                                ),
+                                updated_at = NOW()
+                            WHERE job_id = :job_id
+                        """),
+                        {"job_id": job_id, "count": str(new_retrigger_count)},
+                    )
+                    await session.commit()
+            finally:
+                await engine.dispose()
+
+            logger.info(
+                f"Re-triggered stuck queued job {job_id} for tenant {tenant_id} "
+                f"(attempt {new_retrigger_count}/3)"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to re-trigger job {job_id}: {e}")
+            return False
 
     async def _mark_job_failed(
         self,
@@ -336,7 +458,7 @@ class JobStatusMonitor:
 def create_job_monitor(
     azure_connection_string: str,
     interval_seconds: int = 300,
-    stuck_timeout_minutes: int = 10,
+    stuck_timeout_minutes: int = 15,
 ) -> JobStatusMonitor:
     """
     Factory function to create a JobStatusMonitor instance.

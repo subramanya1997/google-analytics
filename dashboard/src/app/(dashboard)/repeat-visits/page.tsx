@@ -57,10 +57,7 @@ export default function RepeatVisitsPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Map frontend SortField values to backend column names for server-side sorting.
-  // 'products' and 'priority' are computed on the frontend and remain client-side only.
   const SERVER_SORT_FIELDS: Partial<Record<SortField, string>> = {
-    customer: 'customer_name',
     visitCount: 'page_views_count',
     lastVisit: 'last_activity',
   }
@@ -99,11 +96,11 @@ export default function RepeatVisitsPage() {
           id: task.session_id,
           type: 'repeat_visit',
           priority,
-          title: `Repeat Visit by ${task.customer_name || 'Unknown User'}`,
+          title: `Repeat Visit by ${task.customer_name || 'Anonymous User'}`,
           description: `Viewed ${task.page_views_count} pages, ${task.products_viewed || 0} products.`,
           customer: {
             id: task.user_id,
-            name: task.customer_name || 'Unknown User',
+            name: task.customer_name || 'Anonymous User',
             email: task.email,
             phone: task.phone,
             office_phone: task.office_phone,
@@ -151,37 +148,12 @@ export default function RepeatVisitsPage() {
     setCurrentPage(1) // Reset to first page when changing items per page
   }
 
-  // Filter tasks client-side (priority is a computed field, not in DB).
-  // For server-sortable fields (customer, visitCount, lastVisit) the data already
-  // arrives pre-sorted from the API. For client-only fields (products, priority) we
-  // fall back to a local sort on the current page.
   const filteredAndSortedTasks = useMemo(() => {
-    const filtered = tasks.filter(task => {
+    return tasks.filter(task => {
       if (priorityFilter !== "all" && task.priority !== priorityFilter) return false
       return true
     })
-
-    const isServerSorted = sortField in SERVER_SORT_FIELDS
-    if (isServerSorted) return filtered
-
-    return [...filtered].sort((a, b) => {
-      let compareValue = 0
-      switch (sortField) {
-        case 'products': {
-          const aProducts = a.metadata?.products?.length || 0
-          const bProducts = b.metadata?.products?.length || 0
-          compareValue = aProducts - bProducts
-          break
-        }
-        case 'priority': {
-          const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 }
-          compareValue = (priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)
-          break
-        }
-      }
-      return sortOrder === 'asc' ? compareValue : -compareValue
-    })
-  }, [tasks, priorityFilter, sortField, sortOrder])
+  }, [tasks, priorityFilter])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -266,15 +238,7 @@ export default function RepeatVisitsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12"></TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('customer')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Customer
-                        <SortIcon field="customer" />
-                      </div>
-                    </TableHead>
+                    <TableHead>Customer</TableHead>
                     <TableHead 
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() => handleSort('lastVisit')}
@@ -293,24 +257,8 @@ export default function RepeatVisitsPage() {
                         <SortIcon field="visitCount" />
                       </div>
                     </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('products')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Products Viewed
-                        <SortIcon field="products" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('priority')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Priority
-                        <SortIcon field="priority" />
-                      </div>
-                    </TableHead>
+                    <TableHead>Products Viewed</TableHead>
+                    <TableHead>Priority</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -476,17 +424,19 @@ export default function RepeatVisitsPage() {
 
             {/* Pagination Controls */}
             <div className="flex items-center justify-between">
-              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-sm text-muted-foreground">per page</span>
+              <div className="flex items-center gap-2">
+                <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                  <SelectTrigger className="h-8 w-[70px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_OPTIONS.map((size) => (
+                      <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-sm text-muted-foreground">per page</span>
+              </div>
               
               <div className="flex items-center space-x-2">
                 <Button

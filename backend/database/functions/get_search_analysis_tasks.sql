@@ -1,5 +1,5 @@
 -- Definition for function public.get_search_analysis_tasks (oid=217034)
-CREATE OR REPLACE FUNCTION public.get_search_analysis_tasks(p_tenant_id uuid, p_page integer, p_limit integer, p_query text DEFAULT NULL::text, p_location_id text DEFAULT NULL::text, p_start_date text DEFAULT NULL::text, p_end_date text DEFAULT NULL::text, p_include_converted boolean DEFAULT false, p_sort_field text DEFAULT 'search_count'::text, p_sort_order text DEFAULT 'desc'::text)
+CREATE OR REPLACE FUNCTION public.get_search_analysis_tasks(p_tenant_id uuid, p_page integer, p_limit integer, p_query text DEFAULT NULL::text, p_location_id text DEFAULT NULL::text, p_start_date text DEFAULT NULL::text, p_end_date text DEFAULT NULL::text, p_include_converted boolean DEFAULT false, p_sort_field text DEFAULT 'search_count'::text, p_sort_order text DEFAULT 'desc'::text, p_search_type text DEFAULT NULL::text)
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
@@ -51,6 +51,17 @@ BEGIN
         UNION ALL
         SELECT * FROM unconverted_searches
     ),
+    facet_counts AS (
+        SELECT
+            search_type,
+            COUNT(*) AS cnt
+        FROM all_searches
+        GROUP BY search_type
+    ),
+    filtered_searches AS (
+        SELECT * FROM all_searches
+        WHERE p_search_type IS NULL OR search_type = p_search_type
+    ),
     all_searches_with_user AS (
         SELECT
             s.*,
@@ -60,21 +71,19 @@ BEGIN
             u.cell_phone AS phone,
             u.office_phone,
             COUNT(*) OVER() AS total_count
-        FROM all_searches s
+        FROM filtered_searches s
         LEFT JOIN users u ON u.tenant_id = p_tenant_id
             AND (u.user_id = s.user_prop_webuserid
-                 OR (s.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = s.user_prop_webcustomerid))
+                 OR (s.user_prop_webuserid IS NULL AND u.buying_company_erp_id = s.user_prop_webcustomerid))
     ),
     paginated_searches AS (
         SELECT *
         FROM all_searches_with_user
         ORDER BY
-            CASE WHEN p_sort_field = 'search_count'  AND p_sort_order = 'desc' THEN search_count  END DESC NULLS LAST,
-            CASE WHEN p_sort_field = 'search_count'  AND p_sort_order = 'asc'  THEN search_count  END ASC  NULLS LAST,
-            CASE WHEN p_sort_field = 'search_term'   AND p_sort_order = 'desc' THEN search_term   END DESC NULLS LAST,
-            CASE WHEN p_sort_field = 'search_term'   AND p_sort_order = 'asc'  THEN search_term   END ASC  NULLS LAST,
-            CASE WHEN p_sort_field = 'customer_name' AND p_sort_order = 'desc' THEN customer_name END DESC NULLS LAST,
-            CASE WHEN p_sort_field = 'customer_name' AND p_sort_order = 'asc'  THEN customer_name END ASC  NULLS LAST,
+            CASE WHEN p_sort_field = 'search_count' AND p_sort_order = 'desc' THEN search_count END DESC NULLS LAST,
+            CASE WHEN p_sort_field = 'search_count' AND p_sort_order = 'asc'  THEN search_count END ASC  NULLS LAST,
+            CASE WHEN p_sort_field = 'search_term'  AND p_sort_order = 'desc' THEN search_term  END DESC NULLS LAST,
+            CASE WHEN p_sort_field = 'search_term'  AND p_sort_order = 'asc'  THEN search_term  END ASC  NULLS LAST,
             last_activity DESC
         LIMIT p_limit
         OFFSET (p_page - 1) * p_limit
@@ -96,6 +105,19 @@ BEGIN
                 )
             )
             FROM paginated_searches ps
+        ),
+        'facets', jsonb_build_object(
+            'search_types', (
+                SELECT COALESCE(jsonb_agg(
+                    jsonb_build_object(
+                        'value', fc.search_type,
+                        'label', CASE fc.search_type WHEN 'no_results' THEN 'No Results' WHEN 'no_conversion' THEN 'No Conversion' ELSE fc.search_type END,
+                        'count', fc.cnt
+                    ) ORDER BY fc.cnt DESC
+                ), '[]'::jsonb)
+                FROM facet_counts fc
+                WHERE fc.cnt > 0
+            )
         ),
         'total', (SELECT MAX(total_count) FROM paginated_searches),
         'page', p_page,

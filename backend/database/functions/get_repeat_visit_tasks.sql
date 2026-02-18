@@ -55,7 +55,7 @@ BEGIN
         FROM repeat_visitor_sessions rvs
         LEFT JOIN users u ON u.tenant_id = p_tenant_id
             AND (u.user_id = rvs.user_prop_webuserid
-                 OR (rvs.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = rvs.user_prop_webcustomerid))
+                 OR (rvs.user_prop_webuserid IS NULL AND u.buying_company_erp_id = rvs.user_prop_webcustomerid))
         WHERE p_query IS NULL
            OR u.buying_company_name ILIKE ('%' || p_query || '%')
            OR u.email ILIKE ('%' || p_query || '%')
@@ -68,8 +68,6 @@ BEGIN
             CASE WHEN p_sort_field = 'page_views_count' AND p_sort_order = 'asc'  THEN page_views_count END ASC  NULLS LAST,
             CASE WHEN p_sort_field = 'last_activity'    AND p_sort_order = 'desc' THEN last_activity    END DESC NULLS LAST,
             CASE WHEN p_sort_field = 'last_activity'    AND p_sort_order = 'asc'  THEN last_activity    END ASC  NULLS LAST,
-            CASE WHEN p_sort_field = 'customer_name'    AND p_sort_order = 'desc' THEN customer_name    END DESC NULLS LAST,
-            CASE WHEN p_sort_field = 'customer_name'    AND p_sort_order = 'asc'  THEN customer_name    END ASC  NULLS LAST,
             last_activity DESC
         LIMIT p_limit
         OFFSET (p_page - 1) * p_limit

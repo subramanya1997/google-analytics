@@ -1,472 +1,572 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback } from "react"
+import React, { useEffect, useState, useCallback, useMemo } from "react"
+import type { ColumnDef, ColumnFiltersState, SortingState, PaginationState, Row } from "@tanstack/react-table"
 import { useDashboard } from "@/contexts/dashboard-context"
 import { fetchPerformanceTasks } from "@/lib/api-utils"
-import { usePageNumbers, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
-import { Task, PerformanceApiTask, FrequentlyBouncedPage, PerformanceApiResponse, SortField, SortOrder } from "@/types"
+import { DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
+import { Task, PerformanceApiTask, FrequentlyBouncedPage, PerformanceApiResponse, FacetItem } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { DataTable } from "@/components/ui/data-table"
+import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter"
+import { DataTablePagination } from "@/components/ui/data-table-pagination"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Mail, Phone, MonitorSmartphone, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
+  Mail, Phone, MonitorSmartphone, AlertTriangle, Clock, TrendingDown,
+  FileX, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown,
+  ExternalLink, MapPin, Copy, Check, Info,
+} from "lucide-react"
 
 type BouncedSession = PerformanceApiTask
+
+const ISSUE_LABEL: Record<string, string> = {
+  slow_page: "Slow Page",
+  high_bounce: "High Bounce",
+  page_bounce_issue: "Page Bounce",
+  form_abandonment: "Form Abandonment",
+}
+
+function IssueIcon({ issueType }: { issueType?: string }) {
+  switch (issueType) {
+    case "slow_page":
+      return <Clock className="h-4 w-4" />
+    case "high_bounce":
+      return <TrendingDown className="h-4 w-4" />
+    case "form_abandonment":
+      return <FileX className="h-4 w-4" />
+    default:
+      return <AlertTriangle className="h-4 w-4" />
+  }
+}
+
+function SortHeader({ label, column }: { label: string; column: { getIsSorted: () => false | "asc" | "desc" } }) {
+  const sorted = column.getIsSorted()
+  return (
+    <div className="flex items-center gap-2">
+      {label}
+      {sorted === "asc" ? (
+        <ChevronUp className="h-4 w-4" />
+      ) : sorted === "desc" ? (
+        <ChevronDown className="h-4 w-4" />
+      ) : (
+        <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+      )}
+    </div>
+  )
+}
+
+function CustomerCell({ task }: { task: Task }) {
+  return (
+    <div className="space-y-1">
+      <div className="font-medium text-sm flex items-center gap-1">
+        <span className="truncate">{task.customer.name}</span>
+        {task.customer.name === "Anonymous Visitor" && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-[220px]">
+              <p className="text-xs">A real user who visited the site but whose identity could not be determined.</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {task.customer.name === "System" && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-[220px]">
+              <p className="text-xs">An aggregate page-level insight — not tied to a specific user. This flags pages with high overall bounce rates.</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
+      {task.customer.email && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <a
+              href={`mailto:${task.customer.email}`}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Mail className="h-3 w-3 flex-shrink-0" />
+              <span className="truncate">{task.customer.email}</span>
+            </a>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <p className="text-xs">{task.customer.email}</p>
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {task.customer.phone?.trim() && (
+        <a
+          href={`tel:${task.customer.phone}`}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Phone className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{task.customer.phone}</span>
+        </a>
+      )}
+      {task.customer.office_phone?.trim() && (
+        <a
+          href={`tel:${task.customer.office_phone}`}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MonitorSmartphone className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{task.customer.office_phone}</span>
+        </a>
+      )}
+      {task.metadata?.location && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <MapPin className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{task.metadata.location}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ExpandedRow({ row }: { row: Row<Task> }) {
+  const task = row.original
+  const [copiedUrl, setCopiedUrl] = useState<boolean>(false)
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedUrl(true)
+    setTimeout(() => setCopiedUrl(false), 2000)
+  }
+
+  return (
+    <div className="px-6 py-4 border-t border-border/50">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Page URL</h4>
+            {task.metadata?.pageUrl ? (
+              <div className="flex items-start gap-2">
+                <a
+                  href={task.metadata.pageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline break-all flex-1"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {task.metadata.pageUrl}
+                </a>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      copyToClipboard(task.metadata?.pageUrl || "")
+                    }}
+                  >
+                    {copiedUrl ? (
+                      <Check className="h-3.5 w-3.5 text-green-500" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                  <a
+                    href={task.metadata.pageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" asChild>
+                      <span><ExternalLink className="h-3.5 w-3.5" /></span>
+                    </Button>
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No URL available</p>
+            )}
+          </div>
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Description</h4>
+            <p className="text-sm">{task.description}</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Customer</h4>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">{task.customer.name}</p>
+              {task.customer.email && (
+                <a
+                  href={`mailto:${task.customer.email}`}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Mail className="h-3.5 w-3.5 flex-shrink-0" />
+                  {task.customer.email}
+                </a>
+              )}
+              {task.customer.phone?.trim() && (
+                <a
+                  href={`tel:${task.customer.phone}`}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+                  {task.customer.phone}
+                </a>
+              )}
+              {task.customer.office_phone?.trim() && (
+                <a
+                  href={`tel:${task.customer.office_phone}`}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MonitorSmartphone className="h-3.5 w-3.5 flex-shrink-0" />
+                  {task.customer.office_phone} (office)
+                </a>
+              )}
+              {task.metadata?.location && (
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                  {task.metadata.location}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Details</h4>
+            <div className="space-y-1.5 text-sm">
+              {task.metadata?.issueType && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Type:</span>
+                  <div className="flex items-center gap-1.5">
+                    <IssueIcon issueType={task.metadata.issueType} />
+                    <Badge variant={
+                      task.metadata.issueType === "slow_page" ? "destructive" :
+                      task.metadata.issueType === "high_bounce" ? "default" :
+                      task.metadata.issueType === "page_bounce_issue" ? "default" : "secondary"
+                    } className="text-xs">
+                      {ISSUE_LABEL[task.metadata.issueType] ?? task.metadata.issueType}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+              {task.metadata?.bounceCount != null && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Bounce count:</span>
+                  <Badge variant="secondary" className="text-xs">{task.metadata.bounceCount}</Badge>
+                </div>
+              )}
+              {task.sessionId && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Session:</span>
+                  <span className="font-mono text-xs">{task.sessionId}</span>
+                </div>
+              )}
+              {task.createdAt && (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Date:</span>
+                  <span>{new Date(task.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function PerformancePage() {
   const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_PAGE_SIZE)
-  
-  // Filter states
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
-  const [priorityFilter, setPriorityFilter] = useState<string>("all")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
-  
-  // Sort states
-  const [sortField, setSortField] = useState<SortField>('priority')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [issueTypeFacets, setIssueTypeFacets] = useState<FacetItem[]>([])
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-      setCurrentPage(1) // Reset to first page on new search
-    }, 300)
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  })
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "details", desc: true },
+  ])
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
-    return () => clearTimeout(timer)
-  }, [searchQuery])
+  const issueTypeFilter = useMemo(() => {
+    const f = columnFilters.find((f) => f.id === "issueType")
+    return (f?.value as string) || undefined
+  }, [columnFilters])
 
-  // Map frontend SortField values to backend column names for server-side sorting.
-  // 'type' and 'priority' are computed on the frontend and remain client-side only.
-  const SERVER_SORT_FIELDS: Partial<Record<SortField, string>> = {
-    customer: 'customer_name',
-    metric: 'last_activity',
+  const SORT_FIELD_MAP: Record<string, string> = {
+    details: "last_activity",
+    customer: "customer_name",
+    page: "entry_page",
   }
+  const sortField = sorting[0] ? SORT_FIELD_MAP[sorting[0].id] : undefined
+  const sortOrder = sorting[0] ? (sorting[0].desc ? "desc" : "asc") : undefined
 
-  const fetchPerformanceTasksData = useCallback(async () => {
+  const pageCount = Math.max(1, Math.ceil(totalCount / pagination.pageSize))
+
+  const columns = useMemo<ColumnDef<Task, unknown>[]>(() => [
+    {
+      id: "expand",
+      size: 32,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <ChevronRight
+          className={`h-4 w-4 transition-transform ${row.getIsExpanded() ? "rotate-90" : ""}`}
+        />
+      ),
+    },
+    {
+      id: "page",
+      accessorFn: (row) => row.metadata?.pageTitle,
+      header: ({ column }) => <SortHeader label="Page" column={column} />,
+      size: 350,
+      enableSorting: true,
+      cell: ({ row }) => {
+        const task = row.original
+        const pageTitle = task.metadata?.pageTitle
+        const pageUrl = task.metadata?.pageUrl
+
+        if (pageTitle && pageUrl) {
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href={pageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="truncate">{pageTitle}</span>
+                  <ExternalLink className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-sm">
+                <p className="break-all text-xs">{pageUrl}</p>
+              </TooltipContent>
+            </Tooltip>
+          )
+        }
+
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="font-medium text-sm truncate block">{task.title}</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-sm">
+              <p className="break-all text-xs">{task.title}</p>
+            </TooltipContent>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      id: "issueType",
+      accessorFn: (row) => row.metadata?.issueType,
+      header: ({ column }) => (
+        <div className="flex items-center gap-1">
+          Issue
+          {issueTypeFacets.length > 0 && (
+            <DataTableFacetedFilter
+              column={column}
+              title=""
+              options={issueTypeFacets.map((f) => ({
+                value: f.value,
+                label: f.label,
+                count: f.count,
+              }))}
+            />
+          )}
+        </div>
+      ),
+      size: 150,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const issueType = row.original.metadata?.issueType
+        return (
+          <div className="flex items-center gap-1.5">
+            <IssueIcon issueType={issueType} />
+            <Badge
+              variant={
+                issueType === "slow_page" ? "destructive" :
+                issueType === "high_bounce" ? "default" :
+                issueType === "page_bounce_issue" ? "default" : "secondary"
+              }
+              className="text-xs whitespace-nowrap"
+            >
+              {ISSUE_LABEL[issueType ?? ""] ?? issueType}
+            </Badge>
+          </div>
+        )
+      },
+    },
+    {
+      id: "customer",
+      accessorFn: (row) => row.customer.name,
+      header: ({ column }) => <SortHeader label="Customer" column={column} />,
+      size: 180,
+      enableSorting: true,
+      cell: ({ row }) => <CustomerCell task={row.original} />,
+    },
+    {
+      id: "details",
+      accessorKey: "description",
+      header: ({ column }) => <SortHeader label="Details" column={column} />,
+      size: 160,
+      enableSorting: true,
+      cell: ({ row }) => (
+        <p className="text-xs sm:text-sm text-muted-foreground truncate" title={row.original.description}>
+          {row.original.description}
+        </p>
+      ),
+    },
+    {
+      accessorKey: "priority",
+      header: "Priority",
+      size: 80,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <Badge
+          variant={
+            row.original.priority === "high" ? "destructive" :
+            row.original.priority === "medium" ? "default" : "secondary"
+          }
+          className="text-xs whitespace-nowrap"
+        >
+          {row.original.priority}
+        </Badge>
+      ),
+    },
+  ], [issueTypeFacets])
+
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-
-      const backendSortField = SERVER_SORT_FIELDS[sortField]
       const response = await fetchPerformanceTasks({
         selectedLocation,
         dateRange,
-        page: currentPage,
-        limit: itemsPerPage,
-        query: debouncedSearchQuery,
-        sortField: backendSortField,
-        sortOrder: backendSortField ? sortOrder : undefined,
+        page: pagination.pageIndex + 1,
+        limit: pagination.pageSize,
+        sortField,
+        sortOrder,
+        issueType: issueTypeFilter,
       })
       const data: PerformanceApiResponse = await response.json()
 
-      // Transform the new data structure to the old one
       const bouncedSessions = data.data.bounced_sessions || []
       const frequentlyBouncedPages = data.data.frequently_bounced_pages || []
 
       const transformedTasks: Task[] = [
         ...bouncedSessions.map((session: BouncedSession) => ({
           id: `bounced-session-${session.session_id}`,
-          type: 'performance' as const,
+          type: "performance" as const,
           title: `Bounced Session: ${session.session_id}`,
           description: `User session with a single page view. Entry page: ${session.entry_page}`,
-          priority: 'high' as const, // Bounced sessions are high priority
-          status: 'pending' as const,
+          priority: "high" as const,
+          status: "pending" as const,
           customer: {
             id: session.user_id,
-            name: session.customer_name || 'Unknown',
+            name: session.customer_name || "Anonymous Visitor",
             email: session.email,
             phone: session.phone,
             office_phone: session.office_phone,
           },
           metadata: {
-            issueType: 'high_bounce',
+            issueType: "high_bounce",
             pageUrl: session.entry_page,
-            pageTitle: session.entry_page, // Assuming title is same as URL for now
-            location: session.location_id
+            pageTitle: session.entry_page,
+            location: session.location_id,
           },
           createdAt: session.event_date,
           userId: session.user_id,
-          sessionId: session.session_id
+          sessionId: session.session_id,
         })),
         ...frequentlyBouncedPages.map((page: FrequentlyBouncedPage) => ({
           id: `bounced-page-${page.entry_page}`,
-          type: 'performance' as const,
+          type: "performance" as const,
           title: `Frequently Bounced Page: ${page.entry_page}`,
           description: `This page has a high bounce rate with ${page.bounce_count} bounces.`,
-          priority: 'high' as const,
-          status: 'pending' as const,
+          priority: "high" as const,
+          status: "pending" as const,
           customer: {
-            id: 'system',
-            name: 'System',
+            id: "system",
+            name: "System",
             email: undefined,
             phone: undefined,
             office_phone: undefined,
           },
           metadata: {
-            issueType: 'page_bounce_issue',
+            issueType: "page_bounce_issue",
             pageUrl: page.entry_page,
             pageTitle: page.entry_page,
-            bounceCount: page.bounce_count
+            bounceCount: page.bounce_count,
           },
-          createdAt: new Date().toISOString() // System-generated, use current date
-        }))
+          createdAt: new Date().toISOString(),
+        })),
       ]
 
       setTasks(transformedTasks)
+      setIssueTypeFacets(data.facets?.issue_types || [])
       setTotalCount(data.total || 0)
-      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
-      console.error('Error fetching performance tasks:', error)
+      console.error("Error fetching performance tasks:", error)
     } finally {
       setLoading(false)
     }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange, sortField, sortOrder])
+  }, [pagination.pageIndex, pagination.pageSize, selectedLocation, dateRange, sortField, sortOrder, issueTypeFilter])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchPerformanceTasksData()
+      fetchData()
     }
-  }, [dateRange, fetchPerformanceTasksData])
+  }, [dateRange, fetchData])
 
+  const handleColumnFiltersChange = useCallback(
+    (updaterOrValue: ColumnFiltersState | ((old: ColumnFiltersState) => ColumnFiltersState)) => {
+      setColumnFilters(updaterOrValue)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
+    []
+  )
 
+  const handleSortingChange = useCallback(
+    (updaterOrValue: SortingState | ((old: SortingState) => SortingState)) => {
+      setSorting(updaterOrValue)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
+    []
+  )
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page)
-  }
-
-  const handleItemsPerPageChange = (value: string) => {
-    setItemsPerPage(parseInt(value))
-    setCurrentPage(1) // Reset to first page when changing items per page
-  }
-
-  // Filter tasks client-side (type and priority are computed fields, not in DB).
-  // For server-sortable fields (customer, metric) the data already arrives
-  // pre-sorted from the API. For client-only fields (type, priority) we fall
-  // back to a local sort on the current page.
-  const filteredAndSortedTasks = useMemo(() => {
-    const filtered = tasks.filter(task => {
-      if (priorityFilter !== "all" && task.priority !== priorityFilter) return false
-      if (typeFilter !== "all" && task.metadata?.issueType !== typeFilter) return false
-      return true
-    })
-
-    const isServerSorted = sortField in SERVER_SORT_FIELDS
-    if (isServerSorted) return filtered
-
-    return [...filtered].sort((a, b) => {
-      let compareValue = 0
-      switch (sortField) {
-        case 'type': {
-          const aType = a.metadata?.issueType || ''
-          const bType = b.metadata?.issueType || ''
-          compareValue = aType.localeCompare(bType)
-          break
-        }
-        case 'priority': {
-          const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 }
-          compareValue = (priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)
-          break
-        }
-      }
-      return sortOrder === 'asc' ? compareValue : -compareValue
-    })
-  }, [tasks, priorityFilter, typeFilter, sortField, sortOrder])
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortOrder('desc')
-    }
-    setCurrentPage(1)
-  }
-
-  const pageNumbers = usePageNumbers(currentPage, totalPages)
-
-  const clearFilters = () => {
-    setSearchQuery("")
-    setPriorityFilter("all")
-    setTypeFilter("all")
-  }
-
-  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all"
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) {
-      return <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
-    }
-    return sortOrder === 'asc' 
-      ? <ChevronUp className="h-4 w-4" />
-      : <ChevronDown className="h-4 w-4" />
-  }
-
-  const getIssueIcon = (issueType?: string) => {
-    switch (issueType) {
-      case 'slow_page':
-        return <Clock className="h-4 w-4" />
-      case 'high_bounce':
-        return <TrendingDown className="h-4 w-4" />
-      case 'form_abandonment':
-        return <FileX className="h-4 w-4" />
-      default:
-        return <AlertTriangle className="h-4 w-4" />
-    }
-  }
+  const hasActiveFilters = columnFilters.length > 0
 
   return (
     <div className="space-y-4 sm:space-y-6">
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
-          </div>
-        ) : filteredAndSortedTasks.length === 0 ? (
-          <div className="text-center py-8 sm:py-12">
-            <AlertTriangle className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">
-              {hasActiveFilters 
-                ? "No performance issues match your filters" 
-                : "No performance issues detected"}
-            </p>
-            {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearFilters}
-                className="mt-4"
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="rounded-md border overflow-hidden">
-              <div className="overflow-x-auto">
-                <Table className="min-w-full">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[25%] max-w-[250px]">
-                        Page
-                      </TableHead>
-                      <TableHead 
-                        className="cursor-pointer hover:bg-muted/50 w-[15%] max-w-[120px]"
-                        onClick={() => handleSort('type')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Issue
-                          <SortIcon field="type" />
-                        </div>
-                      </TableHead>
-                      <TableHead 
-                        className="cursor-pointer hover:bg-muted/50 w-[20%] max-w-[180px]"
-                        onClick={() => handleSort('customer')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Customer
-                          <SortIcon field="customer" />
-                        </div>
-                      </TableHead>
-                      <TableHead 
-                        className="cursor-pointer hover:bg-muted/50 w-[30%] max-w-[300px]"
-                        onClick={() => handleSort('metric')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Details
-                          <SortIcon field="metric" />
-                        </div>
-                      </TableHead>
-                      <TableHead 
-                        className="cursor-pointer hover:bg-muted/50 w-[10%] max-w-[100px]"
-                        onClick={() => handleSort('priority')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Priority
-                          <SortIcon field="priority" />
-                        </div>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAndSortedTasks.map((task) => (
-                      <TableRow key={task.id}>
-                        <TableCell className="w-[25%] max-w-[250px]">
-                          <div className="space-y-1">
-                            {task.metadata?.pageTitle && task.metadata?.pageUrl ? (
-                              <a 
-                                href={task.metadata.pageUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="font-medium text-sm text-foreground hover:text-primary flex items-center gap-1 transition-colors"
-                                title={task.metadata.pageTitle}
-                              >
-                                <span className="truncate">{task.metadata.pageTitle}</span>
-                                <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                              </a>
-                            ) : (
-                              <span className="font-medium text-sm truncate" title={task.title}>{task.title}</span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-[15%] max-w-[120px]">
-                          <div className="flex items-center gap-2">
-                            {getIssueIcon(task.metadata?.issueType)}
-                            <Badge variant={
-                              task.metadata?.issueType === 'slow_page' ? 'destructive' : 
-                              task.metadata?.issueType === 'high_bounce' ? 'default' : 
-                              task.metadata?.issueType === 'page_bounce_issue' ? 'default' : 'secondary'
-                            } className="text-xs whitespace-nowrap">
-                              {task.metadata?.issueType === 'slow_page' && 'Slow Page'}
-                              {task.metadata?.issueType === 'high_bounce' && 'High Bounce'}
-                              {task.metadata?.issueType === 'page_bounce_issue' && 'Page Bounce'}
-                              {task.metadata?.issueType === 'form_abandonment' && 'Form Abandonment'}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-[20%] max-w-[180px]">
-                          <div className="space-y-1">
-                            <div className="font-medium text-sm truncate" title={task.customer.name}>
-                              {task.customer.name}
-                            </div>
-                            {task.customer.email && (
-                              <a 
-                                href={`mailto:${task.customer.email}`} 
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                                title={task.customer.email}
-                              >
-                                <Mail className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{task.customer.email}</span>
-                              </a>
-                            )}
-                            {task.customer.phone?.trim() && (
-                              <a 
-                                href={`tel:${task.customer.phone}`} 
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                                title={task.customer.phone}
-                              >
-                                <Phone className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{task.customer.phone}</span>
-                              </a>
-                            )}
-                            {task.customer.office_phone?.trim() && (
-                              <a 
-                                href={`tel:${task.customer.office_phone}`} 
-                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
-                                title={task.customer.office_phone}
-                              >
-                                <MonitorSmartphone className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{task.customer.office_phone}</span>
-                              </a>
-                            )}
-                            {task.metadata?.location && (
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground" title={task.metadata.location}>
-                                <MapPin className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{task.metadata.location}</span>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="w-[30%] max-w-[300px]">
-                          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2" title={task.description}>
-                            {task.description}
-                          </p>
-                        </TableCell>
-                        <TableCell className="w-[10%] max-w-[100px]">
-                          <Badge variant={
-                            task.priority === 'high' ? 'destructive' : 
-                            task.priority === 'medium' ? 'default' : 'secondary'
-                          } className="text-xs whitespace-nowrap">
-                            {task.priority}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-sm text-muted-foreground">per page</span>
-              
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="h-8 text-xs sm:text-sm"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="hidden sm:inline">Previous</span>
-                </Button>
-                <div className="flex items-center gap-1">
-                  {pageNumbers.map((pageNum, index) => (
-                    <Button
-                      key={`perf-page-${pageNum}`}
-                      variant={pageNum === currentPage ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handlePageChange(pageNum)}
-                      className={`h-8 w-8 p-0 text-xs sm:text-sm ${
-                        index > 0 && index < pageNumbers.length - 1 && pageNum !== currentPage
-                          ? "hidden sm:inline-flex"
-                          : ""
-                      }`}
-                    >
-                      {pageNum}
-                    </Button>
-                  ))}
-                  <span className="text-xs text-muted-foreground px-1 sm:hidden">
-                    of {totalPages}
-                  </span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="h-8 text-xs sm:text-sm"
-                >
-                  <span className="hidden sm:inline">Next</span>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+      <DataTable
+        columns={columns}
+        data={tasks}
+        pageCount={pageCount}
+        pagination={pagination}
+        onPaginationChange={setPagination}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        columnFilters={columnFilters}
+        onColumnFiltersChange={handleColumnFiltersChange}
+        loading={loading}
+        emptyIcon={<AlertTriangle className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-muted-foreground/50" />}
+        emptyMessage={hasActiveFilters ? "No performance issues match your filters" : "No performance issues detected"}
+        getRowCanExpand={() => true}
+        renderSubComponent={ExpandedRow}
+        pagination_ui={(table) => <DataTablePagination table={table} />}
+      />
+    </div>
   )
-} 
+}

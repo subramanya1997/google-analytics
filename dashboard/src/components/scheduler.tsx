@@ -14,9 +14,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Clock, RefreshCw } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Clock, RefreshCw, Trash2 } from "lucide-react"
 import { toast } from "sonner"
-import { upsertDataIngestionSchedule, upsertEmailSchedule, getDataIngestionSchedule, getEmailSchedule } from "@/lib/api-utils"
+import {
+  upsertDataIngestionSchedule,
+  upsertEmailSchedule,
+  getDataIngestionSchedule,
+  getEmailSchedule,
+  deleteDataIngestionSchedule,
+  deleteEmailSchedule,
+} from "@/lib/api-utils"
 
 interface SchedulerProps {
   open: boolean
@@ -39,6 +56,8 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
   const [selectedPreset, setSelectedPreset] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingSchedule, setIsLoadingSchedule] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [existingSchedule, setExistingSchedule] = useState<{ cron_expression?: string; status?: string; source?: string } | null>(null)
 
   // Fetch existing schedule when dialog opens
@@ -151,6 +170,35 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
     }
   }
 
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true)
+
+      const response = type === 'data_ingestion'
+        ? await deleteDataIngestionSchedule()
+        : await deleteEmailSchedule()
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to delete schedule')
+      }
+
+      toast.success(`${type === 'data_ingestion' ? 'Data ingestion' : 'Email report'} schedule deleted successfully!`)
+
+      setCronExpression('')
+      setSelectedPreset('')
+      setExistingSchedule(null)
+      onSuccess?.()
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Error deleting schedule:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete schedule')
+    } finally {
+      setIsDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -170,13 +218,25 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
         <div className="space-y-6">
             {/* Schedule Status Badge */}
             {!isLoadingSchedule && existingSchedule && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-                  Existing Schedule
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  Updating current schedule
-                </span>
+              <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                    Existing Schedule
+                  </Badge>
+                  <span className="text-sm text-muted-foreground">
+                    Updating current schedule
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={isDeleting}
+                >
+                  <Trash2 className="h-4 w-4 mr-1.5" />
+                  Delete
+                </Button>
               </div>
             )}
 
@@ -243,6 +303,27 @@ export function Scheduler({ open, onOpenChange, type, onSuccess }: SchedulerProp
             </DialogFooter>
         </div>
       </DialogContent>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Schedule?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the {type === 'data_ingestion' ? 'data ingestion' : 'email report'} schedule. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   )
 }

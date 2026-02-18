@@ -115,7 +115,7 @@ class SchedulerClient:
         errors, and logs request/response details.
 
         Args:
-            method: HTTP method to use. Must be one of: "GET", "POST", "PUT".
+            method: HTTP method to use. Must be one of: "GET", "POST", "PUT", "DELETE".
             auth_token: JWT authentication token obtained from user session.
                 This token is included in the Authorization header as a Bearer token.
             params: Optional dictionary of query parameters to include in the request URL.
@@ -533,6 +533,45 @@ class SchedulerClient:
             params["limit"] = str(limit)
 
         return self._make_request("GET", auth_token, params=params)
+
+
+    def delete_schedule(
+        self,
+        auth_token: str,
+        job_name: str | None = None,
+        app_name: str | None = None,
+        event_id: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Delete a scheduled job from the Cronicle scheduler.
+
+        Args:
+            auth_token: JWT authentication token from the user session.
+            job_name: Name of the job to delete. Must be provided along with app_name
+                if event_id is not provided.
+            app_name: Name of the application. Must be provided along with job_name
+                if event_id is not provided.
+            event_id: Unique event ID assigned by the scheduler. If provided, this is
+                the preferred method for identifying the job.
+
+        Returns:
+            Dictionary containing the scheduler API response.
+
+        Raises:
+            ValueError: If neither event_id nor both job_name and app_name are provided.
+            requests.exceptions.RequestException: If the API request fails.
+        """
+        params: dict[str, Any] = {}
+        if event_id:
+            params["event_id"] = event_id
+        elif job_name and app_name:
+            params["job_name"] = job_name
+            params["app_name"] = app_name
+        else:
+            msg = "Must provide either event_id or both job_name and app_name"
+            raise ValueError(msg)
+
+        return self._make_request("DELETE", auth_token, params=params)
 
 
 def create_scheduler_client(scheduler_url: str) -> SchedulerClient:

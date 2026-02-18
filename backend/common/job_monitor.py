@@ -201,12 +201,10 @@ class JobStatusMonitor:
                 stuck_email = await self._get_stuck_jobs(tenant_id, "email")
                 for job in stuck_email:
                     status = job.get("status", "unknown")
-                    progress = job.get("progress") or {}
-                    current_step = progress.get("current", "unknown step")
                     if status == "queued":
                         error_msg = f"Email job was never picked up by worker after {self.stuck_timeout_minutes} minutes"
                     else:
-                        error_msg = f"Email worker was killed (OOM or crash) while processing '{current_step}'"
+                        error_msg = f"Email worker was killed (OOM or crash) after {self.stuck_timeout_minutes} minutes"
                     await self._mark_job_failed(
                         tenant_id=tenant_id,
                         job_id=job["job_id"],
@@ -301,7 +299,7 @@ class JobStatusMonitor:
                 else:
                     result = await session.execute(
                         text(f"""
-                            SELECT job_id, tenant_id, status, updated_at, progress
+                            SELECT job_id, tenant_id, status, updated_at
                             FROM {table}
                             WHERE status IN ('processing', 'queued')
                             AND updated_at < :cutoff

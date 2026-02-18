@@ -192,11 +192,20 @@ export async function fetchCartAbandonmentTasks(params: {
   dateRange?: DateRange
   page?: number
   limit?: number
+  sortField?: string
+  sortOrder?: string
 }) {
-  const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, {
+  const additionalParams: Record<string, string | number> = {
     page: params.page || 1,
-    limit: params.limit || 50
-  })
+    limit: params.limit || 50,
+  }
+  if (params.sortField) {
+    additionalParams.sort_field = params.sortField
+  }
+  if (params.sortOrder) {
+    additionalParams.sort_order = params.sortOrder
+  }
+  const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
   return fetchFromAnalyticsService(`tasks/cart-abandonment${queryParams}`)
 }
 
@@ -205,11 +214,20 @@ export async function fetchPurchaseTasks(params: {
   dateRange?: DateRange
   page?: number
   limit?: number
+  sortField?: string
+  sortOrder?: string
 }) {
-  const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, {
+  const additionalParams: Record<string, string | number> = {
     page: params.page || 1,
-    limit: params.limit || 50
-  })
+    limit: params.limit || 50,
+  }
+  if (params.sortField) {
+    additionalParams.sort_field = params.sortField
+  }
+  if (params.sortOrder) {
+    additionalParams.sort_order = params.sortOrder
+  }
+  const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
   return fetchFromAnalyticsService(`tasks/purchases${queryParams}`)
 }
 
@@ -221,6 +239,7 @@ export async function fetchPerformanceTasks(params: {
   query?: string
   sortField?: string
   sortOrder?: string
+  issueType?: string
 }) {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
@@ -234,6 +253,9 @@ export async function fetchPerformanceTasks(params: {
   }
   if (params.sortOrder) {
     additionalParams.sort_order = params.sortOrder
+  }
+  if (params.issueType && params.issueType !== 'all') {
+    additionalParams.issue_type = params.issueType
   }
   
   const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
@@ -276,6 +298,7 @@ export async function fetchSearchAnalysisTasks(params: {
   query?: string
   sortField?: string
   sortOrder?: string
+  searchType?: string
 }) {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
@@ -290,6 +313,9 @@ export async function fetchSearchAnalysisTasks(params: {
   }
   if (params.sortOrder) {
     additionalParams.sort_order = params.sortOrder
+  }
+  if (params.searchType && params.searchType !== 'all') {
+    additionalParams.search_type = params.searchType
   }
   
   const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
@@ -364,6 +390,14 @@ export async function upsertEmailSchedule(data: {
 
 export async function getEmailSchedule() {
   return fetchFromDataService('email/schedule')
+}
+
+export async function deleteDataIngestionSchedule() {
+  return fetchFromDataService('data/schedule', { method: 'DELETE' })
+}
+
+export async function deleteEmailSchedule() {
+  return fetchFromDataService('email/schedule', { method: 'DELETE' })
 }
 
 // =============== Auth Service APIs ===============

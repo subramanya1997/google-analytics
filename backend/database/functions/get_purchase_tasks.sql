@@ -13,6 +13,7 @@ BEGIN
             p.ecommerce_purchase_revenue,
             p.param_ga_session_id,
             p.user_prop_webuserid,
+            p.user_prop_webcustomerid,
             p.items_json,
             p.param_page_location,
             p.event_date,
@@ -49,7 +50,9 @@ BEGIN
             u.office_phone as office_phone,
             false as completed
         FROM paginated_purchases pp
-        LEFT JOIN users u ON u.user_id = pp.user_prop_webuserid AND u.tenant_id = p_tenant_id
+        LEFT JOIN users u ON u.tenant_id = p_tenant_id
+            AND (u.user_id = pp.user_prop_webuserid
+                 OR (pp.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = pp.user_prop_webcustomerid))
     )
     SELECT jsonb_build_object(
         'data', (

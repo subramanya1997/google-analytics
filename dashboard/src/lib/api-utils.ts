@@ -219,6 +219,8 @@ export async function fetchPerformanceTasks(params: {
   page?: number
   limit?: number
   query?: string
+  sortField?: string
+  sortOrder?: string
 }) {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
@@ -226,6 +228,12 @@ export async function fetchPerformanceTasks(params: {
   }
   if (params.query) {
     additionalParams.query = params.query
+  }
+  if (params.sortField) {
+    additionalParams.sort_field = params.sortField
+  }
+  if (params.sortOrder) {
+    additionalParams.sort_order = params.sortOrder
   }
   
   const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
@@ -238,6 +246,8 @@ export async function fetchRepeatVisitTasks(params: {
   page?: number
   limit?: number
   query?: string
+  sortField?: string
+  sortOrder?: string
 }) {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
@@ -245,6 +255,12 @@ export async function fetchRepeatVisitTasks(params: {
   }
   if (params.query) {
     additionalParams.query = params.query
+  }
+  if (params.sortField) {
+    additionalParams.sort_field = params.sortField
+  }
+  if (params.sortOrder) {
+    additionalParams.sort_order = params.sortOrder
   }
   
   const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)
@@ -258,6 +274,8 @@ export async function fetchSearchAnalysisTasks(params: {
   limit?: number
   includeConverted?: boolean
   query?: string
+  sortField?: string
+  sortOrder?: string
 }) {
   const additionalParams: Record<string, string | number> = {
     page: (params.page || 1).toString(),
@@ -266,6 +284,12 @@ export async function fetchSearchAnalysisTasks(params: {
   }
   if (params.query) {
     additionalParams.query = params.query
+  }
+  if (params.sortField) {
+    additionalParams.sort_field = params.sortField
+  }
+  if (params.sortOrder) {
+    additionalParams.sort_order = params.sortOrder
   }
   
   const queryParams = buildApiQueryParams(params.selectedLocation || null, params.dateRange, additionalParams)

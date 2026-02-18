@@ -1,11 +1,11 @@
 """
 BigQuery client for Azure Functions.
 
-This is an adapted version of the original BigQuery client that removes
-ThreadPoolExecutor patterns since Azure Functions handles parallelism
-through Durable Functions activities.
+Extracts GA4 event data from BigQuery using concurrent queries
+for each event type via ThreadPoolExecutor.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import logging
@@ -135,17 +135,25 @@ class BigQueryClient:
             "view_item": self._extract_view_item_events,
         }
 
-        for event_type, extractor in event_extractors.items():
-            try:
-                logger.info(
-                    f"Extracting {event_type} events for {start_date} to {end_date}"
-                )
-                events = extractor(start_date, end_date)
-                results[event_type] = events
-                logger.info(f"Extracted {len(events)} {event_type} events")
-            except Exception as e:
-                logger.error(f"Error extracting {event_type} events: {e}")
-                results[event_type] = []
+        logger.info(
+            f"Extracting {len(event_extractors)} event types concurrently "
+            f"for {start_date} to {end_date}"
+        )
+
+        with ThreadPoolExecutor(max_workers=len(event_extractors)) as executor:
+            futures = {
+                executor.submit(extractor, start_date, end_date): event_type
+                for event_type, extractor in event_extractors.items()
+            }
+            for future in as_completed(futures):
+                event_type = futures[future]
+                try:
+                    events = future.result()
+                    results[event_type] = events
+                    logger.info(f"Extracted {len(events)} {event_type} events")
+                except Exception as e:
+                    logger.error(f"Error extracting {event_type} events: {e}")
+                    results[event_type] = []
 
         return results
 
@@ -214,6 +222,7 @@ class BigQueryClient:
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'transaction_id') as param_transaction_id,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
@@ -276,6 +285,7 @@ class BigQueryClient:
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
@@ -340,6 +350,7 @@ class BigQueryClient:
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
             (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
@@ -396,11 +407,12 @@ class BigQueryClient:
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
-            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'search_term') as param_search_term,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'search_term') as param_search_term,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
             device.category as device_category,
             device.operating_system as device_operating_system,
             geo.country as geo_country,
@@ -454,11 +466,12 @@ class BigQueryClient:
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
-            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'no_search_results_term') as param_no_search_results_term,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'no_search_results_term') as param_no_search_results_term,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
             device.category as device_category,
             device.operating_system as device_operating_system,
             geo.country as geo_country,
@@ -512,14 +525,15 @@ class BigQueryClient:
             CAST(event_timestamp AS STRING) as event_timestamp,
             user_pseudo_id,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebUserId') as user_prop_webuserid,
-            (SELECT value.string_value FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(user_properties) WHERE key = 'default_branch_id') as user_prop_default_branch_id,
+            (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(user_properties) WHERE key = 'WebCustomerId') as user_prop_webcustomerid,
             (SELECT COALESCE(CAST(value.int_value AS STRING), value.string_value) FROM UNNEST(event_params) WHERE key = 'ga_session_id') as param_ga_session_id,
             items[SAFE_OFFSET(0)].item_id as first_item_item_id,
             items[SAFE_OFFSET(0)].item_name as first_item_item_name,
             items[SAFE_OFFSET(0)].item_category as first_item_item_category,
             items[SAFE_OFFSET(0)].price as first_item_price,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
-            (SELECT value.string_value FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_title') as param_page_title,
+            (SELECT COALESCE(value.string_value, CAST(value.int_value AS STRING)) FROM UNNEST(event_params) WHERE key = 'page_location') as param_page_location,
             TO_JSON_STRING(items) as items_json,
             device.category as device_category,
             device.operating_system as device_operating_system,

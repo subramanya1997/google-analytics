@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.no_search_results (
   user_pseudo_id character varying(255),
   user_prop_webuserid character varying(100),
   user_prop_default_branch_id character varying(100),
+  user_prop_webcustomerid character varying(100),
   param_ga_session_id character varying(100),
   param_no_search_results_term character varying(500),
   param_page_title character varying(500),
@@ -54,6 +55,10 @@ ON no_search_results (tenant_id, param_no_search_results_term);
 -- Time-series index for dashboard
 CREATE INDEX IF NOT EXISTS idx_no_search_results_time_series 
 ON no_search_results (tenant_id, event_date DESC, event_timestamp DESC);
+
+CREATE INDEX IF NOT EXISTS idx_no_search_results_tenant_customer 
+ON no_search_results (tenant_id, user_prop_webcustomerid)
+WHERE user_prop_webcustomerid IS NOT NULL;
 
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_no_search_results_location_stats_covering 

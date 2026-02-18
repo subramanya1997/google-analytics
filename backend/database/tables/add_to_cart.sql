@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.add_to_cart (
   user_pseudo_id character varying(255),
   user_prop_webuserid character varying(100),
   user_prop_default_branch_id character varying(100),
+  user_prop_webcustomerid character varying(100),
   param_ga_session_id character varying(100),
   param_page_title character varying(500),
   param_page_location text,
@@ -60,6 +61,10 @@ ON add_to_cart (tenant_id, event_date DESC, event_timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_add_to_cart_items_gin 
 ON add_to_cart USING GIN (items_json) 
 WHERE items_json IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_add_to_cart_tenant_customer 
+ON add_to_cart (tenant_id, user_prop_webcustomerid)
+WHERE user_prop_webcustomerid IS NOT NULL;
 
 -- Covering index for location stats aggregations (eliminates heap lookups)
 CREATE INDEX IF NOT EXISTS idx_add_to_cart_location_stats_covering 

@@ -1,5 +1,5 @@
 -- Definition for function public.get_repeat_visit_tasks (oid=217035)
-CREATE OR REPLACE FUNCTION public.get_repeat_visit_tasks(p_tenant_id uuid, p_page integer, p_limit integer, p_query text DEFAULT NULL::text, p_location_id text DEFAULT NULL::text, p_start_date text DEFAULT NULL::text, p_end_date text DEFAULT NULL::text)
+CREATE OR REPLACE FUNCTION public.get_repeat_visit_tasks(p_tenant_id uuid, p_page integer, p_limit integer, p_query text DEFAULT NULL::text, p_location_id text DEFAULT NULL::text, p_start_date text DEFAULT NULL::text, p_end_date text DEFAULT NULL::text, p_sort_field text DEFAULT 'page_views_count'::text, p_sort_order text DEFAULT 'desc'::text)
  RETURNS jsonb
  LANGUAGE plpgsql
 AS $function$
@@ -10,6 +10,7 @@ BEGIN
         SELECT
             pv.param_ga_session_id,
             pv.user_prop_webuserid,
+            MAX(pv.user_prop_webcustomerid) AS user_prop_webcustomerid,
             COUNT(DISTINCT pv.param_page_location) AS page_views_count,
             MAX(pv.event_timestamp) AS last_activity
         FROM page_view pv
@@ -36,15 +37,40 @@ BEGIN
         SELECT
             a_s.param_ga_session_id,
             a_s.user_prop_webuserid,
+            a_s.user_prop_webcustomerid,
             a_s.page_views_count,
             a_s.last_activity
         FROM active_sessions a_s
         INNER JOIN repeat_visitors rv ON a_s.user_prop_webuserid = rv.user_prop_webuserid
     ),
+    repeat_visitor_sessions_with_user AS (
+        SELECT
+            rvs.*,
+            u.user_id,
+            u.buying_company_name AS customer_name,
+            u.email,
+            u.cell_phone  AS phone,
+            u.office_phone,
+            COUNT(*) OVER() AS total_count
+        FROM repeat_visitor_sessions rvs
+        LEFT JOIN users u ON u.tenant_id = p_tenant_id
+            AND (u.user_id = rvs.user_prop_webuserid
+                 OR (rvs.user_prop_webuserid IS NULL AND u.cimm_buying_company_id = rvs.user_prop_webcustomerid))
+        WHERE p_query IS NULL
+           OR u.buying_company_name ILIKE ('%' || p_query || '%')
+           OR u.email ILIKE ('%' || p_query || '%')
+    ),
     paginated_sessions AS (
         SELECT *
-        FROM repeat_visitor_sessions
-        ORDER BY last_activity DESC
+        FROM repeat_visitor_sessions_with_user
+        ORDER BY
+            CASE WHEN p_sort_field = 'page_views_count' AND p_sort_order = 'desc' THEN page_views_count END DESC NULLS LAST,
+            CASE WHEN p_sort_field = 'page_views_count' AND p_sort_order = 'asc'  THEN page_views_count END ASC  NULLS LAST,
+            CASE WHEN p_sort_field = 'last_activity'    AND p_sort_order = 'desc' THEN last_activity    END DESC NULLS LAST,
+            CASE WHEN p_sort_field = 'last_activity'    AND p_sort_order = 'asc'  THEN last_activity    END ASC  NULLS LAST,
+            CASE WHEN p_sort_field = 'customer_name'    AND p_sort_order = 'desc' THEN customer_name    END DESC NULLS LAST,
+            CASE WHEN p_sort_field = 'customer_name'    AND p_sort_order = 'asc'  THEN customer_name    END ASC  NULLS LAST,
+            last_activity DESC
         LIMIT p_limit
         OFFSET (p_page - 1) * p_limit
     ),
@@ -76,25 +102,22 @@ BEGIN
                     'page_views_count', ps.page_views_count,
                     'products_viewed', COALESCE(spv.products_viewed, 0),
                     'products_details', COALESCE(spv.products_details, '[]'::jsonb),
-                    'user_id', u.user_id,
-                    'customer_name', u.buying_company_name,
-                    'email', u.email,
-                    'phone', u.cell_phone,
-                    'office_phone', u.office_phone
+                    'user_id', ps.user_id,
+                    'customer_name', ps.customer_name,
+                    'email', ps.email,
+                    'phone', ps.phone,
+                    'office_phone', ps.office_phone
                 )
             ), '[]'::jsonb)
             FROM paginated_sessions ps
-            LEFT JOIN users u ON u.user_id = ps.user_prop_webuserid AND u.tenant_id = p_tenant_id
             LEFT JOIN session_product_views spv ON spv.param_ga_session_id = ps.param_ga_session_id
-            WHERE p_query IS NULL OR u.buying_company_name ILIKE ('%' || p_query || '%') OR u.email ILIKE ('%' || p_query || '%')
         ),
-        'total', (SELECT COUNT(*) FROM repeat_visitor_sessions),
+        'total', (SELECT MAX(total_count) FROM paginated_sessions),
         'page', p_page,
         'limit', p_limit,
-        'has_more', (p_page * p_limit) < (SELECT COUNT(*) FROM repeat_visitor_sessions)
+        'has_more', (p_page * p_limit) < (SELECT MAX(total_count) FROM paginated_sessions)
     ) INTO result;
 
     RETURN result;
 END;
 $function$
-

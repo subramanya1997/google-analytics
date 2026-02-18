@@ -17,6 +17,8 @@ See Also:
     - common.database.get_async_db_session: Database session management
 """
 
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from typing import Any
 
 from loguru import logger
@@ -35,6 +37,10 @@ class TasksRepository:
     analytics dashboard. Tasks are derived from analytics events and represent
     actionable items for sales teams.
 
+    Accepts an optional session_factory for dependency injection, allowing
+    different session strategies (e.g. connection-pooled for FastAPI,
+    disposable for serverless Azure Functions).
+
     Thread Safety:
         This repository is thread-safe and can be used concurrently across
         multiple async tasks. Each method creates its own database session.
@@ -47,6 +53,18 @@ class TasksRepository:
         )
         ```
     """
+
+    def __init__(
+        self,
+        session_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self._session_factory = session_factory or self._default_session_factory
+
+    @staticmethod
+    @asynccontextmanager
+    async def _default_session_factory(tenant_id: str) -> AsyncIterator[Any]:
+        async with get_async_db_session(SERVICE_NAME, tenant_id=tenant_id) as session:
+            yield session
 
     async def get_purchase_tasks(
         self,
@@ -91,10 +109,7 @@ class TasksRepository:
             query execution with proper indexing.
         """
         try:
-            async with get_async_db_session(
-                SERVICE_NAME, tenant_id=tenant_id
-            ) as session:
-                # Use the existing RPC function from functions.sql
+            async with self._session_factory(tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -170,9 +185,7 @@ class TasksRepository:
             purchase events.
         """
         try:
-            async with get_async_db_session(
-                SERVICE_NAME, tenant_id=tenant_id
-            ) as session:
+            async with self._session_factory(tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
@@ -213,6 +226,8 @@ class TasksRepository:
         start_date: str | None = None,
         end_date: str | None = None,
         include_converted: bool = False,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated search analysis tasks with optional filtering.
@@ -251,13 +266,11 @@ class TasksRepository:
             analyzes view_search_results and no_search_results events.
         """
         try:
-            async with get_async_db_session(
-                SERVICE_NAME, tenant_id=tenant_id
-            ) as session:
+            async with self._session_factory(tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted)
+                    SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted, :p_sort_field, :p_sort_order)
                 """
                     ),
                     {
@@ -269,6 +282,8 @@ class TasksRepository:
                         "p_start_date": start_date,
                         "p_end_date": end_date,
                         "p_include_converted": include_converted,
+                        "p_sort_field": sort_field or "search_count",
+                        "p_sort_order": sort_order or "desc",
                     },
                 )
                 tasks = result.scalar()
@@ -294,6 +309,8 @@ class TasksRepository:
         location_id: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated repeat visit tasks with optional filtering.
@@ -330,13 +347,11 @@ class TasksRepository:
             identifies users with multiple sessions within the date range.
         """
         try:
-            async with get_async_db_session(
-                SERVICE_NAME, tenant_id=tenant_id
-            ) as session:
+            async with self._session_factory(tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_repeat_visit_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    SELECT get_repeat_visit_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order)
                 """
                     ),
                     {
@@ -347,6 +362,8 @@ class TasksRepository:
                         "p_location_id": location_id,
                         "p_start_date": start_date,
                         "p_end_date": end_date,
+                        "p_sort_field": sort_field or "page_views_count",
+                        "p_sort_order": sort_order or "desc",
                     },
                 )
                 tasks = result.scalar()
@@ -371,6 +388,8 @@ class TasksRepository:
         location_id: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated branch performance tasks with optional filtering.
@@ -405,13 +424,11 @@ class TasksRepository:
             aggregates metrics from multiple event tables.
         """
         try:
-            async with get_async_db_session(
-                SERVICE_NAME, tenant_id=tenant_id
-            ) as session:
+            async with self._session_factory(tenant_id=tenant_id) as session:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_performance_tasks(:p_tenant_id, :p_page, :p_limit, :p_location_id, :p_start_date, :p_end_date)
+                    SELECT get_performance_tasks(:p_tenant_id, :p_page, :p_limit, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order)
                 """
                     ),
                     {
@@ -421,6 +438,8 @@ class TasksRepository:
                         "p_location_id": location_id,
                         "p_start_date": start_date,
                         "p_end_date": end_date,
+                        "p_sort_field": sort_field or "last_activity",
+                        "p_sort_order": sort_order or "desc",
                     },
                 )
                 tasks = result.scalar()

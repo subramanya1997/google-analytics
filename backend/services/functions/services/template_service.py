@@ -135,7 +135,7 @@ class TemplateService:
                             }
                         ),
                         "avg_order_value": summary.get("total_revenue", 0)
-                        / max(summary.get("total_purchases", 1), 1),
+                        / max(len(tasks.get("purchases", [])), 1),
                         "samples": self._transform_purchase_samples(
                             tasks.get("purchases", [])
                         ),
@@ -157,7 +157,7 @@ class TemplateService:
                             float(c.get("total_value", 0))
                             for c in tasks.get("cart_abandonment", [])
                         )
-                        / max(summary.get("total_cart_abandonment", 1), 1),
+                        / max(len(tasks.get("cart_abandonment", [])), 1),
                         "samples": self._transform_cart_samples(
                             tasks.get("cart_abandonment", [])
                         ),

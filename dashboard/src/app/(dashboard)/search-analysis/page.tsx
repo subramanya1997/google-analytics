@@ -55,16 +55,27 @@ export default function SearchAnalysisPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
+  // Map frontend SortField values to backend column names for server-side sorting.
+  // 'type' and 'priority' are computed on the frontend and remain client-side only.
+  const SERVER_SORT_FIELDS: Partial<Record<SortField, string>> = {
+    searchTerms: 'search_term',
+    customer: 'customer_name',
+    attempts: 'search_count',
+  }
+
   const fetchSearchTasksData = useCallback(async () => {
     try {
       setLoading(true)
 
+      const backendSortField = SERVER_SORT_FIELDS[sortField]
       const response = await fetchSearchAnalysisTasks({
         selectedLocation,
         dateRange,
         page: currentPage,
         limit: itemsPerPage,
-        query: debouncedSearchQuery
+        query: debouncedSearchQuery,
+        sortField: backendSortField,
+        sortOrder: backendSortField ? sortOrder : undefined,
       })
       const data: SearchAnalysisApiResponse = await response.json()
 
@@ -124,7 +135,7 @@ export default function SearchAnalysisPage() {
     } finally {
       setLoading(false)
     }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange])
+  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange, sortField, sortOrder])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
@@ -143,44 +154,35 @@ export default function SearchAnalysisPage() {
     setCurrentPage(1) // Reset to first page when changing items per page
   }
 
-  // Filter and sort tasks
+  // Filter tasks client-side (priority and type are computed fields, not in DB).
+  // For server-sortable fields (searchTerms, customer, attempts) the data already
+  // arrives pre-sorted from the API. For client-only fields (type, priority) we
+  // fall back to a local sort on the current page.
   const filteredAndSortedTasks = useMemo(() => {
     const filtered = tasks.filter(task => {
-      // Client-side filters (priority, type)
       if (priorityFilter !== "all" && task.priority !== priorityFilter) return false
       if (typeFilter !== "all" && task.metadata?.issueType !== typeFilter) return false
       return true
     })
 
-    // Sort the filtered tasks
+    const isServerSorted = sortField in SERVER_SORT_FIELDS
+    if (isServerSorted) return filtered
+
     return [...filtered].sort((a, b) => {
       let compareValue = 0
-      
       switch (sortField) {
-        case 'searchTerms':
-          const aTerms = a.metadata?.searchTerms?.[0] || ''
-          const bTerms = b.metadata?.searchTerms?.[0] || ''
-          compareValue = aTerms.localeCompare(bTerms)
-          break
-        case 'customer':
-          compareValue = a.customer.name.localeCompare(b.customer.name)
-          break
-        case 'type':
+        case 'type': {
           const aType = a.metadata?.issueType || ''
           const bType = b.metadata?.issueType || ''
           compareValue = aType.localeCompare(bType)
           break
-        case 'attempts':
-          const aAttempts = a.metadata?.visitCount || 0
-          const bAttempts = b.metadata?.visitCount || 0
-          compareValue = aAttempts - bAttempts
-          break
-        case 'priority':
-          const priorityOrder = { high: 3, medium: 2, low: 1 }
+        }
+        case 'priority': {
+          const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 }
           compareValue = (priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)
           break
+        }
       }
-      
       return sortOrder === 'asc' ? compareValue : -compareValue
     })
   }, [tasks, priorityFilter, typeFilter, sortField, sortOrder])
@@ -192,6 +194,7 @@ export default function SearchAnalysisPage() {
       setSortField(field)
       setSortOrder('desc')
     }
+    setCurrentPage(1)
   }
 
   const clearFilters = () => {

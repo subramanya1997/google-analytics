@@ -1,12 +1,13 @@
 # GitHub Actions workflow to deploy Data Service to Azure Functions
 #
-# Prerequisites:
-# 1. Create a Function App in Azure Portal
-# 2. Download the Publish Profile from Function App → "Get publish profile"
-# 3. Add it as a GitHub secret named AZURE_FUNCTIONAPP_PUBLISH_PROFILE
+# Authentication: OIDC (federated identity) via azure/login
+# Secrets required:
+#   AZUREAPPSERVICE_CLIENTID_*      - App registration client ID
+#   AZUREAPPSERVICE_TENANTID_*      - Azure AD tenant ID
+#   AZUREAPPSERVICE_SUBSCRIPTIONID_* - Azure subscription ID
 #
 # Triggers:
-# - Push to feat/azure_functions or main branch (only when function code changes)
+# - Push to main/master branch (only when function code changes)
 # - Manual trigger via workflow_dispatch
 
 name: Deploy Data Service to Azure Functions
@@ -25,7 +26,7 @@ on:
       - 'backend/services/functions/*.json'
       - 'backend/services/functions/*.txt'
       - 'backend/services/functions/*.ini'
-      - '.github/workflows/master_gadataingestion.yml'
+      - '.github/workflows/master_googleanalyticsfunctions.yml' 
   workflow_dispatch:
     inputs:
       environment:
@@ -38,7 +39,7 @@ on:
           - staging
 
 env:
-  AZURE_FUNCTIONAPP_NAME: 'fapp-ai-tech-assistant-extremeb2b-prod'
+  AZURE_FUNCTIONAPP_NAME: 'googleanalyticsfunctions'
   AZURE_FUNCTIONAPP_PACKAGE_PATH: 'backend/services/functions'
   PYTHON_VERSION: '3.10'
 
@@ -92,9 +93,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
-      url: https://${{ env.AZURE_FUNCTIONAPP_NAME }}.azurewebsites.net
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
     - name: Download artifact
@@ -122,14 +123,18 @@ jobs:
           exit 1
         fi
 
+    - name: Login to Azure
+      uses: azure/login@v2
+      with:
+        client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C588AA244F6A4EFCA1759C743492DB78 }}
+        tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_47948C1DC0C347EDA21F3BD58D45F854 }}
+        subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4C1CA3E23F1A455B91D89F440689533A }}
+
     - name: Deploy to Azure Functions
       uses: Azure/functions-action@v1
       with:
         app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
         package: ./function-app
-        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-        scm-do-build-during-deployment: false
-        enable-oryx-build: false
     
     - name: Wait for deployment to complete
       run: |

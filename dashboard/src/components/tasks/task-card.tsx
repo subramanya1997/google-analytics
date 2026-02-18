@@ -9,8 +9,10 @@ import {
   TrendingUp,
   DollarSign,
   MapPin,
+  Mail,
   Phone,
-  MonitorSmartphone
+  MonitorSmartphone,
+  Calendar
 } from "lucide-react"
 
 const taskIcons = {
@@ -65,7 +67,10 @@ export function TaskCard({ task }: TaskCardProps) {
             {/* Contact info */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
               {task.customer.email && (
-                <span className="truncate">{task.customer.email}</span>
+                <a href={`mailto:${task.customer.email}`} className="flex items-center gap-1 hover:underline truncate">
+                  <Mail className="h-3 w-3 flex-shrink-0" />
+                  {task.customer.email}
+                </a>
               )}
               {task.customer.phone?.trim() && (
                 <a href={`tel:${task.customer.phone}`} className="flex items-center gap-1 hover:underline whitespace-nowrap">
@@ -81,13 +86,21 @@ export function TaskCard({ task }: TaskCardProps) {
               )}
             </div>
             
-            {/* Location info */}
-            {task.metadata?.location && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <MapPin className="h-3 w-3" />
-                <span>{task.metadata.location}</span>
-              </div>
-            )}
+            {/* Location and date */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              {task.metadata?.location && (
+                <div className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3" />
+                  <span>{task.metadata.location}</span>
+                </div>
+              )}
+              {task.createdAt && (
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  <span>{new Date(task.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Product Details - show up to 3 items */}

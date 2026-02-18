@@ -267,6 +267,50 @@ async def get_ingestion_schedule(
         )
 
 
+@router.delete("/data/schedule")
+async def delete_ingestion_schedule(
+    tenant_id: str = Depends(get_tenant_id),
+    authorization: str = Header(...),
+) -> dict[str, Any]:
+    """
+    Delete the data ingestion schedule for the tenant.
+
+    Removes the scheduled job from the external scheduler service.
+
+    Args:
+        tenant_id: Tenant ID from X-Tenant-Id header
+        authorization: JWT token from Authorization header
+
+    Returns:
+        Response confirming deletion
+    """
+    try:
+        auth_token = authorization.replace("Bearer ", "")
+
+        job_name = f"data_{tenant_id}"
+        app_name = "google_analytics"
+
+        scheduler = create_scheduler_client(_settings.SCHEDULER_API_URL)
+        response = scheduler.delete_schedule(
+            auth_token=auth_token, job_name=job_name, app_name=app_name
+        )
+
+        return {
+            "message": "Data ingestion schedule deleted successfully",
+            "scheduler_response": response,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise create_api_error(
+            operation="deleting ingestion schedule",
+            status_code=500,
+            internal_error=e,
+            user_message="Failed to delete schedule. Please try again later.",
+        )
+
+
 # ======================================
 # EMAIL REPORT SCHEDULE ENDPOINTS
 # ======================================
@@ -484,4 +528,50 @@ async def get_email_schedule(
             status_code=500,
             internal_error=e,
             user_message="Failed to retrieve email schedule. Please try again later.",
+        )
+
+
+@router.delete("/email/schedule")
+async def delete_email_schedule(
+    tenant_id: str = Depends(get_tenant_id),
+    authorization: str = Header(...),
+) -> dict[str, Any]:
+    """
+    Delete the email report schedule for the tenant.
+
+    Removes the scheduled job from the external scheduler service.
+
+    Args:
+        tenant_id: Tenant ID from X-Tenant-Id header
+        authorization: JWT token from Authorization header
+
+    Returns:
+        Response confirming deletion
+    """
+    try:
+        auth_token = authorization.replace("Bearer ", "")
+
+        job_name = f"email_{tenant_id}"
+        app_name = "google_analytics"
+
+        scheduler = create_scheduler_client(_settings.SCHEDULER_API_URL)
+        response = scheduler.delete_schedule(
+            auth_token=auth_token, job_name=job_name, app_name=app_name
+        )
+
+        return {
+            "message": "Email report schedule deleted successfully",
+            "scheduler_response": response,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting email schedule for tenant {tenant_id}: {e}")
+        logger.exception("Full traceback:")
+        raise create_api_error(
+            operation="deleting email schedule",
+            status_code=500,
+            internal_error=e,
+            user_message="Failed to delete email schedule. Please try again later.",
         )

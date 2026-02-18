@@ -14,7 +14,8 @@ import {
   ShoppingCart,
   TrendingUp,
   AlertCircle,
-  Loader2
+  Loader2,
+  Calendar
 } from "lucide-react"
 import { useState, useMemo } from "react"
 import { cn } from "@/lib/utils"
@@ -364,11 +365,17 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                 )}
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-muted-foreground">{actualTask.title}</span>
                 {typeof actualTask.customer.orderValue === 'number' && (
                   <span className="text-sm font-semibold text-green-600">
                     {formatCurrency(actualTask.customer.orderValue)}
+                  </span>
+                )}
+                {actualTask.createdAt && (
+                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                    <Calendar className="h-3 w-3" />
+                    {new Date(actualTask.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </span>
                 )}
               </div>

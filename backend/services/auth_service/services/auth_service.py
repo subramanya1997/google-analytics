@@ -284,6 +284,7 @@ class AuthenticationService:
                         bigquery_config = {
                             "project_id": bigquery_raw_config.get("project_id"),
                             "dataset_id": bigquery_raw_config.get("dataset_id"),
+                            "user_table": bigquery_raw_config.get("user_table"),
                         }
 
                         # Parse service_account JSON string
@@ -581,6 +582,7 @@ class AuthenticationService:
                     "bigquery_credentials": json.dumps(
                         bigquery_config.get("service_account", {})
                     ),
+                    "user_table": bigquery_config.get("user_table"),
                     "sftp_config": json.dumps(sftp_config),
                     "email_config": json.dumps(email_config),
                 }
@@ -593,12 +595,12 @@ class AuthenticationService:
                             INSERT INTO tenant_config (
                                 id, name,
                                 bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
-                                sftp_config, email_config,
+                                user_table, sftp_config, email_config,
                                 is_active, created_at, updated_at
                             ) VALUES (
                                 :tenant_id, :name,
                                 :bigquery_project_id, :bigquery_dataset_id, :bigquery_credentials,
-                                :sftp_config, :email_config,
+                                :user_table, :sftp_config, :email_config,
                                 true, NOW(), NOW()
                             )
                         """
@@ -616,6 +618,7 @@ class AuthenticationService:
                                 bigquery_project_id = :bigquery_project_id,
                                 bigquery_dataset_id = :bigquery_dataset_id,
                                 bigquery_credentials = :bigquery_credentials,
+                                user_table = :user_table,
                                 sftp_config = :sftp_config,
                                 email_config = :email_config,
                                 is_active = true,

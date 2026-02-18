@@ -70,6 +70,16 @@ async def get_purchase_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
+    sort_field: str | None = Query(
+        default=None,
+        pattern="^(event_timestamp|order_value|customer_name)$",
+        description="Field to sort by",
+    ),
+    sort_order: str | None = Query(
+        default=None,
+        pattern="^(asc|desc)$",
+        description="Sort direction",
+    ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
@@ -121,6 +131,8 @@ async def get_purchase_tasks(
             location_id=location_id,
             start_date=start_date,
             end_date=end_date,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
         logger.info(
@@ -150,6 +162,16 @@ async def get_cart_abandonment_tasks(
     location_id: str | None = Query(default=None, description="Location filter"),
     start_date: str | None = Query(default=None, description="Start date filter"),
     end_date: str | None = Query(default=None, description="End date filter"),
+    sort_field: str | None = Query(
+        default=None,
+        pattern="^(total_value|last_activity|customer_name|items_count)$",
+        description="Field to sort by",
+    ),
+    sort_order: str | None = Query(
+        default=None,
+        pattern="^(asc|desc)$",
+        description="Sort direction",
+    ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
     """
@@ -201,6 +223,8 @@ async def get_cart_abandonment_tasks(
             location_id=location_id,
             start_date=start_date,
             end_date=end_date,
+            sort_field=sort_field,
+            sort_order=sort_order,
         )
 
         logger.info(
@@ -242,6 +266,11 @@ async def get_search_analysis_tasks(
         default=None,
         pattern="^(asc|desc)$",
         description="Sort direction",
+    ),
+    search_type: str | None = Query(
+        default=None,
+        pattern="^(no_results|no_conversion)$",
+        description="Filter by search type: no_results or no_conversion",
     ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
@@ -304,6 +333,7 @@ async def get_search_analysis_tasks(
             include_converted=include_converted,
             sort_field=sort_field,
             sort_order=sort_order,
+            search_type=search_type,
         )
 
         logger.info(
@@ -341,6 +371,11 @@ async def get_performance_tasks(
         default=None,
         pattern="^(asc|desc)$",
         description="Sort direction",
+    ),
+    issue_type: str | None = Query(
+        default=None,
+        pattern="^(high_bounce|page_bounce_issue)$",
+        description="Filter by issue type: high_bounce or page_bounce_issue",
     ),
     repo: TasksRepository = Depends(get_tasks_repository),
 ) -> dict[str, Any]:
@@ -399,6 +434,7 @@ async def get_performance_tasks(
             end_date=end_date,
             sort_field=sort_field,
             sort_order=sort_order,
+            issue_type=issue_type,
         )
 
         logger.info(f"Retrieved performance tasks for tenant {tenant_id}")

@@ -1,434 +1,318 @@
 "use client"
 
-import { useEffect, useState, useMemo, useCallback } from "react"
+import React, { useEffect, useState, useMemo, useCallback } from "react"
+import type { ColumnDef, ColumnFiltersState, SortingState, PaginationState } from "@tanstack/react-table"
 import { useDashboard } from "@/contexts/dashboard-context"
-import { usePageNumbers, PAGE_SIZE_OPTIONS, DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
-import { Task, SearchAnalysisApiTask, SearchAnalysisApiResponse, SortField, SortOrder } from "@/types"
+import { DEFAULT_PAGE_SIZE } from "@/hooks/use-pagination"
+import { Task, SearchAnalysisApiTask, SearchAnalysisApiResponse, FacetItem } from "@/types"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { DataTable } from "@/components/ui/data-table"
+import { DataTableFacetedFilter } from "@/components/ui/data-table-faceted-filter"
+import { DataTablePagination } from "@/components/ui/data-table-pagination"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Mail, Phone, MonitorSmartphone, Search, AlertCircle, ChevronLeft, ChevronRight, ShoppingCart, ChevronUp, ChevronDown, ChevronsUpDown, MapPin } from "lucide-react"
-
+  Mail, Phone, MonitorSmartphone, Search, AlertCircle,
+  ChevronUp, ChevronDown, ChevronsUpDown, MapPin, ShoppingCart,
+} from "lucide-react"
 import { fetchSearchAnalysisTasks } from "@/lib/api-utils"
+
+function SortHeader({ label, column }: { label: string; column: { getIsSorted: () => false | "asc" | "desc" } }) {
+  const sorted = column.getIsSorted()
+  return (
+    <div className="flex items-center gap-2">
+      {label}
+      {sorted === "asc" ? (
+        <ChevronUp className="h-4 w-4" />
+      ) : sorted === "desc" ? (
+        <ChevronDown className="h-4 w-4" />
+      ) : (
+        <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
+      )}
+    </div>
+  )
+}
+
+function CustomerCell({ task }: { task: Task }) {
+  return (
+    <div className="space-y-1">
+      <div className="font-medium text-sm truncate">{task.customer.name}</div>
+      {task.customer.company && (
+        <div className="text-xs text-muted-foreground truncate">{task.customer.company}</div>
+      )}
+      {task.metadata?.location && (
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <MapPin className="h-3 w-3 flex-shrink-0" />
+          <span className="truncate">{task.metadata.location}</span>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        {task.customer.email && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a href={`mailto:${task.customer.email}`} className="flex items-center gap-1 hover:underline">
+                <Mail className="h-3 w-3 flex-shrink-0" />
+                <span className="truncate">{task.customer.email}</span>
+              </a>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              <p className="text-xs">{task.customer.email}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {task.customer.phone?.trim() && (
+          <a href={`tel:${task.customer.phone}`} className="flex items-center gap-1 hover:underline">
+            <Phone className="h-3 w-3 flex-shrink-0" />
+            {task.customer.phone}
+          </a>
+        )}
+        {task.customer.office_phone?.trim() && (
+          <a href={`tel:${task.customer.office_phone}`} className="flex items-center gap-1 hover:underline">
+            <MonitorSmartphone className="h-3 w-3 flex-shrink-0" />
+            {task.customer.office_phone}
+          </a>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function SearchAnalysisPage() {
   const { selectedLocation, dateRange } = useDashboard()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
-  const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_PAGE_SIZE)
-  
-  // Filter states
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
-  const [priorityFilter, setPriorityFilter] = useState<string>("all")
-  const [typeFilter, setTypeFilter] = useState<string>("all")
-  
-  // Sort states
-  const [sortField, setSortField] = useState<SortField>('attempts')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [searchTypeFacets, setSearchTypeFacets] = useState<FacetItem[]>([])
 
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery)
-      setCurrentPage(1) // Reset to first page on new search
-    }, 300)
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  })
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "attempts", desc: true },
+  ])
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
 
-    return () => clearTimeout(timer)
-  }, [searchQuery])
+  const searchTypeFilter = useMemo(() => {
+    const f = columnFilters.find((f) => f.id === "searchType")
+    return (f?.value as string) || undefined
+  }, [columnFilters])
 
-  // Map frontend SortField values to backend column names for server-side sorting.
-  // 'type' and 'priority' are computed on the frontend and remain client-side only.
-  const SERVER_SORT_FIELDS: Partial<Record<SortField, string>> = {
-    searchTerms: 'search_term',
-    customer: 'customer_name',
-    attempts: 'search_count',
+  const SORT_FIELD_MAP: Record<string, string> = {
+    searchTerms: "search_term",
+    attempts: "search_count",
   }
+  const sortField = sorting[0] ? SORT_FIELD_MAP[sorting[0].id] : undefined
+  const sortOrder = sorting[0] ? (sorting[0].desc ? "desc" : "asc") : undefined
 
-  const fetchSearchTasksData = useCallback(async () => {
+  const pageCount = Math.max(1, Math.ceil(totalCount / pagination.pageSize))
+
+  const columns = useMemo<ColumnDef<Task, unknown>[]>(() => [
+    {
+      id: "searchTerms",
+      accessorFn: (row) => row.metadata?.searchTerms?.join(", "),
+      header: ({ column }) => <SortHeader label="Search Terms" column={column} />,
+      enableSorting: true,
+      size: 400,
+      cell: ({ row }) => (
+        <div className="flex flex-wrap gap-1.5">
+          {row.original.metadata?.searchTerms?.map((term, i) => (
+            <Badge key={i} variant="secondary" className="text-xs px-2 py-0.5">
+              <Search className="h-3 w-3 mr-1" />
+              {term}
+            </Badge>
+          ))}
+          {row.original.metadata?.hasPurchase && (
+            <Badge variant="outline" className="text-xs px-2 py-0.5 ml-1">
+              <ShoppingCart className="h-3 w-3 mr-1" />
+              Purchased
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: "customer",
+      accessorFn: (row) => row.customer.name,
+      header: "Customer",
+      enableSorting: false,
+      size: 250,
+      cell: ({ row }) => <CustomerCell task={row.original} />,
+    },
+    {
+      id: "searchType",
+      accessorFn: (row) => row.metadata?.issueType,
+      header: ({ column }) => (
+        <div className="flex items-center gap-1">
+          Type
+          {searchTypeFacets.length > 0 && (
+            <DataTableFacetedFilter
+              column={column}
+              title=""
+              options={searchTypeFacets.map((f) => ({
+                value: f.value,
+                label: f.label,
+                count: f.count,
+              }))}
+            />
+          )}
+        </div>
+      ),
+      enableSorting: false,
+      size: 140,
+      cell: ({ row }) => {
+        const searchType = row.original.metadata?.issueType
+        return (
+          <Badge variant={searchType === "no_results" ? "destructive" : "default"}>
+            {searchType === "no_results" ? (
+              <>
+                <AlertCircle className="h-3 w-3 mr-1" />
+                No Results
+              </>
+            ) : (
+              "No Conversion"
+            )}
+          </Badge>
+        )
+      },
+    },
+    {
+      id: "attempts",
+      accessorFn: (row) => row.metadata?.visitCount,
+      header: ({ column }) => (
+        <div className="flex items-center justify-center gap-2">
+          <SortHeader label="Attempts" column={column} />
+        </div>
+      ),
+      enableSorting: true,
+      size: 100,
+      cell: ({ row }) => (
+        <div className="text-center font-medium">
+          {row.original.metadata?.visitCount || 0}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "priority",
+      header: "Priority",
+      enableSorting: false,
+      size: 80,
+      cell: ({ row }) => (
+        <Badge
+          variant={
+            row.original.priority === "high" ? "destructive" :
+            row.original.priority === "medium" ? "default" : "secondary"
+          }
+          className="text-xs whitespace-nowrap"
+        >
+          {row.original.priority}
+        </Badge>
+      ),
+    },
+  ], [searchTypeFacets])
+
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true)
-
-      const backendSortField = SERVER_SORT_FIELDS[sortField]
       const response = await fetchSearchAnalysisTasks({
         selectedLocation,
         dateRange,
-        page: currentPage,
-        limit: itemsPerPage,
-        query: debouncedSearchQuery,
-        sortField: backendSortField,
-        sortOrder: backendSortField ? sortOrder : undefined,
+        page: pagination.pageIndex + 1,
+        limit: pagination.pageSize,
+        sortField,
+        sortOrder,
+        searchType: searchTypeFilter,
       })
       const data: SearchAnalysisApiResponse = await response.json()
 
       const transformedTasks: Task[] = (data.data || []).map((task: SearchAnalysisApiTask) => {
-        // Calculate priority based on search count and type
-        const searchCount = task.search_count || 0;
-        const searchType = task.search_type || '';
-        
-        let priority: 'high' | 'medium' | 'low' = 'medium';
-        
-        // No results searches are higher priority than unconverted searches
-        if (searchType === 'no_results') {
-          if (searchCount > 3) {
-            priority = 'high';
-          } else if (searchCount <= 1) {
-            priority = 'low';
-          }
-        } else { // no_conversion type
-          if (searchCount > 5) {
-            priority = 'high';
-          } else if (searchCount <= 2) {
-            priority = 'low';
-          }
+        const searchCount = task.search_count || 0
+        const searchType = task.search_type || ""
+
+        let priority: "high" | "medium" | "low" = "medium"
+        if (searchType === "no_results") {
+          if (searchCount > 3) priority = "high"
+          else if (searchCount <= 1) priority = "low"
+        } else {
+          if (searchCount > 5) priority = "high"
+          else if (searchCount <= 2) priority = "low"
         }
-        
-        const searchTerm = task.search_term || 'Unknown Search';
-        
+
+        const searchTerm = task.search_term || "Unknown Search"
+
         return {
           id: `${task.session_id}-${searchTerm}`,
-          type: 'search',
+          type: "search" as const,
           priority,
           title: `Search: ${searchTerm}`,
           description: `User searched for "${searchTerm}" ${task.search_count} times`,
+          status: "pending" as const,
           customer: {
             id: task.user_id,
-            name: task.customer_name || 'Unknown User',
+            name: task.customer_name || "Anonymous User",
             email: task.email,
             phone: task.phone,
             office_phone: task.office_phone,
           },
           metadata: {
-            searchTerms: searchTerm ? searchTerm.split(', ') : [],
+            searchTerms: searchTerm ? searchTerm.split(", ") : [],
             issueType: task.search_type,
             visitCount: task.search_count,
           },
           createdAt: task.event_date,
           userId: task.user_id,
           sessionId: task.session_id,
-        };
-      });
+        }
+      })
 
       setTasks(transformedTasks)
+      setSearchTypeFacets(data.facets?.search_types || [])
       setTotalCount(data.total || 0)
-      setTotalPages(data.total ? Math.ceil(data.total / itemsPerPage) : 1)
     } catch (error) {
-      console.error('Error fetching search tasks:', error)
+      console.error("Error fetching search tasks:", error)
     } finally {
       setLoading(false)
     }
-  }, [currentPage, itemsPerPage, debouncedSearchQuery, selectedLocation, dateRange, sortField, sortOrder])
+  }, [pagination.pageIndex, pagination.pageSize, selectedLocation, dateRange, sortField, sortOrder, searchTypeFilter])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
-      fetchSearchTasksData()
+      fetchData()
     }
-  }, [dateRange, fetchSearchTasksData])
+  }, [dateRange, fetchData])
 
-  const pageNumbers = usePageNumbers(currentPage, totalPages)
+  const handleColumnFiltersChange = useCallback(
+    (updaterOrValue: ColumnFiltersState | ((old: ColumnFiltersState) => ColumnFiltersState)) => {
+      setColumnFilters(updaterOrValue)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
+    []
+  )
 
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page)
-  }
-
-  const handleItemsPerPageChange = (value: string) => {
-    setItemsPerPage(parseInt(value))
-    setCurrentPage(1) // Reset to first page when changing items per page
-  }
-
-  // Filter tasks client-side (priority and type are computed fields, not in DB).
-  // For server-sortable fields (searchTerms, customer, attempts) the data already
-  // arrives pre-sorted from the API. For client-only fields (type, priority) we
-  // fall back to a local sort on the current page.
-  const filteredAndSortedTasks = useMemo(() => {
-    const filtered = tasks.filter(task => {
-      if (priorityFilter !== "all" && task.priority !== priorityFilter) return false
-      if (typeFilter !== "all" && task.metadata?.issueType !== typeFilter) return false
-      return true
-    })
-
-    const isServerSorted = sortField in SERVER_SORT_FIELDS
-    if (isServerSorted) return filtered
-
-    return [...filtered].sort((a, b) => {
-      let compareValue = 0
-      switch (sortField) {
-        case 'type': {
-          const aType = a.metadata?.issueType || ''
-          const bType = b.metadata?.issueType || ''
-          compareValue = aType.localeCompare(bType)
-          break
-        }
-        case 'priority': {
-          const priorityOrder: Record<string, number> = { high: 3, medium: 2, low: 1 }
-          compareValue = (priorityOrder[a.priority] || 0) - (priorityOrder[b.priority] || 0)
-          break
-        }
-      }
-      return sortOrder === 'asc' ? compareValue : -compareValue
-    })
-  }, [tasks, priorityFilter, typeFilter, sortField, sortOrder])
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortOrder('desc')
-    }
-    setCurrentPage(1)
-  }
-
-  const clearFilters = () => {
-    setSearchQuery("")
-    setPriorityFilter("all")
-    setTypeFilter("all")
-  }
-
-  const hasActiveFilters = searchQuery || priorityFilter !== "all" || typeFilter !== "all"
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) {
-      return <ChevronsUpDown className="h-4 w-4 text-muted-foreground" />
-    }
-    return sortOrder === 'asc' 
-      ? <ChevronUp className="h-4 w-4" />
-      : <ChevronDown className="h-4 w-4" />
-  }
-
-
+  const handleSortingChange = useCallback(
+    (updaterOrValue: SortingState | ((old: SortingState) => SortingState)) => {
+      setSorting(updaterOrValue)
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }))
+    },
+    []
+  )
 
   return (
-    <div className="space-y-6">
-
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
-          </div>
-        ) : filteredAndSortedTasks.length === 0 ? (
-          <div className="text-center py-12">
-            <Search className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-            <p className="text-muted-foreground">
-              {hasActiveFilters 
-                ? "No search tasks match your filters" 
-                : "No search analysis tasks at the moment"}
-            </p>
-            {hasActiveFilters && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearFilters}
-                className="mt-4"
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead 
-                      className="w-[250px] cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('searchTerms')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Search Terms
-                        <SortIcon field="searchTerms" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('customer')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Customer
-                        <SortIcon field="customer" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('type')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Type
-                        <SortIcon field="type" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="text-center cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('attempts')}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        Attempts
-                        <SortIcon field="attempts" />
-                      </div>
-                    </TableHead>
-                    <TableHead 
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => handleSort('priority')}
-                    >
-                      <div className="flex items-center gap-2">
-                        Priority
-                        <SortIcon field="priority" />
-                      </div>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedTasks.map((task) => (
-                    <TableRow key={task.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex flex-wrap gap-1">
-                          {task.metadata?.searchTerms?.map((term, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
-                              <Search className="h-3 w-3 mr-1" />
-                              {term}
-                            </Badge>
-                          ))}
-                          {task.metadata?.hasPurchase && (
-                            <Badge variant="outline" className="text-xs ml-2">
-                              <ShoppingCart className="h-3 w-3 mr-1" />
-                              Purchased
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1">
-                          <div className="font-medium">{task.customer.name}</div>
-                          {task.customer.company && (
-                            <div className="text-xs text-muted-foreground">{task.customer.company}</div>
-                          )}
-                          {task.metadata?.location && (
-                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                              <MapPin className="h-3 w-3" />
-                              {task.metadata.location}
-                            </div>
-                          )}
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            {task.customer.email && (
-                              <a href={`mailto:${task.customer.email}`} className="flex items-center gap-1 hover:underline">
-                                <Mail className="h-3 w-3" />
-                                {task.customer.email}
-                              </a>
-                            )}
-                            {task.customer.phone?.trim() && (
-                              <a href={`tel:${task.customer.phone}`} className="flex items-center gap-1 hover:underline">
-                                <Phone className="h-3 w-3" />
-                                {task.customer.phone}
-                              </a>
-                            )}
-                            {task.customer.office_phone?.trim() && (
-                              <a href={`tel:${task.customer.office_phone}`} className="flex items-center gap-1 hover:underline">
-                                <MonitorSmartphone className="h-3 w-3" />
-                                {task.customer.office_phone}
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={task.metadata?.issueType === 'no_results' ? 'destructive' : 'default'}>
-                          {task.metadata?.issueType === 'no_results' ? (
-                            <>
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              No Results
-                            </>
-                          ) : (
-                            'No Conversion'
-                          )}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-center font-medium">
-                        {task.metadata?.visitCount || 0}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          task.priority === 'high' ? 'destructive' : 
-                          task.priority === 'medium' ? 'default' : 'secondary'
-                        }>
-                          {task.priority}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Pagination Controls */}
-            <div className="flex items-center justify-between">
-              <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                <SelectTrigger className="h-8 w-[70px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-sm text-muted-foreground">per page</span>
-              
-              <div className="flex items-center space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  Previous
-                </Button>
-                <div className="flex items-center gap-1">
-                  {pageNumbers.map((pageNum) => (
-                    <Button
-                      key={`search-analysis-${pageNum}`}
-                      variant={pageNum === currentPage ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => handlePageChange(pageNum)}
-                      className="h-8 w-8 p-0"
-                    >
-                      {pageNum}
-                    </Button>
-                  ))}
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
+    <div className="space-y-4 sm:space-y-6">
+      <DataTable
+        columns={columns}
+        data={tasks}
+        pageCount={pageCount}
+        pagination={pagination}
+        onPaginationChange={setPagination}
+        sorting={sorting}
+        onSortingChange={handleSortingChange}
+        columnFilters={columnFilters}
+        onColumnFiltersChange={handleColumnFiltersChange}
+        loading={loading}
+        emptyIcon={<Search className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-muted-foreground/50" />}
+        emptyMessage={columnFilters.length > 0 ? "No search tasks match your filters" : "No search analysis tasks at the moment"}
+        pagination_ui={(table) => <DataTablePagination table={table} />}
+      />
+    </div>
   )
-} 
+}

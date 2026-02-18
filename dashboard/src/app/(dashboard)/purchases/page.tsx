@@ -8,7 +8,7 @@ import { TaskCard } from "@/components/tasks/task-card"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ArrowDownUp, ChevronLeft, ChevronRight } from "lucide-react"
 import { Task, PurchaseCartTask, PurchaseApiProduct, PurchaseApiTask, PurchaseApiResponse } from "@/types"
 
 export default function PurchasesPage() {
@@ -20,6 +20,9 @@ export default function PurchasesPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_PAGE_SIZE)
+  const [sortValue, setSortValue] = useState("event_timestamp:desc")
+
+  const [sortField, sortOrder] = sortValue.split(":") as [string, "asc" | "desc"]
 
   const fetchPurchaseTasksData = useCallback(async () => {
     try {
@@ -29,7 +32,9 @@ export default function PurchasesPage() {
         selectedLocation,
         dateRange,
         page: currentPage,
-        limit: itemsPerPage
+        limit: itemsPerPage,
+        sortField,
+        sortOrder,
       })
       const data: PurchaseApiResponse = await response.json()
 
@@ -50,11 +55,11 @@ export default function PurchasesPage() {
           id: task.transaction_id,
           type: 'purchase',
           priority,
-          title: `Purchase #${task.transaction_id}`,
+          title: `#${task.transaction_id}`,
           description: `Order value: $${task.order_value.toFixed(2)}`,
         customer: {
           id: task.user_id,
-          name: task.customer_name || 'Unknown User',
+          name: task.customer_name || 'Anonymous User',
           email: task.email,
           phone: task.phone,
           office_phone: task.office_phone,
@@ -81,7 +86,7 @@ export default function PurchasesPage() {
     } finally {
       setLoading(false)
     }
-  }, [selectedLocation, dateRange, currentPage, itemsPerPage])
+  }, [selectedLocation, dateRange, currentPage, itemsPerPage, sortField, sortOrder])
 
   useEffect(() => {
     if (dateRange?.from && dateRange?.to) {
@@ -97,12 +102,45 @@ export default function PurchasesPage() {
 
   const handleItemsPerPageChange = (value: string) => {
     setItemsPerPage(parseInt(value))
-    setCurrentPage(1) // Reset to first page when changing items per page
+    setCurrentPage(1)
   }
+
+  const handleSortChange = (value: string) => {
+    setSortValue(value)
+    setCurrentPage(1)
+  }
+
+  const SORT_OPTIONS = [
+    { value: "event_timestamp:desc", label: "Date (Newest)" },
+    { value: "event_timestamp:asc", label: "Date (Oldest)" },
+    { value: "order_value:desc", label: "Order Value (High-Low)" },
+    { value: "order_value:asc", label: "Order Value (Low-High)" },
+    { value: "customer_name:asc", label: "Customer (A-Z)" },
+  ]
 
   return (
     <div className="space-y-4 sm:space-y-6">
-        {/* Task Cards Grid */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            {totalCount > 0 ? `${totalCount} purchases` : ""}
+          </p>
+          <div className="flex items-center gap-2">
+            <ArrowDownUp className="h-4 w-4 text-muted-foreground" />
+            <Select value={sortValue} onValueChange={handleSortChange}>
+              <SelectTrigger className="h-8 w-[200px]">
+                <SelectValue placeholder="Sort by..." />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
         {loading ? (
           <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -135,17 +173,19 @@ export default function PurchasesPage() {
             {/* Pagination */}
             {totalPages > 1 && (
               <div className="flex items-center justify-between px-2">
-                <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
-                  <SelectTrigger className="h-8 w-[70px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAGE_SIZE_OPTIONS.map((size) => (
-                      <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-sm text-muted-foreground">per page</span>
+                <div className="flex items-center gap-2">
+                  <Select value={itemsPerPage.toString()} onValueChange={handleItemsPerPageChange}>
+                    <SelectTrigger className="h-8 w-[70px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAGE_SIZE_OPTIONS.map((size) => (
+                        <SelectItem key={size} value={size.toString()}>{size}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-sm text-muted-foreground">per page</span>
+                </div>
                 
                 <div className="flex items-center space-x-2">
                   <Button

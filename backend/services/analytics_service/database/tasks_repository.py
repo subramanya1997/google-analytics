@@ -75,6 +75,8 @@ class TasksRepository:
         location_id: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated purchase analysis tasks with optional filtering.
@@ -113,7 +115,7 @@ class TasksRepository:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_purchase_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    SELECT get_purchase_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order)
                 """
                     ),
                     {
@@ -124,6 +126,8 @@ class TasksRepository:
                         "p_location_id": location_id,
                         "p_start_date": start_date,
                         "p_end_date": end_date,
+                        "p_sort_field": sort_field or "event_timestamp",
+                        "p_sort_order": sort_order or "desc",
                     },
                 )
                 tasks = result.scalar()
@@ -149,6 +153,8 @@ class TasksRepository:
         location_id: str | None = None,
         start_date: str | None = None,
         end_date: str | None = None,
+        sort_field: str | None = None,
+        sort_order: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated cart abandonment tasks with optional filtering.
@@ -189,7 +195,7 @@ class TasksRepository:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_cart_abandonment_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date)
+                    SELECT get_cart_abandonment_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order)
                 """
                     ),
                     {
@@ -200,6 +206,8 @@ class TasksRepository:
                         "p_location_id": location_id,
                         "p_start_date": start_date,
                         "p_end_date": end_date,
+                        "p_sort_field": sort_field or "last_activity",
+                        "p_sort_order": sort_order or "desc",
                     },
                 )
                 tasks = result.scalar()
@@ -228,6 +236,7 @@ class TasksRepository:
         include_converted: bool = False,
         sort_field: str | None = None,
         sort_order: str | None = None,
+        search_type: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated search analysis tasks with optional filtering.
@@ -270,7 +279,7 @@ class TasksRepository:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted, :p_sort_field, :p_sort_order)
+                    SELECT get_search_analysis_tasks(:p_tenant_id, :p_page, :p_limit, :p_query, :p_location_id, :p_start_date, :p_end_date, :p_include_converted, :p_sort_field, :p_sort_order, :p_search_type)
                 """
                     ),
                     {
@@ -284,6 +293,7 @@ class TasksRepository:
                         "p_include_converted": include_converted,
                         "p_sort_field": sort_field or "search_count",
                         "p_sort_order": sort_order or "desc",
+                        "p_search_type": search_type,
                     },
                 )
                 tasks = result.scalar()
@@ -390,6 +400,7 @@ class TasksRepository:
         end_date: str | None = None,
         sort_field: str | None = None,
         sort_order: str | None = None,
+        issue_type: str | None = None,
     ) -> dict[str, Any]:
         """
         Retrieve paginated branch performance tasks with optional filtering.
@@ -428,7 +439,7 @@ class TasksRepository:
                 result = await session.execute(
                     text(
                         """
-                    SELECT get_performance_tasks(:p_tenant_id, :p_page, :p_limit, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order)
+                    SELECT get_performance_tasks(:p_tenant_id, :p_page, :p_limit, :p_location_id, :p_start_date, :p_end_date, :p_sort_field, :p_sort_order, :p_issue_type)
                 """
                     ),
                     {
@@ -440,6 +451,7 @@ class TasksRepository:
                         "p_end_date": end_date,
                         "p_sort_field": sort_field or "last_activity",
                         "p_sort_order": sort_order or "desc",
+                        "p_issue_type": issue_type,
                     },
                 )
                 tasks = result.scalar()

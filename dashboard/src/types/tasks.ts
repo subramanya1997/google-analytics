@@ -176,6 +176,9 @@ export interface SearchAnalysisApiTask {
 
 export interface SearchAnalysisApiResponse {
   data: SearchAnalysisApiTask[]
+  facets?: {
+    search_types?: FacetItem[]
+  }
   total?: number
 }
 
@@ -214,10 +217,19 @@ export interface FrequentlyBouncedPage {
   bounce_count: number
 }
 
+export interface FacetItem {
+  value: string
+  label: string
+  count: number
+}
+
 export interface PerformanceApiResponse {
   data: {
     bounced_sessions: PerformanceApiTask[]
     frequently_bounced_pages: FrequentlyBouncedPage[]
+  }
+  facets?: {
+    issue_types?: FacetItem[]
   }
   total?: number
 }
@@ -283,5 +295,5 @@ export interface TaskDetailSheetProps {
 // SORT AND FILTER TYPES
 // ================================
 
-export type SortField = 'customer' | 'type' | 'metric' | 'priority' | 'lastVisit' | 'visitCount' | 'products' | 'searchTerms' | 'attempts'
+export type SortField = 'metric' | 'lastVisit' | 'visitCount' | 'searchTerms' | 'attempts'
 export type SortOrder = 'asc' | 'desc'

@@ -23,7 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Mail, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
+import { Mail, Phone, MonitorSmartphone, AlertTriangle, Clock, TrendingDown, FileX, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink, MapPin } from "lucide-react"
 
 type BouncedSession = PerformanceApiTask
 
@@ -358,6 +358,26 @@ export default function PerformancePage() {
                               >
                                 <Mail className="h-3 w-3 flex-shrink-0" />
                                 <span className="truncate">{task.customer.email}</span>
+                              </a>
+                            )}
+                            {task.customer.phone?.trim() && (
+                              <a 
+                                href={`tel:${task.customer.phone}`} 
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                                title={task.customer.phone}
+                              >
+                                <Phone className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{task.customer.phone}</span>
+                              </a>
+                            )}
+                            {task.customer.office_phone?.trim() && (
+                              <a 
+                                href={`tel:${task.customer.office_phone}`} 
+                                className="flex items-center gap-1 text-xs text-muted-foreground hover:underline"
+                                title={task.customer.office_phone}
+                              >
+                                <MonitorSmartphone className="h-3 w-3 flex-shrink-0" />
+                                <span className="truncate">{task.customer.office_phone}</span>
                               </a>
                             )}
                             {task.metadata?.location && (

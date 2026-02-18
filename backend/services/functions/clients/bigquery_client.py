@@ -188,6 +188,45 @@ class BigQueryClient:
             logger.error(f"Query: {query}")
             raise
 
+    def extract_users(self, user_table: str) -> list[dict[str, Any]]:
+        """
+        Extract user master data from a BigQuery table.
+
+        Queries the specified fully-qualified BigQuery table and maps columns
+        to the PostgreSQL users table schema.
+
+        Args:
+            user_table: Fully-qualified BigQuery table name
+                       (e.g., "project.dataset.table").
+
+        Returns:
+            list[dict[str, Any]]: User records ready for upsert_users().
+
+        Raises:
+            Exception: If query execution or authentication fails.
+        """
+        query = f"""
+        SELECT
+            CAST(USER_ID AS STRING) as user_id,
+            Name as user_name,
+            CUSTOMER_NAME as buying_company_name,
+            CAST(CUSTOMER_ERP_ID AS STRING) as buying_company_erp_id,
+            EMAIL as email,
+            OFFICE_PHONE as office_phone,
+            CELL_PHONE as cell_phone
+        FROM `{user_table}`
+        WHERE USER_ID IS NOT NULL
+        """
+
+        logger.info(f"Extracting users from BigQuery table: {user_table}")
+        df = self._execute_query(query)
+
+        df = df.where(pd.notna(df), None)
+
+        users = df.to_dict("records")
+        logger.info(f"Extracted {len(users)} users from BigQuery")
+        return users
+
     def _extract_purchase_events(
         self, start_date: str, end_date: str
     ) -> list[dict[str, Any]]:

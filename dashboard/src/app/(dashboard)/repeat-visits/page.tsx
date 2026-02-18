@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Mail, Phone, Eye, ShoppingBag, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink } from "lucide-react"
+import { Mail, Phone, MonitorSmartphone, Eye, ShoppingBag, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, ChevronsUpDown, ExternalLink } from "lucide-react"
 
 import { fetchRepeatVisitTasks } from "@/lib/api-utils"
 
@@ -344,7 +344,7 @@ export default function RepeatVisitsPage() {
                                   {task.customer.email}
                                 </a>
                               )}
-                              {task.customer.phone && (
+                              {task.customer.phone?.trim() && (
                                 <a 
                                   href={`tel:${task.customer.phone}`} 
                                   className="flex items-center gap-1 hover:underline"
@@ -352,6 +352,16 @@ export default function RepeatVisitsPage() {
                                 >
                                   <Phone className="h-3 w-3" />
                                   {task.customer.phone}
+                                </a>
+                              )}
+                              {task.customer.office_phone?.trim() && (
+                                <a 
+                                  href={`tel:${task.customer.office_phone}`} 
+                                  className="flex items-center gap-1 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MonitorSmartphone className="h-3 w-3" />
+                                  {task.customer.office_phone}
                                 </a>
                               )}
                             </div>

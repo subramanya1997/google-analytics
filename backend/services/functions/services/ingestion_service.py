@@ -2,7 +2,7 @@
 Data ingestion service for Azure Functions.
 
 Adapted from the FastAPI data_service for use in serverless Azure Functions.
-Handles BigQuery event extraction and SFTP user/location downloads.
+Handles BigQuery event and user extraction, and SFTP location downloads.
 """
 
 import asyncio
@@ -10,7 +10,7 @@ from datetime import datetime
 import logging
 from typing import Any
 import numpy as np
-from clients import get_tenant_bigquery_client, get_tenant_sftp_client
+from clients import get_tenant_bigquery_client, get_tenant_bigquery_config, get_tenant_sftp_client
 import pandas as pd
 from shared.database import create_repository
 from shared.models import CreateIngestionJobRequest
@@ -241,7 +241,7 @@ class IngestionService:
                         msg
                     ) from e
 
-            # Process users from SFTP
+            # Process users from BigQuery (or SFTP fallback)
             if "users" in request.data_types:
                 try:
                     logger.info(f"Processing users for job {job_id}")
@@ -257,37 +257,24 @@ class IngestionService:
 
                 except Exception as e:
                     logger.error(
-                        f"Failed to download/process users: {e}", exc_info=True
+                        f"Failed to process users: {e}", exc_info=True
                     )
                     root_cause = str(e)
                     if (
                         "nodename nor servname" in root_cause
                         or "gaierror" in root_cause
                     ):
-                        msg = "Failed to download users report from SFTP - Network/DNS error. Please verify SFTP hostname in tenant configuration."
-                        raise Exception(
-                            msg
-                        ) from e
+                        msg = "Failed to process users - Network/DNS error. Please check BigQuery/SFTP configuration and network connectivity."
+                        raise Exception(msg) from e
                     if (
-                        "authentication" in root_cause.lower()
+                        "credentials" in root_cause.lower()
+                        or "authentication" in root_cause.lower()
                         or "permission denied" in root_cause.lower()
                     ):
-                        msg = "Failed to download users report from SFTP - Authentication error. Please check SFTP credentials."
-                        raise Exception(
-                            msg
-                        ) from e
-                    if (
-                        "no such file" in root_cause.lower()
-                        or "file not found" in root_cause.lower()
-                    ):
-                        msg = "Failed to download users report from SFTP - File not found. Please verify the file exists on the server."
-                        raise Exception(
-                            msg
-                        ) from e
-                    msg = f"Failed to download users report from SFTP - {type(e).__name__}: {e!s}"
-                    raise Exception(
-                        msg
-                    ) from e
+                        msg = "Failed to process users - Authentication error. Please check service account or SFTP credentials."
+                        raise Exception(msg) from e
+                    msg = f"Failed to process users - {type(e).__name__}: {e!s}"
+                    raise Exception(msg) from e
 
             # Process locations from SFTP
             if "locations" in request.data_types:
@@ -523,87 +510,42 @@ class IngestionService:
 
     async def _process_users(self, tenant_id: str) -> tuple[int, int]:
         """
-        Download and process user data from SFTP server.
+        Extract user data from BigQuery and upsert into the users table.
 
-        This method downloads the user Excel file from the configured SFTP server,
-        parses it using pandas, normalizes column names to match the database schema,
-        and performs batch upserts into the tenant's users table.
-
-        The method handles various Excel file formats and column name variations,
-        ensuring compatibility with different source systems. Data is cleaned and
-        validated before insertion.
+        Requires `bigquery_user_table` to be configured in tenant_config.
 
         Args:
-            tenant_id: Tenant ID for SFTP configuration lookup and database routing.
+            tenant_id: Tenant ID for configuration lookup and database routing.
 
         Returns:
-            tuple[int, int]: A tuple containing:
-                - count: Number of users successfully processed
-                - errors: Number of batch upsert errors encountered
-
-        Raises:
-            ValueError: If SFTP configuration is missing or Excel file cannot be read.
-            Exception: Network errors, authentication failures, or file format issues
-                      with enhanced error messages for debugging.
-
-        Note:
-            - SFTP connection is created fresh for each operation (stateless)
-            - Excel file is downloaded to temporary file and cleaned up after processing
-            - Multiple parsing strategies are attempted for file format compatibility
-            - Data is processed in batches of 500 records for performance
-            - Batch failures are logged but don't stop processing
-            - User ID is required and records without it are filtered out
-            - Date fields are converted to datetime objects
-            - NaN values are converted to None for database compatibility
-
-        Example:
-            >>> count, errors = await service._process_users(tenant_id)
-            >>> print(f"Processed {count} users with {errors} errors")
-            Processed 500 users with 0 errors
+            tuple[int, int]: (count of users processed, count of batch errors)
         """
         try:
-            logger.info(f"Fetching SFTP configuration for tenant {tenant_id}")
-            sftp_client = await get_tenant_sftp_client(tenant_id)
+            bq_config = await get_tenant_bigquery_config(tenant_id)
+            user_table = bq_config.get("user_table") if bq_config else None
 
-            if not sftp_client:
+            if not user_table:
                 logger.warning(
-                    f"SFTP configuration not found for tenant {tenant_id}, skipping user processing"
+                    f"No bigquery_user_table configured for tenant {tenant_id}, skipping user processing"
                 )
                 return 0, 0
 
-            # Get users data (synchronous method)
-            logger.info("Connecting to SFTP to download users data")
-            users_data = sftp_client._get_users_data_sync()
+            logger.info(f"Extracting users from BigQuery table: {user_table}")
+            bigquery_client = await get_tenant_bigquery_client(tenant_id)
+            if not bigquery_client:
+                msg = f"BigQuery client could not be created for tenant {tenant_id}"
+                raise ValueError(msg)
 
-            if users_data is not None and len(users_data) > 0:
+            users_list = bigquery_client.extract_users(user_table)
 
-                users_data = users_data.replace({np.nan: None})
-
-                users_list = users_data.to_dict("records")
-
-                # Clean the records for JSON compatibility
-                cleaned_users = []
-                for record in users_list:
-                    cleaned_record = {}
-                    for key, value in record.items():
-                        if (
-                            pd.isna(value)
-                            if hasattr(pd, "isna")
-                            else (value is None or str(value) == "nan")
-                        ):
-                            cleaned_record[key] = None
-                        elif isinstance(value, pd.Timestamp):
-                            cleaned_record[key] = value.to_pydatetime()
-                        else:
-                            cleaned_record[key] = value
-                    cleaned_users.append(cleaned_record)
-
-                count, errors = await self.repo.upsert_users(tenant_id, cleaned_users)
+            if users_list:
+                count, errors = await self.repo.upsert_users(tenant_id, users_list)
                 logger.info(
-                    f"Processed {count} users from SFTP ({errors} batch errors)"
+                    f"Processed {count} users from BigQuery ({errors} batch errors)"
                 )
                 return count, errors
-            logger.info("No users data found")
+
+            logger.info("No users found in BigQuery table")
             return 0, 0
 
         except Exception as e:

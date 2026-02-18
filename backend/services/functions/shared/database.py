@@ -481,20 +481,12 @@ class FunctionsRepository:
 
         Args:
             tenant_id: Tenant ID for data isolation (normalized internally).
-            users_data: List of user dictionaries with fields matching database schema.
+            users_data: List of user dictionaries with keys: user_id, user_name,
+                       buying_company_name, buying_company_erp_id, email,
+                       office_phone, cell_phone.
 
         Returns:
-            tuple[int, int]: Tuple containing:
-                - count: Number of users successfully processed
-                - errors: Number of batch upsert errors encountered
-
-        Note:
-            - Uses ON CONFLICT DO UPDATE for upsert behavior
-            - Processes in batches of 500 records
-            - Each batch uses separate session for failure isolation
-            - Updates user_name, email, is_active, updated_at on conflict
-            - Continues processing remaining batches even if one fails
-            - Logs batch progress and errors for monitoring
+            tuple[int, int]: (count of users processed, count of batch errors)
         """
         if not users_data:
             return 0, 0
@@ -504,79 +496,48 @@ class FunctionsRepository:
         total = 0
         errors = 0
 
-        # Prepare all rows with tenant_id
-        rows = []
-        for user in users_data:
-            user["tenant_id"] = tenant_uuid_str
-            rows.append(user)
-
-        # Process each batch in a SEPARATE session to isolate failures
-        for i in range(0, len(rows), batch_size):
-            batch = rows[i : i + batch_size]
+        for i in range(0, len(users_data), batch_size):
+            batch = users_data[i : i + batch_size]
             batch_num = i // batch_size + 1
 
-            # Build multi-row VALUES clause for batch insert
             values_clauses = []
-            params = {}
+            params: dict[str, Any] = {}
 
             for idx, user in enumerate(batch):
                 prefix = f"u{idx}_"
                 values_clauses.append(f"""(
                     :{prefix}tenant_id, :{prefix}user_id, :{prefix}user_name,
-                    :{prefix}first_name, :{prefix}middle_name, :{prefix}last_name,
-                    :{prefix}job_title, :{prefix}user_erp_id, :{prefix}email,
-                    :{prefix}office_phone, :{prefix}cell_phone, :{prefix}fax,
-                    :{prefix}address1, :{prefix}address2, :{prefix}address3,
-                    :{prefix}city, :{prefix}state, :{prefix}country, :{prefix}zip,
-                    :{prefix}warehouse_code, :{prefix}registered_date, :{prefix}last_login_date,
-                    :{prefix}cimm_buying_company_id, :{prefix}buying_company_name, :{prefix}buying_company_erp_id,
-                    :{prefix}role_name, :{prefix}site_name, true, NOW()
+                    :{prefix}buying_company_name, :{prefix}buying_company_erp_id,
+                    :{prefix}email, :{prefix}office_phone, :{prefix}cell_phone,
+                    true, NOW()
                 )""")
 
-                # Add all user fields with prefix
-                for key, value in user.items():
-                    params[f"{prefix}{key}"] = value
+                params[f"{prefix}tenant_id"] = tenant_uuid_str
+                params[f"{prefix}user_id"] = user.get("user_id")
+                params[f"{prefix}user_name"] = user.get("user_name")
+                params[f"{prefix}buying_company_name"] = user.get("buying_company_name")
+                params[f"{prefix}buying_company_erp_id"] = user.get("buying_company_erp_id")
+                params[f"{prefix}email"] = user.get("email")
+                params[f"{prefix}office_phone"] = user.get("office_phone")
+                params[f"{prefix}cell_phone"] = user.get("cell_phone")
 
             stmt = text(f"""
-                INSERT INTO users (tenant_id, user_id, user_name, first_name, middle_name, last_name,
-                    job_title, user_erp_id, email, office_phone, cell_phone, fax,
-                    address1, address2, address3, city, state, country, zip,
-                    warehouse_code, registered_date, last_login_date,
-                    cimm_buying_company_id, buying_company_name, buying_company_erp_id,
-                    role_name, site_name, is_active, updated_at)
+                INSERT INTO users (tenant_id, user_id, user_name,
+                    buying_company_name, buying_company_erp_id,
+                    email, office_phone, cell_phone, is_active, updated_at)
                 VALUES {", ".join(values_clauses)}
                 ON CONFLICT (tenant_id, user_id) DO UPDATE SET
                     user_name = EXCLUDED.user_name,
-                    first_name = EXCLUDED.first_name,
-                    middle_name = EXCLUDED.middle_name,
-                    last_name = EXCLUDED.last_name,
-                    job_title = EXCLUDED.job_title,
-                    user_erp_id = EXCLUDED.user_erp_id,
+                    buying_company_name = EXCLUDED.buying_company_name,
+                    buying_company_erp_id = EXCLUDED.buying_company_erp_id,
                     email = EXCLUDED.email,
                     office_phone = EXCLUDED.office_phone,
                     cell_phone = EXCLUDED.cell_phone,
-                    fax = EXCLUDED.fax,
-                    address1 = EXCLUDED.address1,
-                    address2 = EXCLUDED.address2,
-                    address3 = EXCLUDED.address3,
-                    city = EXCLUDED.city,
-                    state = EXCLUDED.state,
-                    country = EXCLUDED.country,
-                    zip = EXCLUDED.zip,
-                    warehouse_code = EXCLUDED.warehouse_code,
-                    registered_date = EXCLUDED.registered_date,
-                    last_login_date = EXCLUDED.last_login_date,
-                    cimm_buying_company_id = EXCLUDED.cimm_buying_company_id,
-                    buying_company_name = EXCLUDED.buying_company_name,
-                    buying_company_erp_id = EXCLUDED.buying_company_erp_id,
-                    role_name = EXCLUDED.role_name,
-                    site_name = EXCLUDED.site_name,
                     is_active = EXCLUDED.is_active,
                     updated_at = NOW()
             """)
 
             try:
-                # Use separate session per batch to isolate failures
                 async with get_db_session(tenant_id=self.tenant_id) as session:
                     result = await session.execute(stmt, params)
                     await session.commit()
@@ -586,10 +547,9 @@ class FunctionsRepository:
             except Exception as e:
                 errors += 1
                 logger.warning(f"Error upserting user batch {batch_num}: {e}")
-                # Continue with next batch instead of failing completely
 
         logger.info(f"Upserted {total} users ({errors} batch errors)")
-        return total, errors  # Return tuple (count, errors)
+        return total, errors
 
     async def upsert_locations(
         self, tenant_id: str, locations_data: list[dict[str, Any]]
@@ -693,11 +653,11 @@ class FunctionsRepository:
 
 
     async def get_tenant_bigquery_config(self, tenant_id: str) -> dict[str, Any] | None:
-        """Get BigQuery config for a tenant."""
+        """Get BigQuery config for a tenant, including optional user table reference."""
         async with get_db_session(tenant_id=self.tenant_id) as session:
-            # Query tenant_config with explicit tenant_id for consistency with data_service
             stmt = text("""
-                SELECT bigquery_project_id, bigquery_dataset_id, bigquery_credentials, bigquery_enabled
+                SELECT bigquery_project_id, bigquery_dataset_id, bigquery_credentials,
+                       bigquery_enabled, user_table
                 FROM tenant_config
                 WHERE id = :tenant_id AND is_active = true
             """)
@@ -705,16 +665,20 @@ class FunctionsRepository:
             row = result.mappings().first()
 
             if row and row.get("bigquery_enabled") and row.get("bigquery_project_id"):
-                # Parse credentials JSON if needed (matches data_service pattern)
                 credentials = row.get("bigquery_credentials")
                 if isinstance(credentials, str):
                     credentials = json.loads(credentials)
 
-                return {
+                config: dict[str, Any] = {
                     "project_id": row["bigquery_project_id"],
                     "dataset_id": row["bigquery_dataset_id"],
-                    "service_account": credentials,  # Use "service_account" key to match BigQueryClient expectations
+                    "service_account": credentials,
                 }
+
+                if row.get("user_table"):
+                    config["user_table"] = row["user_table"]
+
+                return config
             return None
 
     async def get_tenant_sftp_config(self, tenant_id: str) -> dict[str, Any] | None:

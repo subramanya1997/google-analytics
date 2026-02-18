@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS public.tenant_config (
   bigquery_project_id character varying(255),
   bigquery_dataset_id character varying(255),
   bigquery_credentials jsonb,
+  user_table character varying(500),
   sftp_config jsonb,
   email_config jsonb,
   bigquery_enabled boolean DEFAULT true,

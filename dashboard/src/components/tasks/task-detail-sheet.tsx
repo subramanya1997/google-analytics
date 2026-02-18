@@ -8,6 +8,7 @@ import {
   User, 
   Mail, 
   Phone, 
+  MonitorSmartphone,
   Package,
   Search,
   ShoppingCart,
@@ -357,8 +358,8 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                     href={`tel:${actualTask.customer.office_phone}`} 
                     className="text-muted-foreground hover:text-foreground hover:underline flex items-center gap-1 sm:before:content-['•'] sm:before:mx-3 sm:first:before:hidden whitespace-nowrap"
                   >
-                    <Phone className="h-3 w-3" />
-                    {actualTask.customer.office_phone} <span className="text-xs">(office)</span>
+                    <MonitorSmartphone className="h-3 w-3" />
+                    {actualTask.customer.office_phone}
                   </a>
                 )}
               </div>

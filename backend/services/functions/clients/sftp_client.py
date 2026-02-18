@@ -27,8 +27,8 @@ class SFTPClient:
     Connections are created fresh for each operation and properly closed,
     ensuring no connection leaks in serverless environments.
 
-    The client handles user and location data downloads, parsing Excel files
-    and returning pandas DataFrames ready for database insertion.
+    Currently handles location data downloads only. User data has been
+    migrated to BigQuery extraction.
 
     Attributes:
         config: Complete SFTP configuration dictionary.
@@ -37,7 +37,6 @@ class SFTPClient:
         username: SFTP authentication username.
         password: SFTP authentication password.
         remote_path: Base path on SFTP server for file operations.
-        user_file: Filename for user data Excel file (default: "UserReport.xlsx").
         locations_file: Filename for locations data Excel file (default: "Locations_List.xlsx").
 
     Example:
@@ -48,7 +47,7 @@ class SFTPClient:
         ...     "remote_path": "/data"
         ... }
         >>> client = SFTPClient(config)
-        >>> users_df = client._get_users_data_sync()
+        >>> locations_df = client._get_locations_data_sync()
     """
 
     def __init__(self, sftp_config: dict[str, Any]) -> None:
@@ -66,7 +65,6 @@ class SFTPClient:
                 - username: Authentication username (required)
                 - password: Authentication password (required)
                 - remote_path: Base directory path on server (optional)
-                - user_file: User data filename (optional, default: "UserReport.xlsx")
                 - locations_file: Locations data filename (optional, default: "Locations_List.xlsx")
 
         Note:
@@ -79,7 +77,6 @@ class SFTPClient:
         self.username = sftp_config.get("username")
         self.password = sftp_config.get("password")
         self.remote_path = sftp_config.get("remote_path", "")
-        self.user_file = sftp_config.get("user_file", "UserReport.xlsx")
         self.locations_file = sftp_config.get("locations_file", "Locations_List.xlsx")
 
         if not all([self.host, self.username, self.password]):
@@ -234,203 +231,6 @@ class SFTPClient:
             if ssh_client:
                 with contextlib.suppress(builtins.BaseException):
                     ssh_client.close()
-
-    def _get_users_data_sync(self) -> pd.DataFrame:
-        """
-        Download and parse user data Excel file from SFTP server.
-
-        Downloads the user Excel file, attempts multiple parsing strategies
-        for format compatibility, normalizes column names to match database
-        schema, and returns a cleaned pandas DataFrame ready for database insertion.
-
-        Returns:
-            pd.DataFrame: Processed user data with columns matching database schema.
-                        Columns include user_id, user_name, email, phone, address,
-                        warehouse_code, etc.
-
-        Raises:
-            ValueError: If file cannot be read or parsed, or if no valid data found.
-
-        Note:
-            - Tries multiple parsing strategies for Excel format compatibility:
-              1. Sheet named "User Report" with skiprows=1
-              2. First sheet with skiprows=1
-              3. First sheet without skiprows
-            - Normalizes column names from various source formats
-            - Combines FIRST_NAME, MIDDLE_NAME, LAST_NAME into user_name
-            - Converts data types (strings, datetimes) appropriately
-            - Filters out records without user_id
-            - Handles NaN values by converting to None
-            - Temporary file is automatically cleaned up
-
-        Example:
-            >>> df = client._get_users_data_sync()
-            >>> df.columns.tolist()
-            ['user_id', 'user_name', 'email', 'warehouse_code', ...]
-        """
-        temp_path = None
-
-        try:
-            temp_path = self._download_file_sync(self.user_file)
-
-            df = None
-
-            # Strategy 1: Try with 'User Report' sheet and skip first row
-            try:
-                df = pd.read_excel(temp_path, sheet_name="User Report", skiprows=1)
-                logger.info("Successfully read users data with 'User Report' sheet")
-            except Exception as e:
-                logger.debug(f"Strategy 1 failed: {e}")
-
-            # Strategy 2: Try first sheet with skip rows
-            if df is None or df.empty:
-                try:
-                    df = pd.read_excel(temp_path, skiprows=1)
-                    logger.info("Successfully read users data with skiprows=1")
-                except Exception as e:
-                    logger.debug(f"Strategy 2 failed: {e}")
-
-            # Strategy 3: Try without skip rows
-            if df is None or df.empty:
-                try:
-                    df = pd.read_excel(temp_path)
-                    logger.info("Successfully read users data without skiprows")
-                except Exception as e:
-                    logger.debug(f"Strategy 3 failed: {e}")
-
-            if df is None or df.empty:
-                msg = "Could not read user data from Excel file"
-                raise ValueError(msg)
-
-            # Process data
-            if "FIRST_NAME" in df.columns:
-                df["user_name"] = (
-                    df[["FIRST_NAME", "MIDDLE_NAME", "LAST_NAME"]]
-                    .fillna("")
-                    .agg(" ".join, axis=1)
-                    .str.strip()
-                )
-
-            # Rename columns to match database schema
-            rename_map = {
-                "CIMM_USER_ID": "user_id",
-                "USER_ID": "user_id",
-                "USER_ERP_ID": "user_erp_id",
-                "FIRST_NAME": "first_name",
-                "MIDDLE_NAME": "middle_name",
-                "LAST_NAME": "last_name",
-                "JOB_TITLE": "job_title",
-                "ROLE_NAME": "role_name",
-                "BUYING_COMPANY_NAME": "buying_company_name",
-                "BUYING_COMPANY_ERP_ID": "buying_company_erp_id",
-                "CIMM_BUYING_COMPANY_ID": "cimm_buying_company_id",
-                "EMAIL_ADDRESS": "email",
-                "EMAIL": "email",
-                "PHONE_NUMBER": "office_phone",
-                "OFFICE_PHONE": "office_phone",
-                "CELL_PHONE": "cell_phone",
-                "MOBILE_PHONE": "cell_phone",
-                "FAX": "fax",
-                "ADDRESS1": "address1",
-                "ADDRESS2": "address2",
-                "ADDRESS3": "address3",
-                "CITY": "city",
-                "STATE": "state",
-                "COUNTRY": "country",
-                "ZIP": "zip",
-                "POSTAL_CODE": "zip",
-                "DEFAULT_BRANCH_ID": "warehouse_code",
-                "WAREHOUSE_CODE": "warehouse_code",
-                "REGISTERED_DATE": "registered_date",
-                "LAST_LOGIN_DATE": "last_login_date",
-                "SITE_NAME": "site_name",
-            }
-
-            rename_dict = {}
-            for old_col, new_col in rename_map.items():
-                if old_col in df.columns:
-                    rename_dict[old_col] = new_col
-
-            df = df.rename(columns=rename_dict)
-
-            # Keep all columns that match the database schema
-            db_columns = [
-                "user_id",
-                "user_name",
-                "first_name",
-                "middle_name",
-                "last_name",
-                "job_title",
-                "user_erp_id",
-                "fax",
-                "address1",
-                "address2",
-                "address3",
-                "city",
-                "state",
-                "country",
-                "office_phone",
-                "cell_phone",
-                "email",
-                "registered_date",
-                "zip",
-                "warehouse_code",
-                "last_login_date",
-                "cimm_buying_company_id",
-                "buying_company_name",
-                "buying_company_erp_id",
-                "role_name",
-                "site_name",
-            ]
-
-            available_cols = [col for col in db_columns if col in df.columns]
-
-            if available_cols:
-                df = df[available_cols]
-
-            # Convert ID and code fields to strings
-            string_fields = [
-                "user_id",
-                "user_erp_id",
-                "warehouse_code",
-                "cimm_buying_company_id",
-                "buying_company_erp_id",
-                "zip",
-                "office_phone",
-                "cell_phone",
-                "fax",
-            ]
-
-            for field in string_fields:
-                if field in df.columns:
-                    df[field] = df[field].astype(str)
-                    df.loc[df[field] == "nan", field] = None
-
-            # Convert datetime fields
-            datetime_fields = ["registered_date", "last_login_date"]
-            for field in datetime_fields:
-                if field in df.columns:
-                    df[field] = pd.to_datetime(df[field], errors="coerce")
-                    df[field] = df[field].where(pd.notna(df[field]), None)
-
-            # Ensure user_id is present and valid
-            if "user_id" in df.columns:
-                df = df.dropna(subset=["user_id"])
-                df = df[df["user_id"].str.strip() != ""]
-
-            logger.info(
-                f"Successfully processed {len(df)} users with columns: {list(df.columns)}"
-            )
-            return df
-
-        except Exception as e:
-            logger.error(f"Error getting users data: {e}")
-            raise
-
-        finally:
-            if temp_path and Path(temp_path).exists():
-                with contextlib.suppress(builtins.BaseException):
-                    Path(temp_path).unlink()
 
     def _get_locations_data_sync(self) -> pd.DataFrame:
         """

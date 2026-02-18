@@ -8,7 +8,9 @@ import {
   ShoppingCart,
   TrendingUp,
   DollarSign,
-  MapPin
+  MapPin,
+  Phone,
+  MonitorSmartphone
 } from "lucide-react"
 
 const taskIcons = {
@@ -61,11 +63,23 @@ export function TaskCard({ task }: TaskCardProps) {
             </div>
             
             {/* Contact info */}
-            {task.customer.email && (
-              <div className="text-xs text-muted-foreground truncate">
-                {task.customer.email}
-              </div>
-            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              {task.customer.email && (
+                <span className="truncate">{task.customer.email}</span>
+              )}
+              {task.customer.phone?.trim() && (
+                <a href={`tel:${task.customer.phone}`} className="flex items-center gap-1 hover:underline whitespace-nowrap">
+                  <Phone className="h-3 w-3" />
+                  {task.customer.phone}
+                </a>
+              )}
+              {task.customer.office_phone?.trim() && (
+                <a href={`tel:${task.customer.office_phone}`} className="flex items-center gap-1 hover:underline whitespace-nowrap">
+                  <MonitorSmartphone className="h-3 w-3" />
+                  {task.customer.office_phone}
+                </a>
+              )}
+            </div>
             
             {/* Location info */}
             {task.metadata?.location && (

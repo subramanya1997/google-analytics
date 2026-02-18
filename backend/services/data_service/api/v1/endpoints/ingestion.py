@@ -95,8 +95,9 @@ async def create_ingestion_job(
     """
     try:
         # Check which services are needed based on data_types
-        needs_bigquery = "events" in request.data_types
-        needs_sftp = "users" in request.data_types or "locations" in request.data_types
+        # Users are now extracted from BigQuery (not SFTP), so only locations need SFTP
+        needs_bigquery = "events" in request.data_types or "users" in request.data_types
+        needs_sftp = "locations" in request.data_types
 
         # Validate services are enabled
         service_status = await get_tenant_service_status(

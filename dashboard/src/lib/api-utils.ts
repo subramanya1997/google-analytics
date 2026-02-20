@@ -33,7 +33,21 @@ export function buildApiQueryParams(
 } 
 
 export function getTenantId(): string {
-  return process.env.NEXT_PUBLIC_TENANT_ID || 'e0f01854-6c2e-4b76-bf7b-67f3c28dbdac'
+  if (typeof window !== 'undefined') {
+    try {
+      const userInfo = localStorage.getItem('user_info')
+      if (userInfo) {
+        const parsed = JSON.parse(userInfo)
+        if (parsed.tenantId) return parsed.tenantId
+      }
+    } catch {
+      // Fall through to env fallback
+    }
+  }
+  if (process.env.NEXT_PUBLIC_TENANT_ID) {
+    return process.env.NEXT_PUBLIC_TENANT_ID
+  }
+  return ''
 }
 
 export function getAccessToken(): string | null {

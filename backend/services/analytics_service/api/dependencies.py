@@ -50,16 +50,22 @@ See Also:
     - services.analytics_service.database: Repository classes for database operations
 """
 
+import re
 from functools import lru_cache
 
 from fastapi import Header, HTTPException
 from loguru import logger
 
+from common.database.tenant_provisioning import tenant_database_exists
 from services.analytics_service.database import (
     HistoryRepository,
     LocationsRepository,
     StatsRepository,
     TasksRepository,
+)
+
+UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
 )
 
 
@@ -211,6 +217,17 @@ def get_tenant_id(
         logger.warning("Empty X-Tenant-Id header")
         raise HTTPException(
             status_code=400, detail="X-Tenant-Id header cannot be empty"
+        )
+
+    if not UUID_RE.match(tenant_id_value):
+        logger.warning(f"Invalid tenant ID format: {tenant_id_value}")
+        raise HTTPException(status_code=400, detail="Invalid tenant ID format")
+
+    if not tenant_database_exists(tenant_id_value):
+        logger.warning(f"Tenant database not found for: {tenant_id_value}")
+        raise HTTPException(
+            status_code=404,
+            detail="Tenant not found. Please ensure your account is properly configured.",
         )
 
     return tenant_id_value

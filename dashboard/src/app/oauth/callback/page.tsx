@@ -23,6 +23,7 @@ interface AuthResponse {
   access_token?: string
   missing_configs?: string[]
   invalid_configs?: string[]
+  requires_initial_configuration?: boolean
 }
 
 async function checkDataAvailability(): Promise<{ hasData: boolean }> {
@@ -48,6 +49,7 @@ function OAuthCallbackContent() {
   const [message, setMessage] = useState("Verifying your account…")
   const [configOk, setConfigOk] = useState<boolean | null>(null)
   const [configIssues, setConfigIssues] = useState<string[]>([])
+  const [requiresInitialConfig, setRequiresInitialConfig] = useState(false)
   const [hasData, setHasData] = useState<boolean | null>(null)
   const [userInfo, setUserInfo] = useState<{ firstName?: string; username?: string; businessName?: string } | null>(null)
   const authRequestMade = useRef(false)
@@ -100,6 +102,22 @@ function OAuthCallbackContent() {
         
         // Handle authentication response
         if (!authResult.success) {
+          // New account with no configs - block login until they configure
+          if (authResult.requires_initial_configuration) {
+            setStatus("error")
+            setRequiresInitialConfig(true)
+            setConfigIssues(
+              (authResult.missing_configs || []).map((c: string) => `Missing: ${c}`)
+            )
+            setMessage(authResult.message || "Please configure your integrations before accessing the application.")
+            setUserInfo({
+              firstName: authResult.first_name || undefined,
+              username: authResult.username || undefined,
+              businessName: authResult.business_name || undefined,
+            })
+            // Do NOT set user - block login completely
+            return
+          }
           // Check if it's a configuration issue (not a hard failure)
           if (authResult.missing_configs || authResult.invalid_configs) {
             setStatus("error")
@@ -243,7 +261,11 @@ function OAuthCallbackContent() {
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>
-                  {configIssues.length > 0 ? "Setup issues" : "Verification failed"}
+                  {requiresInitialConfig
+                    ? "Configuration required"
+                    : configIssues.length > 0
+                      ? "Setup issues"
+                      : "Verification failed"}
                 </AlertTitle>
                 <AlertDescription>
                   {configIssues.length > 0 ? (
@@ -263,8 +285,12 @@ function OAuthCallbackContent() {
               </Alert>
               {configIssues.length > 0 ? (
                 <div className="flex gap-2">
-                  <Button onClick={() => router.replace("/")}>Go to dashboard anyway</Button>
-                  <Button variant="outline" onClick={() => router.back()}>Back</Button>
+                  {!requiresInitialConfig && (
+                    <Button onClick={() => router.replace("/")}>Go to dashboard anyway</Button>
+                  )}
+                  <Button variant="outline" onClick={() => router.replace("/oauth/login")}>
+                    {requiresInitialConfig ? "Back to login" : "Back"}
+                  </Button>
                 </div>
               ) : (
                 <div className="text-sm text-muted-foreground mt-3">

@@ -82,6 +82,9 @@ class AuthResponse(BaseModel):
         invalid_configs (list[str] | None): List of configuration keys that
             are present but invalid (e.g., connection failed). Examples:
             ["bigquery_config", "sftp_config"]
+        requires_initial_configuration (bool | None): When True, indicates a new
+            account with no configurations. Login must be blocked until BigQuery,
+            SMTP, SFTP and other integrations are configured.
 
     Example:
         ```json
@@ -108,6 +111,10 @@ class AuthResponse(BaseModel):
     access_token: str | None = Field(None, description="OAuth access token for API calls")
     missing_configs: list[str] | None = Field(None, description="List of missing required configurations")
     invalid_configs: list[str] | None = Field(None, description="List of invalid configurations")
+    requires_initial_configuration: bool | None = Field(
+        None,
+        description="When True, new account has no configs - login blocked until setup",
+    )
 
 
 class LogoutRequest(BaseModel):

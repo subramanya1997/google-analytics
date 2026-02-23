@@ -72,7 +72,11 @@ from loguru import logger
 from sqlalchemy import create_engine, text
 
 from common.config import get_settings
-from common.database import get_async_db_session, provision_tenant_database
+from common.database import (
+    get_async_db_session,
+    provision_tenant_database,
+    tenant_database_exists,
+)
 
 
 class AuthenticationService:
@@ -136,6 +140,51 @@ class AuthenticationService:
                 This typically indicates environment variables are not set correctly.
         """
         self.settings = get_settings("auth-service")
+
+    @staticmethod
+    def _is_bigquery_configured(config: dict[str, Any]) -> bool:
+        """BigQuery is configured only with project_id, dataset_id, and valid service_account."""
+        if not config:
+            return False
+        project_id = config.get("project_id") or ""
+        dataset_id = config.get("dataset_id") or ""
+        if not (isinstance(project_id, str) and project_id.strip()) or not (
+            isinstance(dataset_id, str) and dataset_id.strip()
+        ):
+            return False
+        service_account = config.get("service_account")
+        if not isinstance(service_account, dict) or not service_account:
+            return False
+        # Must have credentials - private_key or client_email for service account
+        has_creds = bool(
+            (service_account.get("private_key") or "").strip()
+            or (service_account.get("client_email") or "").strip()
+        )
+        return has_creds
+
+    @staticmethod
+    def _is_sftp_configured(config: dict[str, Any]) -> bool:
+        """SFTP is configured only with host and username (minimum to connect)."""
+        if not config:
+            return False
+        host = config.get("host") or config.get("Host") or ""
+        username = config.get("username") or config.get("Username") or ""
+        return bool(
+            isinstance(host, str) and host.strip()
+            and isinstance(username, str) and username.strip()
+        )
+
+    @staticmethod
+    def _is_smtp_configured(config: dict[str, Any]) -> bool:
+        """SMTP is configured only with server and from_address (minimum to send)."""
+        if not config:
+            return False
+        server = config.get("server") or config.get("Server") or ""
+        from_address = config.get("from_address") or config.get("FromAddress") or ""
+        return bool(
+            isinstance(server, str) and server.strip()
+            and isinstance(from_address, str) and from_address.strip()
+        )
 
     async def authenticate_with_code(self, code: str) -> dict[str, Any]:
         """
@@ -312,7 +361,9 @@ class AuthenticationService:
                     }
 
                     logger.info(
-                        f"Configurations found - BigQuery: {'Yes' if bigquery_config else 'No'}, SFTP: {'Yes' if sftp_config else 'No'}, SMTP: {'Yes' if email_config else 'No'}"
+                        f"Configurations found - BigQuery: {'Yes' if self._is_bigquery_configured(bigquery_config) else 'No'}, "
+                        f"SFTP: {'Yes' if self._is_sftp_configured(sftp_config) else 'No'}, "
+                        f"SMTP: {'Yes' if self._is_smtp_configured(email_config) else 'No'}"
                     )
 
                 except json.JSONDecodeError as e:
@@ -321,6 +372,33 @@ class AuthenticationService:
                         "bigquery_config": {},
                         "sftp_config": {},
                         "email_config": {},
+                    }
+
+                # Block login when no configurations are properly set up
+                # Each config must be fully configured (critical fields present)
+                bigquery_config = formatted_settings.get("bigquery_config", {})
+                sftp_config = formatted_settings.get("sftp_config", {})
+                email_config = formatted_settings.get("email_config", {})
+                has_bigquery = self._is_bigquery_configured(bigquery_config)
+                has_sftp = self._is_sftp_configured(sftp_config)
+                has_smtp = self._is_smtp_configured(email_config)
+                has_no_configs = not has_bigquery and not has_sftp and not has_smtp
+
+                if has_no_configs:
+                    logger.warning(
+                        f"Blocking login for tenant {account_id}: no configurations present"
+                    )
+                    return {
+                        "success": False,
+                        "message": "Please configure your BigQuery, SMTP, and other integrations before you can access the application. Go to your external settings to configure these.",
+                        "tenant_id": account_id,
+                        "first_name": first_name,
+                        "username": username,
+                        "business_name": business_name,
+                        "access_token": None,
+                        "missing_configs": ["BigQuery", "SFTP", "SMTP"],
+                        "invalid_configs": None,
+                        "requires_initial_configuration": True,
                     }
 
                 # Step 3: Validate configurations

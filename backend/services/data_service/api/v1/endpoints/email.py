@@ -314,7 +314,7 @@ async def send_reports(
         }
 
         async with QueueClient.from_connection_string(
-            connection_string, "email-jobs"
+            connection_string, "prod-email-jobs"
         ) as queue_client:
             await queue_client.send_message(json.dumps(message))
             logger.info(f"Successfully queued email job {job_id} for processing")

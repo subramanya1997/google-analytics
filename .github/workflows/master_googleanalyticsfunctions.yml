@@ -150,8 +150,8 @@ jobs:
         echo "- \`GET /api/v1/health\` - Health check and service status" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Queue Triggers (Background Processing)" >> $GITHUB_STEP_SUMMARY
-        echo "- **ingestion-jobs** queue → Processes data ingestion (BigQuery events, SFTP users/locations)" >> $GITHUB_STEP_SUMMARY
-        echo "- **email-jobs** queue → Sends analytics reports via email" >> $GITHUB_STEP_SUMMARY
+        echo "- **prod-ingestion-jobs** queue → Processes data ingestion (BigQuery events, SFTP users/locations)" >> $GITHUB_STEP_SUMMARY
+        echo "- **prod-email-jobs** queue → Sends analytics reports via email" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Job Flow" >> $GITHUB_STEP_SUMMARY
         echo "1. FastAPI receives request → Creates job in DB → Sends to queue → Returns job_id" >> $GITHUB_STEP_SUMMARY

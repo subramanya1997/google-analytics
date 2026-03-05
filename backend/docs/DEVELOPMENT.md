@@ -28,11 +28,11 @@ The Azure Functions service (`backend/services/functions/`) is a **serverless ba
 
 ### What This Service Does
 
-| Function | Trigger | Description |
-|----------|---------|-------------|
-| `health_check` | HTTP GET | Health endpoint for monitoring and load balancers |
-| `process_ingestion_job` | Queue | Extracts GA4 events from BigQuery, downloads user/location data from SFTP |
-| `process_email_job` | Queue | Generates HTML branch reports and sends via SMTP |
+| Function                | Trigger  | Description                                                               |
+| ----------------------- | -------- | ------------------------------------------------------------------------- |
+| `health_check`          | HTTP GET | Health endpoint for monitoring and load balancers                         |
+| `process_ingestion_job` | Queue    | Extracts GA4 events from BigQuery, downloads user/location data from SFTP |
+| `process_email_job`     | Queue    | Generates HTML branch reports and sends via SMTP                          |
 
 ### Why Azure Functions?
 
@@ -62,8 +62,8 @@ The Azure Functions service (`backend/services/functions/`) is a **serverless ba
 │                              ▼                   ▼                         │
 │                    ┌─────────────────────────────────────┐                 │
 │                    │       Azure Storage Queues          │                 │
-│                    │  • ingestion-jobs                   │                 │
-│                    │  • email-jobs                       │                 │
+│                    │  • prod-ingestion-jobs                   │                 │
+│                    │  • prod-email-jobs                       │                 │
 │                    └─────────────────┬───────────────────┘                 │
 │                                      │                                     │
 │                                      ▼                                     │
@@ -87,7 +87,7 @@ The Azure Functions service (`backend/services/functions/`) is a **serverless ba
 
 1. **User triggers ingestion** via Data Service API (`POST /api/v1/ingestion/jobs`)
 2. **Data Service** creates job record in database (status: `queued`)
-3. **Data Service** sends message to `ingestion-jobs` Azure Queue
+3. **Data Service** sends message to `prod-ingestion-jobs` Azure Queue
 4. **Azure Function** (`process_ingestion_job`) picks up message automatically
 5. **Function** updates job status to `processing`, executes work, updates to `completed`/`failed`
 6. **User** can poll job status via API or receive webhook notification
@@ -95,6 +95,7 @@ The Azure Functions service (`backend/services/functions/`) is a **serverless ba
 ### Multi-Tenant Architecture
 
 Each tenant has their own isolated database for SOC2 compliance:
+
 - Database naming: `google-analytics-{tenant_id}`
 - Tenant ID is included in every queue message
 - Azure Functions connect to the correct tenant database automatically
@@ -107,13 +108,13 @@ For more details, see [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 Before deploying, ensure you have:
 
-| Requirement | Description |
-|-------------|-------------|
-| Azure Subscription | Active subscription with permissions to create resources |
-| GitHub Repository | Repository containing the `backend/services/functions/` code |
+| Requirement         | Description                                                       |
+| ------------------- | ----------------------------------------------------------------- |
+| Azure Subscription  | Active subscription with permissions to create resources          |
+| GitHub Repository   | Repository containing the `backend/services/functions/` code      |
 | PostgreSQL Database | Accessible from Azure (Azure Database for PostgreSQL or external) |
-| BigQuery Access | Service account credentials for GA4 data (stored per-tenant) |
-| SMTP Server | For email reports (configured per-tenant) |
+| BigQuery Access     | Service account credentials for GA4 data (stored per-tenant)      |
+| SMTP Server         | For email reports (configured per-tenant)                         |
 
 ---
 
@@ -144,8 +145,8 @@ Before deploying, ensure you have:
 4. After creation:
    - Go to Storage Account → **"Access keys"** → Copy the **Connection string**
    - Go to **"Queues"** → Create two queues:
-     - `ingestion-jobs`
-     - `email-jobs`
+     - `prod-ingestion-jobs`
+     - `prod-email-jobs`
 
 #### Step 3: Create the Function App
 
@@ -170,13 +171,13 @@ Before deploying, ensure you have:
 
 Go to Function App → **"Configuration"** → Add these settings:
 
-| Name | Value | Description |
-|------|-------|-------------|
-| `POSTGRES_HOST` | `your-db.postgres.database.azure.com` | Database server hostname |
-| `POSTGRES_PORT` | `5432` | PostgreSQL port |
-| `POSTGRES_USER` | `your-username` | Database username |
-| `POSTGRES_PASSWORD` | `your-password` | Database password |
-| `AzureWebJobsStorage` | Connection string from Step 2 | **Required** for queue triggers |
+| Name                  | Value                                 | Description                     |
+| --------------------- | ------------------------------------- | ------------------------------- |
+| `POSTGRES_HOST`       | `your-db.postgres.database.azure.com` | Database server hostname        |
+| `POSTGRES_PORT`       | `5432`                                | PostgreSQL port                 |
+| `POSTGRES_USER`       | `your-username`                       | Database username               |
+| `POSTGRES_PASSWORD`   | `your-password`                       | Database password               |
+| `AzureWebJobsStorage` | Connection string from Step 2         | **Required** for queue triggers |
 
 > **Critical**: `AzureWebJobsStorage` must point to the Storage Account containing the queues. Without this, queue triggers will not work.
 
@@ -221,8 +222,6 @@ This creates a GitHub Actions workflow automatically.
 
 Create `.github/workflows/master_gadataingestion.yml`:
 
-
-
 #### Step 4: Commit and Push
 
 ```bash
@@ -258,8 +257,8 @@ STORAGE_CONN=$(az storage account show-connection-string \
   --query connectionString -o tsv)
 
 # Create queues
-az storage queue create --name ingestion-jobs --connection-string "$STORAGE_CONN"
-az storage queue create --name email-jobs --connection-string "$STORAGE_CONN"
+az storage queue create --name prod-ingestion-jobs --connection-string "$STORAGE_CONN"
+az storage queue create --name prod-email-jobs --connection-string "$STORAGE_CONN"
 
 # Create Premium function app plan (for 30-min timeout)
 az functionapp plan create \
@@ -302,6 +301,7 @@ func azure functionapp publish func-ga-data-ingestion-prod
 ### 1. Verify Functions are Registered
 
 Go to Function App → **"Functions"**. You should see:
+
 - `health_check` (HTTP Trigger)
 - `process_ingestion_job` (Queue Trigger)
 - `process_email_job` (Queue Trigger)
@@ -313,6 +313,7 @@ curl https://func-ga-data-ingestion-prod.azurewebsites.net/api/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
@@ -333,16 +334,16 @@ Expected response:
 
 ## Troubleshooting
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| Functions not showing | Deployment failed | Check Deployment Center logs |
-| Queue triggers not firing | Missing `AzureWebJobsStorage` | Verify app setting points to correct storage |
-| Message decoding errors | Encoding mismatch | Ensure `host.json` has `"queues.messageEncoding": "none"` |
-| Jobs stuck in "queued" | Function crashed | Check poison queues (`*-poison`) for failed messages |
-| Database connection failed | Firewall/credentials | Verify connection string and Azure firewall rules |
-| Timeout errors | Job too long | Use Premium plan (30-min timeout) or optimize job |
-| BigQuery errors | Invalid credentials | Check `tenant_config.bigquery_credentials` |
-| Email sending fails | SMTP misconfigured | Verify `tenant_config.email_config` |
+| Issue                      | Cause                         | Solution                                                  |
+| -------------------------- | ----------------------------- | --------------------------------------------------------- |
+| Functions not showing      | Deployment failed             | Check Deployment Center logs                              |
+| Queue triggers not firing  | Missing `AzureWebJobsStorage` | Verify app setting points to correct storage              |
+| Message decoding errors    | Encoding mismatch             | Ensure `host.json` has `"queues.messageEncoding": "none"` |
+| Jobs stuck in "queued"     | Function crashed              | Check poison queues (`*-poison`) for failed messages      |
+| Database connection failed | Firewall/credentials          | Verify connection string and Azure firewall rules         |
+| Timeout errors             | Job too long                  | Use Premium plan (30-min timeout) or optimize job         |
+| BigQuery errors            | Invalid credentials           | Check `tenant_config.bigquery_credentials`                |
+| Email sending fails        | SMTP misconfigured            | Verify `tenant_config.email_config`                       |
 
 ### View Logs
 
@@ -359,11 +360,11 @@ Or in Azure Portal: Function App → Functions → Select function → **Monitor
 
 ## Cost Considerations
 
-| Plan | Max Timeout | Cost Model | Best For |
-|------|-------------|------------|----------|
-| **Consumption** | 10 min | Pay per execution | Light workloads, testing |
-| **Premium (EP1)** | 60 min | Always-warm instances | Production with long jobs |
-| **Dedicated (B1+)** | Unlimited | Fixed monthly | Predictable high volume |
+| Plan                | Max Timeout | Cost Model            | Best For                  |
+| ------------------- | ----------- | --------------------- | ------------------------- |
+| **Consumption**     | 10 min      | Pay per execution     | Light workloads, testing  |
+| **Premium (EP1)**   | 60 min      | Always-warm instances | Production with long jobs |
+| **Dedicated (B1+)** | Unlimited   | Fixed monthly         | Predictable high volume   |
 
 **Recommendation**: Use **Premium EP1** for production. Data ingestion jobs can run 10-30 minutes depending on date range and data volume.
 
@@ -413,4 +414,3 @@ az functionapp identity assign \
 - [RUNBOOK.md](./RUNBOOK.md) - Operational procedures and incident response
 - [API.md](./API.md) - Data Service API for triggering jobs
 - [Functions README](../services/functions/README.md) - Service-specific documentation
-

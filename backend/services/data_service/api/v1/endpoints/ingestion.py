@@ -158,7 +158,7 @@ async def create_ingestion_job(
         }
 
         async with QueueClient.from_connection_string(
-            connection_string, "ingestion-jobs"
+            connection_string, "prod-ingestion-jobs"
         ) as queue_client:
             await queue_client.send_message(json.dumps(message))
             logger.info(f"Successfully queued ingestion job {job_id} for processing")

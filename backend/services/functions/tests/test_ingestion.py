@@ -4,7 +4,7 @@ Test script for data ingestion queue messaging.
 
 This script sends messages directly to the Azure Storage Queue to trigger
 data ingestion jobs. It tests the queue-based architecture where:
-1. This script sends a message to 'ingestion-jobs' queue
+1. This script sends a message to 'prod-ingestion-jobs' queue
 2. Azure Functions Queue Trigger picks up the message and processes it
 3. Check Azure Functions logs or database to see job progress
 
@@ -50,7 +50,7 @@ class IngestionQueueTester:
         """
         self.connection_string = connection_string
         self.tenant_id = tenant_id
-        self.queue_name = "ingestion-jobs"
+        self.queue_name = "prod-ingestion-jobs"
         self.repo = create_repository(tenant_id)
 
     async def send_ingestion_message(
@@ -232,7 +232,7 @@ Note:
     print(f"Job ID: {job_id}")
     print(f"Date Range: {start_date} to {end_date} ({args.days} days)")
     print(f"Data Types: {', '.join(args.data_types)}")
-    print("Queue: ingestion-jobs")
+    print("Queue: prod-ingestion-jobs")
     print("=" * 80)
 
     # Initialize tester
@@ -257,7 +257,7 @@ Note:
         print("\n   2. Check job status in database:")
         print(f"      SELECT * FROM processing_jobs WHERE job_id = '{job_id}';")
         print("\n   3. Monitor queue:")
-        print("      Azure Portal → Storage Account → Queues → ingestion-jobs")
+        print("      Azure Portal → Storage Account → Queues → prod-ingestion-jobs")
         print("=" * 80)
         return 0
     print("\n❌ Failed to send message to queue")

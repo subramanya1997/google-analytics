@@ -3,7 +3,7 @@ Test script for Email Queue Messaging
 
 This script sends messages directly to the Azure Storage Queue to trigger
 email sending jobs. It tests the queue-based architecture where:
-1. This script sends a message to 'email-jobs' queue
+1. This script sends a message to 'prod-email-jobs' queue
 2. Azure Functions Queue Trigger picks up the message and processes it
 3. Check Azure Functions logs or database to see job progress
 
@@ -56,7 +56,7 @@ class EmailQueueTester:
         """
         self.connection_string = connection_string
         self.tenant_id = tenant_id
-        self.queue_name = "email-jobs"
+        self.queue_name = "prod-email-jobs"
         self.repo = create_repository(tenant_id)
 
     async def send_email_message(
@@ -253,7 +253,7 @@ Note:
         print(f"Target Branches: {', '.join(branch_codes)}")
     else:
         print("Target Branches: All configured branches")
-    print("Queue: email-jobs")
+    print("Queue: prod-email-jobs")
     print("=" * 80)
 
     print("\n⚠️  Prerequisites:")
@@ -282,7 +282,7 @@ Note:
         print("\n   3. Check email send history:")
         print(f"      SELECT * FROM email_send_history WHERE job_id = '{job_id}';")
         print("\n   4. Monitor queue:")
-        print("      Azure Portal → Storage Account → Queues → email-jobs")
+        print("      Azure Portal → Storage Account → Queues → prod-email-jobs")
         print("=" * 80)
         return 0
     print("\n❌ Failed to send message to queue")

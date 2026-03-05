@@ -7,6 +7,7 @@
 ## Overview
 
 Serverless background worker service that:
+
 - Processes data ingestion jobs from Azure Storage Queues
 - Extracts events from BigQuery and users/locations from SFTP
 - Sends branch reports via SMTP email
@@ -20,7 +21,7 @@ FastAPI Services (data_service, analytics_service)
     ↓ Create job record in DB
     ↓ Send message to Azure Storage Queue
     ↓
-Azure Storage Queues (ingestion-jobs, email-jobs)
+Azure Storage Queues (prod-ingestion-jobs, prod-email-jobs)
     ↓ Queue Trigger (automatic)
     ↓
 Azure Functions (Queue-based Background Workers)
@@ -30,19 +31,19 @@ Azure Functions (Queue-based Background Workers)
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/v1/health` | GET | Health check - returns service status |
+| Endpoint         | Method | Description                           |
+| ---------------- | ------ | ------------------------------------- |
+| `/api/v1/health` | GET    | Health check - returns service status |
 
-**Note**: Ingestion and email jobs are triggered via Azure Storage Queues, not HTTP endpoints. 
+**Note**: Ingestion and email jobs are triggered via Azure Storage Queues, not HTTP endpoints.
 FastAPI services handle job creation and queue the work for background processing.
 
 ## Queue Triggers (Background Workers)
 
-| Queue Name | Function | Description |
-|------------|----------|-------------|
-| `ingestion-jobs` | `process_ingestion_job` | Processes data ingestion from BigQuery & SFTP |
-| `email-jobs` | `process_email_job` | Sends branch analytics reports via email |
+| Queue Name            | Function                | Description                                   |
+| --------------------- | ----------------------- | --------------------------------------------- |
+| `prod-ingestion-jobs` | `process_ingestion_job` | Processes data ingestion from BigQuery & SFTP |
+| `prod-email-jobs`     | `process_email_job`     | Sends branch analytics reports via email      |
 
 ## Project Structure
 
@@ -50,8 +51,8 @@ FastAPI services handle job creation and queue the work for background processin
 functions/
 ├── function_app.py           # 1 HTTP + 2 Queue Triggers
 │   ├── health_check()              # HTTP: GET /api/v1/health
-│   ├── process_ingestion_job()     # Queue: ingestion-jobs
-│   └── process_email_job()         # Queue: email-jobs
+│   ├── process_ingestion_job()     # Queue: prod-ingestion-jobs
+│   └── process_email_job()         # Queue: prod-email-jobs
 ├── clients/
 │   ├── bigquery_client.py    # BigQuery client for event extraction
 │   ├── sftp_client.py        # SFTP client for users/locations
@@ -95,6 +96,7 @@ pip install -r requirements.txt
 ### Configure Local Settings
 
 Edit `local.settings.json`:
+
 ```json
 {
   "IsEncrypted": false,
@@ -136,7 +138,7 @@ az functionapp config appsettings set \
     AzureWebJobsStorage="<storage-connection-string>"
 ```
 
-**Important**: `AzureWebJobsStorage` must point to the same Storage Account that contains the `ingestion-jobs` and `email-jobs` queues.
+**Important**: `AzureWebJobsStorage` must point to the same Storage Account that contains the `prod-ingestion-jobs` and `prod-email-jobs` queues.
 
 ## Testing
 
@@ -158,7 +160,7 @@ uv run python services/functions/tests/test_ingestion.py \
 
 # This will:
 # 1. Create job record in database (status: queued)
-# 2. Send message to 'ingestion-jobs' queue
+# 2. Send message to 'prod-ingestion-jobs' queue
 # 3. Azure Function picks up message and processes in background
 # 4. Job status updates: queued → processing → completed
 
@@ -178,7 +180,7 @@ uv run python services/functions/tests/test_email_sending.py \
 
 # This will:
 # 1. Create email job record in database (status: queued)
-# 2. Send message to 'email-jobs' queue
+# 2. Send message to 'prod-email-jobs' queue
 # 3. Azure Function picks up message and sends emails in background
 # 4. Job status updates: queued → processing → completed
 
@@ -199,19 +201,20 @@ uv run python services/functions/tests/test_email_sending.py \
 
 ### Azure Functions Settings (`host.json`)
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `functionTimeout` | 10 min | Max execution time per job |
-| `routePrefix` | api/v1 | API route prefix for HTTP endpoints |
-| `queues.maxPollingInterval` | 10s | Check for new messages every 10 seconds |
-| `queues.visibilityTimeout` | 5 min | Time to process before retry |
-| `queues.batchSize` | 1 | Process 1 message per instance |
-| `queues.maxDequeueCount` | 3 | Retry failed jobs 3 times before poison |
-| `queues.messageEncoding` | none | Plain text JSON messages (not base64) |
+| Setting                     | Value  | Description                             |
+| --------------------------- | ------ | --------------------------------------- |
+| `functionTimeout`           | 10 min | Max execution time per job              |
+| `routePrefix`               | api/v1 | API route prefix for HTTP endpoints     |
+| `queues.maxPollingInterval` | 10s    | Check for new messages every 10 seconds |
+| `queues.visibilityTimeout`  | 5 min  | Time to process before retry            |
+| `queues.batchSize`          | 1      | Process 1 message per instance          |
+| `queues.maxDequeueCount`    | 3      | Retry failed jobs 3 times before poison |
+| `queues.messageEncoding`    | none   | Plain text JSON messages (not base64)   |
 
 ### Database Configuration
 
 **Email Mappings:** Managed in `branch_email_mappings` table
+
 ```sql
 -- Example: Create email mapping
 INSERT INTO branch_email_mappings (tenant_id, branch_code, branch_name, sales_rep_email, sales_rep_name, is_enabled)
@@ -219,9 +222,10 @@ VALUES ('tenant-uuid', 'D01', 'Main Branch', 'manager@company.com', 'John Doe', 
 ```
 
 **SMTP Configuration:** Stored in `tenant_config.smtp_credentials` (JSONB)
+
 ```sql
 -- Example: Configure SMTP
-UPDATE tenant_config 
+UPDATE tenant_config
 SET smtp_credentials = '{
   "server": "smtp.gmail.com",
   "port": 587,
@@ -235,22 +239,23 @@ SET smtp_credentials = '{
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `POSTGRES_HOST` | Yes | PostgreSQL host |
-| `POSTGRES_PORT` | Yes | PostgreSQL port |
-| `POSTGRES_USER` | Yes | PostgreSQL username |
-| `POSTGRES_PASSWORD` | Yes | PostgreSQL password |
-| `POSTGRES_DATABASE` | Yes | PostgreSQL database |
+| Variable            | Required | Description         |
+| ------------------- | -------- | ------------------- |
+| `POSTGRES_HOST`     | Yes      | PostgreSQL host     |
+| `POSTGRES_PORT`     | Yes      | PostgreSQL port     |
+| `POSTGRES_USER`     | Yes      | PostgreSQL username |
+| `POSTGRES_PASSWORD` | Yes      | PostgreSQL password |
+| `POSTGRES_DATABASE` | Yes      | PostgreSQL database |
 
 ## Job Flow
 
 ### Ingestion Job (Queue-Based Background Processing)
+
 ```
 1. FastAPI Service (data_service)
    POST /api/v1/ingest
     └── Creates job record (status: queued)
-    └── Sends message to Azure Storage Queue: ingestion-jobs
+    └── Sends message to Azure Storage Queue: prod-ingestion-jobs
     └── Returns immediately: {"job_id": "...", "status": "queued"}
 
 2. Azure Function (Queue Trigger)
@@ -272,11 +277,12 @@ Job record in DB includes:
 ```
 
 ### Email Job (Queue-Based Background Processing)
+
 ```
 1. FastAPI Service (analytics_service)
    POST /api/v1/email/send-reports
     └── Creates email job record (status: queued)
-    └── Sends message to Azure Storage Queue: email-jobs
+    └── Sends message to Azure Storage Queue: prod-email-jobs
     └── Returns immediately: {"job_id": "...", "status": "queued"}
 
 2. Azure Function (Queue Trigger)

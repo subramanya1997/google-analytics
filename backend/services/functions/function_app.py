@@ -104,14 +104,14 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
 
 
 @app.queue_trigger(
-    arg_name="msg", queue_name="ingestion-jobs", connection="AzureWebJobsStorage"
+    arg_name="msg", queue_name="prod-ingestion-jobs", connection="impaqxprocloudstorage_STORAGE"
 )
 async def process_ingestion_job(msg: func.QueueMessage) -> None:
     """
     Queue trigger function to process data ingestion jobs asynchronously.
 
     This Azure Queue trigger function is automatically invoked when a message
-    is added to the "ingestion-jobs" queue. It handles the complete ingestion
+    is added to the "prod-ingestion-jobs" queue. It handles the complete ingestion
     workflow including BigQuery event extraction, SFTP user/location downloads,
     and database updates.
 
@@ -187,14 +187,14 @@ async def process_ingestion_job(msg: func.QueueMessage) -> None:
 
 
 @app.queue_trigger(
-    arg_name="msg", queue_name="email-jobs", connection="AzureWebJobsStorage"
+    arg_name="msg", queue_name="prod-email-jobs", connection="impaqxprocloudstorage_STORAGE"
 )
 async def process_email_job(msg: func.QueueMessage) -> None:
     """
     Queue trigger function to process email sending jobs asynchronously.
 
     This Azure Queue trigger function is automatically invoked when a message
-    is added to the "email-jobs" queue. It handles the complete email workflow
+    is added to the "prod-email-jobs" queue. It handles the complete email workflow
     including report generation, HTML template rendering, and SMTP delivery
     to configured branch sales representatives.
 

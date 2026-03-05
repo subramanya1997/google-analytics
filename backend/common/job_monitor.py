@@ -340,7 +340,7 @@ class JobStatusMonitor:
             }
 
             queue_client = QueueClient.from_connection_string(
-                self.azure_connection_string, "ingestion-jobs"
+                self.azure_connection_string, "prod-ingestion-jobs"
             )
             async with queue_client:
                 await queue_client.send_message(json.dumps(message))
@@ -438,7 +438,7 @@ class JobStatusMonitor:
             logger.debug("Azure connection string not configured, skipping queue stats")
             return
             
-        queues = ["ingestion-jobs", "email-jobs"]
+        queues = ["prod-ingestion-jobs", "prod-email-jobs"]
         
         for queue_name in queues:
             try:

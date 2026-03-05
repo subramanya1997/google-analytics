@@ -51,13 +51,20 @@ load_dotenv()
 
 
 def _create_sqlalchemy_url(database_name: str, async_driver: bool = False) -> URL:
-    """Create SQLAlchemy URL for a specific database."""
+    user = os.getenv("POSTGRES_USER")
+    password = os.getenv("POSTGRES_PASSWORD")
+    host = os.getenv("POSTGRES_HOST")
+
+    if not user:
+        raise ValueError("POSTGRES_USER environment variable not set")
+
     driver = "postgresql+asyncpg" if async_driver else "postgresql+pg8000"
+
     return URL.create(
         drivername=driver,
-        username=os.getenv("POSTGRES_USER"),
-        password=os.getenv("POSTGRES_PASSWORD"),
-        host=os.getenv("POSTGRES_HOST"),
+        username=user,
+        password=password,
+        host=host,
         port=int(os.getenv("POSTGRES_PORT", 5432)),
         database=database_name,
     )

@@ -84,7 +84,6 @@ tmp/
 *.sqlite3
 
 # Environment files (will be provided separately)
-.env*
 
 # Package files
 *.tar.gz

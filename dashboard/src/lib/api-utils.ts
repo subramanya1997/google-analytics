@@ -85,7 +85,7 @@ export function analyticsHeaders(extra?: HeadersInit): HeadersInit {
 // =============== Base Fetch Functions ===============
 
 export async function fetchFromAnalyticsService(endpoint: string, options?: RequestInit): Promise<Response> {
-  const baseUrl = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+  const baseUrl =  'https://api-analytics-ai.extremeb2b.com/analytics/api/v1'
   const url = `${baseUrl}/${endpoint}`
   
   return await fetch(url, {
@@ -98,7 +98,7 @@ export async function fetchFromAnalyticsService(endpoint: string, options?: Requ
 }
 
 export async function fetchFromDataService(endpoint: string, options?: RequestInit): Promise<Response> {
-  const directUrl = `${process.env.NEXT_PUBLIC_DATA_API_URL}/${endpoint}`
+  const directUrl = `https://api-analytics-ai.extremeb2b.com/data/api/v1/${endpoint}`
 
   // Try proxy first
   try {
@@ -117,7 +117,7 @@ export async function fetchFromDataService(endpoint: string, options?: RequestIn
 }
 
 export async function fetchFromAuthService(endpoint: string, options?: RequestInit): Promise<Response> {
-  const authBase = process.env.NEXT_PUBLIC_AUTH_API_URL || ""
+  const authBase =  "https://api-analytics-ai.extremeb2b.com/auth/api/v1"
   const url = `${authBase}/${endpoint}`
   
   return await fetch(url, {
@@ -172,7 +172,7 @@ export async function fetchLocationStats(params: {
 export async function fetchLocations(signal?: AbortSignal) {
   // Try proxy first
   const proxyUrl = '/api/analytics/locations'
-  const directBase = process.env.NEXT_PUBLIC_ANALYTICS_API_URL || ''
+  const directBase = 'https://api-analytics-ai.extremeb2b.com/analytics/api/v1'
   const directUrl = directBase ? `${directBase}/locations` : ''
   
   try {

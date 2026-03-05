@@ -15,6 +15,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 
+COPY .env .env
+
 RUN uv sync --no-dev
 
 COPY . .

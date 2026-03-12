@@ -400,24 +400,26 @@ class AuthServiceSettings(BaseServiceSettings):
         - PORT: 8003
 
     Additional Attributes:
-        BASE_URL (str): Base URL of the external authentication API endpoint.
-            This is used for making authentication and authorization requests to
-            the external identity provider or authentication service.
+        FRONTEND_URL (str): Base URL of the frontend/admin dashboard. Used for
+            redirecting users to the login page (e.g. get_login_url returns
+            FRONTEND_URL + "/admin/").
+        IDP_BASE_URL (str): Base URL of the external Identity Provider's API.
+            Used for backend-to-backend calls: token validation, logout,
+            authenticate_with_code, etc. (e.g. /manage/auth/*, /developerApp/*).
 
     Example:
         ```python
         from common.config.settings import AuthServiceSettings
-        
+
         settings = AuthServiceSettings()
-        print(settings.SERVICE_NAME)  # "auth-service"
-        print(settings.PORT)  # 8003
-        print(settings.BASE_URL)  # "https://devenv-mturmyvlly.extremeb2b.com"
+        print(settings.FRONTEND_URL)   # "https://dashboard.example.com"
+        print(settings.IDP_BASE_URL)  # "https://idp.example.com"
         ```
 
     Note:
-        - BASE_URL should point to the production authentication service in production
-        - This URL is used for OAuth callbacks and token validation
-        - Should be configured via environment variable for different environments
+        - FRONTEND_URL: Where to redirect users for login (admin dashboard)
+        - IDP_BASE_URL: External IdP API for token validation, logout, etc.
+        - If frontend and IdP share the same host, set both to the same URL
     """
 
     SERVICE_NAME: str = "auth-service"
@@ -425,4 +427,5 @@ class AuthServiceSettings(BaseServiceSettings):
     PORT: int = 8003
 
     # External API Configuration
-    BASE_URL: str = "https://devenv-mturmyvlly.extremeb2b.com"
+    FRONTEND_URL: str = "https://devenv-mturmyvlly.extremeb2b.com"
+    IDP_BASE_URL: str = "https://devenv-mturmyvlly.extremeb2b.com"

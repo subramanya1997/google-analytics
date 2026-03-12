@@ -111,8 +111,9 @@ The backend consists of three main microservices:
    # CORS Origins (comma-separated)
    CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
    
-   # Auth Service Base URL
-   BASE_URL=https://your-domain.com
+   # Auth Service URLs (frontend = login redirect, IdP = backend API)
+   FRONTEND_URL=https://your-domain.com
+   IDP_BASE_URL=https://your-domain.com
    ```
    
    **Important**: This system uses **tenant-isolated databases** for SOC2 compliance:
@@ -371,8 +372,9 @@ JWT_SECRET_KEY=your-secret-key-here
 JWT_ALGORITHM=HS256
 JWT_EXPIRATION_HOURS=24
 
-# Auth Service Base URL
-BASE_URL=https://your-domain.com
+# Auth Service URLs (frontend = login redirect, IdP = backend API)
+FRONTEND_URL=https://your-domain.com
+IDP_BASE_URL=https://your-domain.com
 
 # Email Configuration (Optional - can be configured via API)
 DEFAULT_SMTP_SERVER=smtp.gmail.com

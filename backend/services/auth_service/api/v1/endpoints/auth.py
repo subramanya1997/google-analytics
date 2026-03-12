@@ -238,7 +238,7 @@ async def get_login_url() -> LoginUrlResponse:
 
     This endpoint returns the complete URL where users should be redirected to
     initiate the OAuth 2.0 authentication flow. The URL is constructed from the
-    BASE_URL configuration setting with the appropriate path suffix.
+    FRONTEND_URL configuration setting with the appropriate path suffix.
 
     The frontend should redirect users to this URL, which will handle the OAuth
     flow and redirect back to the frontend with an authorization code in the query
@@ -247,7 +247,7 @@ async def get_login_url() -> LoginUrlResponse:
     Returns:
         LoginUrlResponse containing:
             - login_url (str): Complete URL for OAuth login redirect
-                Format: "{BASE_URL}/admin/"
+                Format: "{FRONTEND_URL}/admin/"
 
     Example:
         ```python
@@ -258,7 +258,7 @@ async def get_login_url() -> LoginUrlResponse:
         ```
 
     Note:
-        - The URL is constructed from the BASE_URL environment variable
+        - The URL is constructed from the FRONTEND_URL environment variable
         - Users will be redirected back to the frontend with a code parameter
         - The frontend should then call /authenticate with the received code
     """

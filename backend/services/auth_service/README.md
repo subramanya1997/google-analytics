@@ -199,8 +199,9 @@ async def validate_token(token: str) -> dict:
 AUTH_SERVICE_PORT=8003
 SERVICE_NAME=auth-service
 
-# External IdP
-BASE_URL=https://idp.example.com
+# External IdP (frontend = login redirect, IdP = backend API)
+FRONTEND_URL=https://dashboard.example.com
+IDP_BASE_URL=https://idp.example.com
 
 # Database (shared)
 POSTGRES_HOST=localhost
@@ -214,7 +215,8 @@ class AuthServiceSettings(BaseServiceSettings):
     SERVICE_NAME: str = "auth-service"
     SERVICE_VERSION: str = "0.0.1"
     PORT: int = 8003
-    BASE_URL: str = "https://idp.example.com"
+    FRONTEND_URL: str = "https://dashboard.example.com"
+    IDP_BASE_URL: str = "https://idp.example.com"
 ```
 
 ## Service Validation

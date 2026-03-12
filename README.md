@@ -162,8 +162,9 @@ ENVIRONMENT=DEV
 LOG_LEVEL=INFO
 CORS_ORIGINS=http://localhost:3000
 
-# Auth
-BASE_URL=https://your-domain.com
+# Auth Service URLs (frontend = login redirect, IdP = backend API)
+FRONTEND_URL=https://your-domain.com
+IDP_BASE_URL=https://your-domain.com
 ```
 
 ### Dashboard (`dashboard/.env.local`)

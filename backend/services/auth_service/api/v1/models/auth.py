@@ -176,7 +176,7 @@ class LoginUrlResponse(BaseModel):
 
     Attributes:
         login_url (str): Complete URL for OAuth login redirect. This is the
-            external IdP's authentication page URL. Format: "{BASE_URL}/admin/"
+            external IdP's authentication page URL. Format: "{FRONTEND_URL}/admin/"
 
     Example:
         ```json

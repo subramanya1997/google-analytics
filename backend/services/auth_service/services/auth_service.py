@@ -96,7 +96,7 @@ class AuthenticationService:
 
     Attributes:
         settings: Service configuration settings loaded from environment
-            variables. Includes BASE_URL for external IdP, service name,
+            variables. Includes FRONTEND_URL, IDP_BASE_URL for external IdP, service name,
             version, and other runtime configuration.
 
     Example:
@@ -130,7 +130,8 @@ class AuthenticationService:
 
         Loads service-specific configuration settings from environment variables
         using the common configuration system. The settings include:
-        - BASE_URL: External Identity Provider base URL
+        - FRONTEND_URL: Admin dashboard URL for login redirects
+        - IDP_BASE_URL: External Identity Provider API base URL
         - SERVICE_NAME: Service identifier ("auth-service")
         - SERVICE_VERSION: Service version string
         - Other service-specific configuration
@@ -252,8 +253,8 @@ class AuthenticationService:
         """
         try:
             # Step 1: Get app property using the code
-            base_url = self.settings.BASE_URL
-            full_url = f"{base_url}/manage/auth/getappproperity"
+            idp_base_url = self.settings.IDP_BASE_URL
+            full_url = f"{idp_base_url}/manage/auth/getappproperity"
 
             logger.info("Starting authentication process")
 
@@ -293,7 +294,7 @@ class AuthenticationService:
                     }
 
                 # Step 2: Get settings using app instance ID and access token
-                settings_url = f"{base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
+                settings_url = f"{idp_base_url}/developerApp/accountAppInstance/settings/{app_instance_id}"
                 logger.info("Fetching tenant configurations")
 
                 settings_response = await client.get(
@@ -458,7 +459,7 @@ class AuthenticationService:
 
         except httpx.RequestError as e:
             logger.error(f"HTTP request failed: {e}")
-            logger.error(f"Base URL being used: {self.settings.BASE_URL}")
+            logger.error(f"IDP base URL being used: {self.settings.IDP_BASE_URL}")
             return {
                 "success": False,
                 "message": f"Authentication service unavailable: {e!s}",
@@ -763,8 +764,8 @@ class AuthenticationService:
             - Logs all errors for debugging purposes
         """
         try:
-            base_url = self.settings.BASE_URL
-            logout_url = f"{base_url}/manage/auth/logout"
+            idp_base_url = self.settings.IDP_BASE_URL
+            logout_url = f"{idp_base_url}/manage/auth/logout"
 
             logger.info("Starting logout process")
 
@@ -802,7 +803,7 @@ class AuthenticationService:
 
         except httpx.RequestError as e:
             logger.error(f"HTTP request failed during logout: {e}")
-            logger.error(f"Base URL being used: {self.settings.BASE_URL}")
+            logger.error(f"IDP base URL being used: {self.settings.IDP_BASE_URL}")
             return {
                 "success": False,
                 "message": f"Logout service unavailable: {e!s}",
@@ -816,36 +817,36 @@ class AuthenticationService:
 
     def get_login_url(self) -> str:
         """
-        Get the OAuth login URL for redirecting users to the Identity Provider.
+        Get the OAuth login URL for redirecting users to the admin dashboard.
 
-        This method constructs the complete login URL by combining the BASE_URL
-        from service settings with the admin login path. The URL is used by the
-        frontend to redirect users to the external IdP's authentication page.
+        This method constructs the complete login URL by combining the
+        FRONTEND_URL from service settings with the admin login path. The URL
+        is used by the frontend to redirect users to the admin dashboard's
+        authentication page.
 
-        The constructed URL follows the pattern: "{BASE_URL}/admin/"
+        The constructed URL follows the pattern: "{FRONTEND_URL}/admin/"
 
         Returns:
             str: Complete OAuth login URL where users should be redirected.
-                Example: "https://idp.example.com/admin/"
+                Example: "https://dashboard.example.com/admin/"
 
         Example:
             ```python
             login_url = service.get_login_url()
-            # Returns: "https://idp.example.com/admin/"
+            # Returns: "https://dashboard.example.com/admin/"
             
             # Frontend redirects user
             window.location.href = login_url
             ```
 
         Note:
-            - URL is constructed from BASE_URL environment variable
-            - Path "/admin/" is hardcoded based on IdP API structure
+            - URL is constructed from FRONTEND_URL environment variable
+            - Path "/admin/" is hardcoded based on admin dashboard structure
             - This is a synchronous method (no I/O required)
             - Users will be redirected back to frontend with authorization code
         """
-        base_url = self.settings.BASE_URL
-        # Based on the URL you provided, the admin login should be at /admin/
-        return f"{base_url}/admin/"
+        frontend_url = self.settings.FRONTEND_URL
+        return f"{frontend_url}/admin/"
 
 
     async def validate_token(self, access_token: str) -> dict[str, Any]:
@@ -905,10 +906,10 @@ class AuthenticationService:
             - All errors are logged for debugging purposes
         """
         try:
-            base_url = self.settings.BASE_URL
+            idp_base_url = self.settings.IDP_BASE_URL
             # Try to validate token by calling the getappproperity endpoint with the token
             # This is a known working endpoint that requires authentication
-            validate_url = f"{base_url}/manage/auth/getappproperity"
+            validate_url = f"{idp_base_url}/manage/auth/getappproperity"
 
             logger.info("Validating access token")
 
@@ -982,7 +983,7 @@ class AuthenticationService:
 
         except httpx.RequestError as e:
             logger.error(f"HTTP request failed during token validation: {e}")
-            logger.error(f"Base URL being used: {self.settings.BASE_URL}")
+            logger.error(f"IDP base URL being used: {self.settings.IDP_BASE_URL}")
             return {
                 "valid": False,
                 "message": f"Token validation service unavailable: {e!s}",

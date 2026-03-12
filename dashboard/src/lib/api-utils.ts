@@ -170,25 +170,7 @@ export async function fetchLocationStats(params: {
 }
 
 export async function fetchLocations(signal?: AbortSignal) {
-  // Try proxy first
-  const proxyUrl = '/api/analytics/locations'
-  const directBase = 'https://api-analytics-ai.extremeb2b.com/analytics/api/v1'
-  const directUrl = directBase ? `${directBase}/locations` : ''
-  
-  try {
-    return await fetch(proxyUrl, {
-      signal,
-      headers: analyticsHeaders()
-    })
-  } catch (error) {
-    if (directUrl && !signal?.aborted) {
-      return await fetch(directUrl, {
-        signal,
-        headers: analyticsHeaders()
-      })
-    }
-    throw error
-  }
+  return fetchFromAnalyticsService('locations', { signal })
 }
 
 export async function fetchUserHistory(userId?: string | number, sessionId?: string) {

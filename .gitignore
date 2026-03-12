@@ -2,6 +2,7 @@
 *.sqlite
 *.sqlite3
 db/
+service_secret.json
 
 # Generated reports and exports
 branch_reports/

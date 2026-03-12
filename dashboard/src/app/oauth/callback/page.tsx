@@ -168,16 +168,16 @@ function OAuthCallbackContent() {
 
           if (dataCheck.hasData) {
             setStatus("success")
-            setMessage("Setup complete. Redirecting to dashboard…")
+            setMessage("Welcome back! Redirecting to dashboard…")
             setTimeout(() => currentRouter.replace("/"), 1200)
           } else {
             setStatus("success")
-            setMessage("Verification complete. Redirecting to data management…")
+            setMessage("Welcome back! Redirecting to data management…")
             setTimeout(() => currentRouter.replace("/data-management"), 1200)
           }
         } else {
           setStatus("success")
-          setMessage("Verification complete. Redirecting…")
+          setMessage("Welcome back! Redirecting…")
           setTimeout(() => currentRouter.replace("/"), 1200)
         }
       } catch (err: unknown) {
@@ -198,7 +198,7 @@ function OAuthCallbackContent() {
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Account Authentication</CardTitle>
+          <CardTitle>Welcome</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {status === "working" && (

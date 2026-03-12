@@ -152,7 +152,7 @@ export function DataTable<TData>({
                         </TableRow>
                         {row.getIsExpanded() && SubComponent && (
                           <TableRow>
-                            <TableCell colSpan={row.getVisibleCells().length} className="bg-muted/30 p-0">
+                            <TableCell colSpan={row.getVisibleCells().length} className="bg-muted/30 p-0 whitespace-normal">
                               <SubComponent row={row} />
                             </TableCell>
                           </TableRow>

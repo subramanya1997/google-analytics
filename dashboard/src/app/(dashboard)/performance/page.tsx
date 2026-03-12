@@ -142,7 +142,7 @@ function ExpandedRow({ row }: { row: Row<Task> }) {
   return (
     <div className="px-6 py-4 border-t border-border/50">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Page URL</h4>
             {task.metadata?.pageUrl ? (
@@ -151,7 +151,7 @@ function ExpandedRow({ row }: { row: Row<Task> }) {
                   href={task.metadata.pageUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-primary hover:underline break-all flex-1"
+                  className="text-sm text-primary hover:underline break-words min-w-0 flex-1"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {task.metadata.pageUrl}
@@ -190,11 +190,11 @@ function ExpandedRow({ row }: { row: Row<Task> }) {
           </div>
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Description</h4>
-            <p className="text-sm">{task.description}</p>
+            <p className="text-sm break-all">{task.description}</p>
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Customer</h4>
             <div className="space-y-1.5">

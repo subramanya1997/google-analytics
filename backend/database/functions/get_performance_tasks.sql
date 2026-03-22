@@ -14,6 +14,7 @@ BEGIN
             MAX(user_prop_default_branch_id) as user_prop_default_branch_id,
             COUNT(DISTINCT param_page_location) as page_view_count,
             MAX(event_timestamp) as last_activity,
+            MAX(event_date) as last_event_date,
             (array_agg(param_page_location ORDER BY event_timestamp))[1] as entry_page
         FROM page_view
         WHERE tenant_id = p_tenant_id
@@ -76,7 +77,7 @@ BEGIN
                 SELECT COALESCE(jsonb_agg(
                     jsonb_build_object(
                         'session_id', ps.param_ga_session_id,
-                        'event_date', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                        'event_date', TO_CHAR(ps.last_event_date, 'YYYY-MM-DD'),
                         'entry_page', ps.entry_page,
                         'user_id', ps.user_id,
                         'customer_name', ps.customer_name,

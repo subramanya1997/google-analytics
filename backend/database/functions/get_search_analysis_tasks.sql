@@ -14,7 +14,8 @@ BEGIN
             nsr.param_no_search_results_term AS search_term,
             'no_results' AS search_type,
             COUNT(*) AS search_count,
-            MAX(nsr.event_timestamp) AS last_activity
+            MAX(nsr.event_timestamp) AS last_activity,
+            MAX(nsr.event_date) AS last_event_date
         FROM no_search_results nsr
         WHERE nsr.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR nsr.user_prop_default_branch_id = p_location_id)
@@ -31,7 +32,8 @@ BEGIN
             STRING_AGG(DISTINCT vsr.param_search_term, ', ') AS search_term,
             'no_conversion' AS search_type,
             COUNT(*) AS search_count,
-            MAX(vsr.event_timestamp) AS last_activity
+            MAX(vsr.event_timestamp) AS last_activity,
+            MAX(vsr.event_date) AS last_event_date
         FROM view_search_results vsr
         WHERE vsr.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR vsr.user_prop_default_branch_id = p_location_id)
@@ -93,7 +95,7 @@ BEGIN
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'session_id', ps.param_ga_session_id,
-                    'event_date', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                    'event_date', TO_CHAR(ps.last_event_date, 'YYYY-MM-DD'),
                     'search_term', ps.search_term,
                     'search_type', ps.search_type,
                     'search_count', ps.search_count,

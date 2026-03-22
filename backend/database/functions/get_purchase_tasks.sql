@@ -65,7 +65,7 @@ BEGIN
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'transaction_id', pp.param_transaction_id,
-                    'event_date', TO_CHAR(TO_TIMESTAMP(CAST(pp.event_timestamp AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                    'event_date', TO_CHAR(pp.event_date, 'YYYY-MM-DD'),
                     'order_value', COALESCE(pp.ecommerce_purchase_revenue, 0),
                     'page_location', COALESCE(pp.param_page_location, ''),
                     'ga_session_id', pp.param_ga_session_id,

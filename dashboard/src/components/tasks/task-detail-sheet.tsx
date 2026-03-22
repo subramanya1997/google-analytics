@@ -140,6 +140,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
             event_type: string
             param_ga_session_id?: string
             event_timestamp: number
+            event_date?: string
             details: {
               transaction_id?: string
               revenue?: string
@@ -154,11 +155,12 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               quantity?: number
             }
           }) => {
+            const eventDate = event.event_date || new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
             switch (event.event_type) {
               case 'purchase':
                 purchaseHistory.push({
                   transaction_id: event.details.transaction_id || 'unknown',
-                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_date: eventDate,
                   event_timestamp: event.event_timestamp.toString(),
                   order_value: event.details.revenue || '0',
                   items: JSON.parse(event.details.items || '[]')
@@ -167,7 +169,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               case 'add_to_cart':
                 cartHistory.push({
                   session_id: event.param_ga_session_id || 'unknown',
-                  event_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  event_date: eventDate,
                   event_timestamp: event.event_timestamp.toString(),
                   cart_value: (event.details.price || 0) * (event.details.quantity || 0),
                   items: [{
@@ -181,14 +183,14 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
               case 'view_search_results':
                 searchHistory.push({
                   term: event.details.search_term || 'unknown',
-                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  date: eventDate,
                   results: 1 // Placeholder
                 })
                 break
               case 'no_search_results':
                 searchHistory.push({
                   term: event.details.search_term || 'unknown',
-                  date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, ''),
+                  date: eventDate,
                   results: 0
                 })
                 break
@@ -202,12 +204,11 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                      price: 0,
                      view_count: 1,
                      last_viewed_timestamp: event.event_timestamp.toString(),
-                     last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                     last_viewed_date: eventDate
                    })
                  }
                  break
                case 'view_item':
-                 // Add product views from view_item events
                  viewedProductsHistory.push({
                    sku: event.details.item_id || 'unknown',
                    name: event.details.item_name || 'Unknown Product',
@@ -215,7 +216,7 @@ export function TaskDetailSheet({ task, children }: TaskDetailSheetProps) {
                    price: event.details.price || 0,
                    view_count: 1,
                    last_viewed_timestamp: event.event_timestamp.toString(),
-                   last_viewed_date: new Date(event.event_timestamp / 1000).toISOString().split('T')[0].replace(/-/g, '')
+                   last_viewed_date: eventDate
                  })
                  break
             }

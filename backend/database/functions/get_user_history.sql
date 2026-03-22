@@ -17,6 +17,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'page_view' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'page_location', param_page_location,
                 'page_title', param_page_title
@@ -31,6 +32,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'add_to_cart' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'item_id', first_item_item_id,
                 'item_name', first_item_item_name,
@@ -47,6 +49,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'purchase' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'transaction_id', param_transaction_id,
                 'revenue', ecommerce_purchase_revenue,
@@ -62,6 +65,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'view_search_results' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'search_term', param_search_term
             ) AS details
@@ -75,6 +79,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'no_search_results' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'search_term', param_no_search_results_term
             ) AS details
@@ -88,6 +93,7 @@ BEGIN
             event_timestamp,
             param_ga_session_id,
             'view_item' AS event_type,
+            TO_CHAR(event_date, 'YYYYMMDD') AS event_date,
             jsonb_build_object(
                 'item_id', first_item_item_id,
                 'item_name', first_item_item_name,

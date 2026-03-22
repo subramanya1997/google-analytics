@@ -33,6 +33,7 @@ BEGIN
             ac.user_prop_webuserid,
             MAX(ac.user_prop_webcustomerid) AS user_prop_webcustomerid,
             MAX(ac.event_timestamp) AS last_activity,
+            MAX(ac.event_date) AS last_event_date,
             COUNT(ac.id) AS items_count,
             SUM(ac.first_item_price * ac.first_item_quantity) AS total_value,
             jsonb_agg(
@@ -84,8 +85,8 @@ BEGIN
             SELECT jsonb_agg(
                 jsonb_build_object(
                     'session_id', ps.param_ga_session_id,
-                    'event_date', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
-                    'last_activity', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                    'event_date', TO_CHAR(ps.last_event_date, 'YYYY-MM-DD'),
+                    'last_activity', TO_CHAR(ps.last_event_date, 'YYYY-MM-DD'),
                     'items_count', ps.items_count,
                     'total_value', ps.total_value,
                     'user_id', ps.user_id,

@@ -12,7 +12,8 @@ BEGIN
             pv.user_prop_webuserid,
             MAX(pv.user_prop_webcustomerid) AS user_prop_webcustomerid,
             COUNT(DISTINCT pv.param_page_location) AS page_views_count,
-            MAX(pv.event_timestamp) AS last_activity
+            MAX(pv.event_timestamp) AS last_activity,
+            MAX(pv.event_date) AS last_event_date
         FROM page_view pv
         WHERE pv.tenant_id = p_tenant_id
           AND (p_location_id IS NULL OR pv.user_prop_default_branch_id = p_location_id)
@@ -39,7 +40,8 @@ BEGIN
             a_s.user_prop_webuserid,
             a_s.user_prop_webcustomerid,
             a_s.page_views_count,
-            a_s.last_activity
+            a_s.last_activity,
+            a_s.last_event_date
         FROM active_sessions a_s
         INNER JOIN repeat_visitors rv ON a_s.user_prop_webuserid = rv.user_prop_webuserid
     ),
@@ -96,7 +98,7 @@ BEGIN
             SELECT COALESCE(jsonb_agg(
                 jsonb_build_object(
                     'session_id', ps.param_ga_session_id,
-                    'event_date', TO_CHAR(TO_TIMESTAMP(CAST(ps.last_activity AS BIGINT) / 1000000), 'YYYY-MM-DD'),
+                    'event_date', TO_CHAR(ps.last_event_date, 'YYYY-MM-DD'),
                     'page_views_count', ps.page_views_count,
                     'products_viewed', COALESCE(spv.products_viewed, 0),
                     'products_details', COALESCE(spv.products_details, '[]'::jsonb),

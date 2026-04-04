@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react'
 import { DateRange } from 'react-day-picker'
 import { startOfDay, subDays } from 'date-fns'
-import { fetchLocations, fetchDataAvailability } from '@/lib/api-utils'
+import { fetchLocations, fetchDataAvailability, getTenantId } from '@/lib/api-utils'
 import { Location, DataAvailability } from '@/types'
 
 interface DashboardContextType {
@@ -20,8 +20,13 @@ interface DashboardContextType {
 
 const DashboardContext = createContext<DashboardContextType | undefined>(undefined)
 
-const SESSION_STORAGE_KEY = 'dashboard_locations_cache'
+const SESSION_STORAGE_KEY_PREFIX = 'dashboard_locations_cache'
 const CACHE_TTL_MS = 5 * 60 * 1000
+
+function getSessionStorageKey(): string {
+  const tenantId = getTenantId()
+  return tenantId ? `${SESSION_STORAGE_KEY_PREFIX}_${tenantId}` : SESSION_STORAGE_KEY_PREFIX
+}
 
 export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null)
@@ -31,6 +36,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const isFetchingRef = useRef(false)
   const didInitRef = useRef(false)
   const lastFetchAtRef = useRef<number>(0)
+  const currentTenantRef = useRef<string>(getTenantId())
   
   // Data availability state
   const [dataAvailability, setDataAvailability] = useState<DataAvailability | null>(null)
@@ -96,7 +102,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
       try {
         if (data && data.length > 0) {
-          sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ data: data, cachedAt: now }))
+          sessionStorage.setItem(getSessionStorageKey(), JSON.stringify({ data: data, cachedAt: now }))
         }
       } catch {
         // ignore storage errors
@@ -107,7 +113,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       // Try to load from cache as fallback if we don't have any locations
       if (locations.length === 0) {
         try {
-          const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
+          const raw = sessionStorage.getItem(getSessionStorageKey())
           if (raw) {
             const parsed = JSON.parse(raw) as { data: Location[]; cachedAt: number }
             if (Array.isArray(parsed.data) && parsed.data.length > 0) {
@@ -129,7 +135,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // Refresh locations (force fetch)
   const refreshLocations = useCallback(async () => {
     try {
-      sessionStorage.removeItem(SESSION_STORAGE_KEY)
+      sessionStorage.removeItem(getSessionStorageKey())
     } catch {
       // ignore storage errors
     }
@@ -162,7 +168,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
     const loadFromSession = () => {
       try {
-        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY)
+        const raw = sessionStorage.getItem(getSessionStorageKey())
         if (!raw) return false
         const parsed = JSON.parse(raw) as { data: Location[]; cachedAt: number }
         if (!Array.isArray(parsed.data) || typeof parsed.cachedAt !== 'number') return false
@@ -186,6 +192,30 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     }
 
     void init()
+  }, [doFetchLocations, doFetchDataAvailability])
+
+  // Watch for tenant changes and refresh locations
+  useEffect(() => {
+    const checkTenantChange = () => {
+      const newTenantId = getTenantId()
+      if (newTenantId && newTenantId !== currentTenantRef.current) {
+        currentTenantRef.current = newTenantId
+        setLocations([])
+        setSelectedLocation(null)
+        setLocationsCacheTime(0)
+        lastFetchAtRef.current = 0
+        isFetchingRef.current = false
+        void doFetchLocations(true)
+        void doFetchDataAvailability()
+      }
+    }
+
+    window.addEventListener('storage', checkTenantChange)
+    const interval = setInterval(checkTenantChange, 2000)
+    return () => {
+      window.removeEventListener('storage', checkTenantChange)
+      clearInterval(interval)
+    }
   }, [doFetchLocations, doFetchDataAvailability])
 
   return (
